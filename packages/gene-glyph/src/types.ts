@@ -218,6 +218,13 @@ export interface TrackLoadArgs {
   viewport: Viewport;
   mapper: CoordinateMapper;
   signal: AbortSignal;
+  /** ProteinAnnotations passed to `<GeneGlyph>` as the `protein` prop, or
+   *  `null` when the host didn't provide one. Protein-coord tracks (Pfam,
+   *  InterPro, AlphaMissense, MAVE) read their data from here instead of
+   *  taking it as track config — the host already knows where the protein
+   *  record lives for the chosen transcript, so requiring tracks to
+   *  redeclare it would be ceremony without payoff. */
+  protein: ProteinAnnotations | null;
 }
 
 export interface TrackHeightArgs<TData> {

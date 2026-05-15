@@ -71,7 +71,7 @@ describe('variantTrack', () => {
   it('loads from a static array', async () => {
     const t = variantTrack({ source: variants });
     const { mapper, viewport } = setup();
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal });
+    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
     expect(data.variants).toHaveLength(variants.length);
   });
 
@@ -84,7 +84,7 @@ describe('variantTrack', () => {
     };
     const t = variantTrack({ source });
     const { mapper, viewport } = setup();
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal });
+    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
     expect(queryFn).toHaveBeenCalledWith(
       { mode: 'cds-with-introns', range: viewport.range },
       expect.anything(),

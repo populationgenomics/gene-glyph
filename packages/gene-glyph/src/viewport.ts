@@ -271,7 +271,6 @@ export class ViewportController implements Viewport {
   projectGenomicRange(chr: string, start: number, end: number): RangeProjection {
     const [gLo, gHi] = clampOrdered(start, end);
     const exons = this.mapper.transcript.exons;
-    const fragmenting = this._mode !== 'cds-with-introns';
 
     const segments: RangeSegment[] = [];
     const droppedRanges: DroppedRange[] = [];
@@ -292,21 +291,17 @@ export class ViewportController implements Viewport {
       exonHits.push({ idx: i, cdsLo, cdsHi });
     }
 
-    if (fragmenting) {
-      for (let k = 0; k < exonHits.length; k++) {
-        const hit = exonHits[k]!;
-        const seg = this.cdsRangeToSegment(hit.cdsLo, hit.cdsHi, hit.idx);
-        if (seg) segments.push(seg);
-        if (k > 0) {
-          droppedIntronicCount += 1;
-          droppedRanges.push({ kind: 'intronic', near: { exonIdx: hit.idx } });
-        }
-      }
-    } else if (exonHits.length > 0) {
-      const first = exonHits[0]!;
-      const last = exonHits[exonHits.length - 1]!;
-      const seg = this.cdsRangeToSegment(first.cdsLo, last.cdsHi, first.idx);
+    // Always fragment by exon: each visible exon contributes a segment with
+    // its own piecewise screen-x bounds. Tracks that want a joined visual
+    // (Pfam, IPR) draw a linker across the inter-exon gap themselves.
+    for (let k = 0; k < exonHits.length; k++) {
+      const hit = exonHits[k]!;
+      const seg = this.cdsRangeToSegment(hit.cdsLo, hit.cdsHi, hit.idx);
       if (seg) segments.push(seg);
+      if (k > 0) {
+        droppedIntronicCount += 1;
+        droppedRanges.push({ kind: 'intronic', near: { exonIdx: hit.idx } });
+      }
     }
 
     if (exonHits.length === 0) {
@@ -319,7 +314,6 @@ export class ViewportController implements Viewport {
 
   private projectExonic(cdsLo: number, cdsHi: number): RangeProjection {
     const exons = this.mapper.transcript.exons;
-    const fragmenting = this._mode !== 'cds-with-introns';
 
     const segments: RangeSegment[] = [];
     const droppedRanges: DroppedRange[] = [];
@@ -342,15 +336,12 @@ export class ViewportController implements Viewport {
       };
     }
 
-    if (fragmenting) {
-      for (const h of hits) {
-        const seg = this.cdsRangeToSegment(h.lo, h.hi, h.idx);
-        if (seg) segments.push(seg);
-      }
-    } else {
-      const first = hits[0]!;
-      const last = hits[hits.length - 1]!;
-      const seg = this.cdsRangeToSegment(first.lo, last.hi, first.idx);
+    // Always fragment by exon: one segment per visible exon, each with its
+    // own piecewise screen-x bounds. In cds-with-introns mode the segments'
+    // x-bounds sit either side of a collapsed-intron gap; tracks that want
+    // a joined visual draw a linker themselves.
+    for (const h of hits) {
+      const seg = this.cdsRangeToSegment(h.lo, h.hi, h.idx);
       if (seg) segments.push(seg);
     }
 

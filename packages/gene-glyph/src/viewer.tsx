@@ -107,9 +107,15 @@ export function GeneGlyph({
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
+    const proteinArg = protein ?? null;
     void Promise.all(
       flatTracks.map(async (t) => {
-        const data = await t.load({ viewport, mapper, signal: controller.signal });
+        const data = await t.load({
+          viewport,
+          mapper,
+          signal: controller.signal,
+          protein: proteinArg,
+        });
         return [t.id, data] as const;
       }),
     ).then((entries) => {
@@ -120,7 +126,7 @@ export function GeneGlyph({
       cancelled = true;
       controller.abort();
     };
-  }, [flatTracks, viewport, mapper]);
+  }, [flatTracks, viewport, mapper, protein]);
 
   const layout = useMemo(
     () =>

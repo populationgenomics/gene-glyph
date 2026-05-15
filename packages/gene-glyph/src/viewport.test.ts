@@ -79,10 +79,18 @@ describe('ViewportController — range projection', () => {
     expect(proj.segments[1]!.xStart).toBeCloseTo(vp.cdsToScreen(101, 0)!);
   });
 
-  it('does not fragment in cds-with-introns mode', () => {
+  it('fragments at exon boundaries in cds-with-introns mode too (per-exon segments)', () => {
+    // Pfam / IPR domains need per-exon rectangles + a linker drawn over the
+    // dashed-gap polyline; a single segment that spans the gap would draw a
+    // solid bar across the collapsed intron and defeat the visual.
     const vp = fitGene('cds-with-introns');
     const proj = vp.projectCdsRange(50, 300);
-    expect(proj.segments).toHaveLength(1);
+    expect(proj.segments.map((s) => s.exonIdx)).toEqual([0, 1, 2]);
+    // Adjacent segments meet at the exon boundary in screen-x, since
+    // cdsToScreen places exon i's cdsEnd and exon i+1's cdsStart at the same
+    // point only when intronScale=0; here (intronScale=1) the segments sit
+    // either side of the collapsed-intron gap.
+    expect(proj.segments[0]!.xEnd).toBeLessThan(proj.segments[1]!.xStart);
   });
 
   it('projectGenomicRange across an intron drops the intronic gap and yields one segment per exon', () => {

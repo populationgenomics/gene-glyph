@@ -206,6 +206,26 @@
   background: var(--vv-variant-color, #94a3b8);
 }
 
+/* Pfam track. Each domain renders one rounded rect per intersected exon,
+ * placed inside the per-exon group so the exon's CSS-driven transform carries
+ * the rect with it across mode changes. A thin linker line crosses each
+ * collapsed-intron gap; it lives inside an .vv-intron-decoration group so its
+ * opacity collapses with `--vv-intron-scale` in spliced/protein modes (mode
+ * transitions land in Slice 12; the wiring is in place now). */
+.gene-glyph .vv-pfam-rect {
+  pointer-events: visiblePainted;
+}
+
+.gene-glyph .vv-pfam-linker {
+  pointer-events: none;
+}
+
+.gene-glyph .vv-pfam-label {
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
 [data-vv-print] .gene-glyph {
   --vv-color-text-primary: #1f2937;
@@ -214,6 +234,8 @@
   --vv-color-exon-fill: #9ca3af;
   --vv-color-exon-stroke: #1f2937;
   --vv-color-intron-line: #1f2937;
+  --vv-color-pfam-stroke: #1f2937;
+  --vv-color-pfam-label: #1f2937;
   --vv-color-bg-surface: #ffffff;
   --vv-variant-color-missense: #b45309;
   --vv-variant-color-nonsense: #991b1b;

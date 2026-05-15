@@ -69,3 +69,5 @@ export type {
   VariantPlacement,
   VariantPartition,
 } from './tracks/variant-track.js';
+export { pfamTrack, domainHue, fitText } from './tracks/pfam-track.js';
+export type { PfamTrackConfig, PfamTrackData } from './tracks/pfam-track.js';
