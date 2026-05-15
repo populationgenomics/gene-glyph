@@ -297,8 +297,8 @@ function emitDomain(args: EmitArgs): void {
         <Fragment key={`pfam-${featureId}-link-${a.exonIdx}-${b.exonIdx}`}>
           <line
             key={`pfam-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-            x1={a.xEnd}
-            x2={b.xStart}
+            x1={0}
+            x2={b.xStart - a.xEnd}
             y1={midY}
             y2={midY}
             stroke={fill}

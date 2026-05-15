@@ -35,7 +35,15 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
       <g
         key={`inter-exon-${exonIdxA}-${exonIdxB}`}
         className="vv-intron-decoration"
-        style={{ opacity: 'var(--vv-intron-scale)' }}
+        style={{
+          // `--vv-intron-x-N` is the right edge of exon A in screen-x; the
+          // translate keeps the inter-exon `<g>` in lock-step with the exon
+          // groups (which use `--vv-exon-x-N`) so its CSS-transitioned
+          // transform animates alongside them instead of snapping. Children
+          // render in local-x relative to the right edge of exon A.
+          transform: `translateX(var(--vv-intron-x-${exonIdxA}, 0px))`,
+          opacity: 'var(--vv-intron-scale)',
+        }}
         data-vv-intron-from={exonIdxA}
         data-vv-intron-to={exonIdxB}
       >

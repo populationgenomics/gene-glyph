@@ -196,6 +196,20 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       fireEvent.keyDown(root, { key: '1' });
       expect(ref.current!.getViewportInfo().range).toEqual([1, transcript.cdsLength]);
     });
+
+    it('keyboard pan/zoom snaps (vv-no-transition) so per-feature local coords stay in sync', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      const root = container.querySelector<HTMLElement>('[data-testid="gene-glyph"]')!;
+      fireEvent.keyDown(root, { key: 'ArrowRight' });
+      // No-transition is the gesture-level "skip CSS easing" flag; if we
+      // ever go back to animating keyboard moves we'll need to teach the
+      // exon-group children to animate their local coords too.
+      expect(root.classList.contains('vv-no-transition')).toBe(true);
+    });
   });
 
   describe('clamping', () => {

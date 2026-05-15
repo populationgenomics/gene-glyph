@@ -34,12 +34,17 @@ describe('createSvgPainter', () => {
     expect(group!.querySelector('rect')).not.toBeNull();
   });
 
-  it('placeInInterExon wraps content in vv-intron-decoration with opacity tied to --vv-intron-scale', () => {
+  it('placeInInterExon wraps content in vv-intron-decoration with opacity and translate tied to CSS variables', () => {
     const p = createSvgPainter();
-    const { container } = renderInSvg(p.placeInInterExon(0, 1, p.drawLine({ x1: 0, y1: 0, x2: 5, y2: 0 })));
+    const { container } = renderInSvg(p.placeInInterExon(2, 3, p.drawLine({ x1: 0, y1: 0, x2: 5, y2: 0 })));
     const group = container.querySelector('g.vv-intron-decoration');
     expect(group).not.toBeNull();
-    expect((group as HTMLElement).style.opacity).toBe('var(--vv-intron-scale)');
+    const style = (group as HTMLElement).style;
+    expect(style.opacity).toBe('var(--vv-intron-scale)');
+    // The translate keeps inter-exon content moving in lock-step with the
+    // exon groups; without this, the polylines / linkers would snap to new
+    // absolute positions on each range change instead of animating.
+    expect(style.transform).toContain('translateX(var(--vv-intron-x-2');
   });
 
   it('color() returns a CSS var() expression with fallback', () => {

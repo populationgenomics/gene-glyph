@@ -111,25 +111,25 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         const aEnd = clipCdsToScreen(a.cdsEnd);
         const bStart = clipCdsToScreen(b.cdsStart);
         if (aEnd === null || bStart === null) continue;
-        if (bStart <= aEnd) continue;
-        // Reserve at least 1/3 of the gap for the chevron-peaked section so the
-        // peak always has a visible horizontal extent — at fit-gene zoom on a
-        // many-exon transcript the gap is well under 2*flankPx and the original
-        // gap/2 cap collapsed donorEnd === acceptorStart.
-        const flank = Math.min(flankPx, (bStart - aEnd) / 3);
-        const donorEnd = aEnd + flank;
-        const acceptorStart = bStart - flank;
-        const peakX = (donorEnd + acceptorStart) / 2;
+        const gapWidth = bStart - aEnd;
+        if (gapWidth <= 0) continue;
+        // The inter-exon group is translated by --vv-intron-x-{i} = aEnd, so
+        // the polyline renders in local-x [0, gapWidth] instead of absolute
+        // screen-x. Local coords let the wrapping <g>'s CSS transition slide
+        // the whole shape between range changes rather than React snapping
+        // its `points` attribute to new absolute coordinates each frame.
+        const flank = Math.min(flankPx, gapWidth / 3);
+        const donorEnd = flank;
+        const acceptorStart = gapWidth - flank;
+        const peakX = gapWidth / 2;
         const peakY = intronY - chevronLift;
         const stroke = painter.color('vv-color-intron-line', '#475569');
-        const points = `${aEnd},${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${bStart},${intronY}`;
+        const points = `0,${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${gapWidth},${intronY}`;
         intronDecorations.push(
           painter.placeInInterExon(
             i,
             i + 1,
             <Fragment key={`intron-${i}-${i + 1}`}>
-              {/* Whole chevron-peaked polyline drawn as a single path so the
-                  joins between flanks and peak stay continuous. */}
               <polyline
                 key={`intron-line-${i}`}
                 points={points}

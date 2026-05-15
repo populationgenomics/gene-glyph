@@ -284,6 +284,7 @@ export class ViewportController implements Viewport {
       const geom = this.cdsGeometry();
       for (const seg of geom.segments) segByIdx.set(seg.exonIdx, seg);
     }
+    const xEndByIdx = new Array<number>(exons.length);
     for (let i = 0; i < exons.length; i++) {
       const seg = segByIdx.get(i);
       const e = exons[i]!;
@@ -298,8 +299,16 @@ export class ViewportController implements Viewport {
         xStart = a ?? 0;
         xEnd = b ?? xStart;
       }
+      xEndByIdx[i] = xEnd;
       s.setProperty(`--vv-exon-x-${i}`, `${xStart}px`);
       s.setProperty(`--vv-exon-w-${i}`, `${Math.max(0, xEnd - xStart)}px`);
+    }
+    // Per-gap inter-exon translate. Drives `transform: translateX(...)` on
+    // each `.vv-intron-decoration` `<g>` (published by the SVG painter) so
+    // intron polylines / linkers share the same CSS transition path as the
+    // exon groups and don't jump when the range changes.
+    for (let i = 0; i < exons.length - 1; i++) {
+      s.setProperty(`--vv-intron-x-${i}`, `${xEndByIdx[i] ?? 0}px`);
     }
   }
 
