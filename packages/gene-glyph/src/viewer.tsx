@@ -22,6 +22,7 @@ import { createSvgPainter } from './painter/svg-painter.js';
 import { exonTrack } from './tracks/exon-track.js';
 import {
   isTrackGroup,
+  type InteractionMode,
   type InteractionState,
   type ProteinAnnotations,
   type Track,
@@ -29,13 +30,16 @@ import {
   type TrackRect,
   type Transcript,
   type ViewMode,
+  type ViewportChangeReason,
 } from './types.js';
 import {
+  DEFAULT_MAX_ZOOM,
   DEFAULT_TRANSITION_MS,
   ViewportController,
   type TransitionOptions,
   type TransitionTarget,
 } from './viewport.js';
+import { useViewportInteractions } from './use-viewport-interactions.js';
 
 export interface GeneGlyphProps {
   transcript: Transcript;
@@ -61,6 +65,28 @@ export interface GeneGlyphProps {
   onHover?: (featureId: string | null, trackId: string) => void;
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
+  /** Default-binding profile. `'standard'` enables drag/wheel/pinch/keyboard;
+   *  `'embed'` skips Cmd/Ctrl + wheel-zoom so the viewer doesn't fight a
+   *  scrolling host page; `'fullscreen'` is reserved for later expansion.
+   *  Default `'standard'`. */
+  interactionMode?: InteractionMode;
+  /** Controlled visible ruler range (CDS bp in CDS modes, aa in protein).
+   *  When supplied, the viewer renders against this range and fires
+   *  `onViewportChange` for gestures without mutating local state. */
+  viewportRange?: readonly [number, number];
+  /** Initial range for uncontrolled use. Default = natural fit-gene range. */
+  defaultViewportRange?: readonly [number, number];
+  /** Fires after every committed range mutation (gesture or imperative). The
+   *  `reason` tag lets hosts distinguish user gestures from programmatic
+   *  changes. */
+  onViewportChange?: (
+    range: readonly [number, number],
+    reason: ViewportChangeReason,
+  ) => void;
+  /** Most zoomed-out state. Defaults to fit-gene + ~5% padding. */
+  minZoom?: number;
+  /** Most zoomed-in state. Defaults to `DEFAULT_MAX_ZOOM` (200×). */
+  maxZoom?: number;
   className?: string;
   /** Compound-component slots: `GeneGlyph.Header`, `GeneGlyph.Footer`,
    *  `GeneGlyph.LeftGutter`, `GeneGlyph.RightGutter`. Slots are rendered as
@@ -231,19 +257,36 @@ function GeneGlyphInner(
     selectedFeatureIds,
     onHover,
     onFeatureClick,
+    interactionMode = 'standard',
+    viewportRange,
+    defaultViewportRange,
+    onViewportChange,
+    minZoom,
+    maxZoom = DEFAULT_MAX_ZOOM,
     className,
     children,
   }: GeneGlyphProps,
   ref: Ref<GeneGlyphRef>,
 ) {
+  const controlled = viewportRange !== undefined;
   const trackList = useMemo<TrackOrGroup[]>(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
     [tracks],
   );
   const flatTracks = useMemo(() => flattenTracks(trackList), [trackList]);
   const mapper = useMemo(() => createCoordinateMapper(transcript), [transcript]);
+  const initialRange = viewportRange ?? defaultViewportRange;
   const viewport = useMemo(
-    () => new ViewportController({ mapper, width, mode }),
+    () =>
+      new ViewportController({
+        mapper,
+        width,
+        mode,
+        range: initialRange,
+      }),
+    // `initialRange` only seeds construction; later changes reach the viewport
+    // via the prop-sync effects below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [mapper, width, mode],
   );
   const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
@@ -263,7 +306,31 @@ function GeneGlyphInner(
   // and `.vv-intron-decoration` per design §8.
   const [tick, setTick] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
+  const [noTransition, setNoTransition] = useState(false);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const bumpTick = useCallback(() => setTick((t) => t + 1), []);
+
+  // Sync the controlled `viewportRange` prop into the viewport during render
+  // so the same render pass — including the layout `useMemo` below — sees the
+  // new range. The viewport is a mutable external store (CSS-variable
+  // publisher); React doesn't observe its state directly, which is why the
+  // layout memo also lists `viewportRange` in its dep array further down.
+  useMemo(() => {
+    if (!controlled || !viewportRange) return;
+    const [a, b] = viewport.range;
+    if (a === viewportRange[0] && b === viewportRange[1]) return;
+    viewport.setRange(viewportRange);
+  }, [controlled, viewportRange, viewport]);
+
+  const cancelTransition = useCallback(() => {
+    if (transitionTimerRef.current !== null) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+    if (transitioning) setTransitioning(false);
+  }, [transitioning]);
 
   useEffect(
     () => () => {
@@ -305,9 +372,11 @@ function GeneGlyphInner(
         data: trackData,
         totalHeightBudget: trackHeightBudget,
       }),
-    // `tick` forces recompute after imperative viewport mutations.
+    // `tick` forces recompute after gestures / imperative viewport mutations;
+    // `viewportRange` lets controlled hosts drive layout without going via
+    // tick (the prop-sync useMemo above writes it into `viewport` first).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trackList, viewport, trackData, trackHeightBudget, tick],
+    [trackList, viewport, trackData, trackHeightBudget, tick, viewportRange],
   );
 
   const totalHeight = Math.max(1, layout.totalHeight);
@@ -339,17 +408,38 @@ function GeneGlyphInner(
   const beginTransition = useCallback(
     (target: TransitionTarget, options?: TransitionOptions) => {
       const duration = options?.duration ?? DEFAULT_TRANSITION_MS;
+      setNoTransition(false);
       viewport.transitionTo(target, options);
-      setTick((t) => t + 1);
+      bumpTick();
       setTransitioning(true);
       if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = setTimeout(() => {
         setTransitioning(false);
         transitionTimerRef.current = null;
       }, duration + 16);
+      if (target.range) onViewportChange?.([target.range[0], target.range[1]], 'imperative');
     },
-    [viewport],
+    [viewport, onViewportChange, bumpTick],
   );
+
+  const interactions = useViewportInteractions({
+    viewport,
+    svgRef,
+    containerRef,
+    mode: interactionMode,
+    minZoom,
+    maxZoom,
+    controlled,
+    bumpTick,
+    onChange: useCallback(
+      (range, reason) => {
+        onViewportChange?.(range, reason);
+      },
+      [onViewportChange],
+    ),
+    cancelTransition,
+    setNoTransition,
+  });
 
   const fitTo = useCallback(
     (target: FitTarget) => {
@@ -531,6 +621,7 @@ function GeneGlyphInner(
         height={totalHeight}
         role="img"
         aria-label={aria}
+        onPointerDown={interactions.onPointerDown}
       >
         <title>{aria}</title>
         {flatTracks.map((t) => {
@@ -571,11 +662,20 @@ function GeneGlyphInner(
 
   return (
     <div
-      className={['gene-glyph', transitioning && 'vv-transitioning', className]
+      ref={containerRef}
+      className={[
+        'gene-glyph',
+        transitioning && 'vv-transitioning',
+        noTransition && 'vv-no-transition',
+        className,
+      ]
         .filter(Boolean)
         .join(' ')}
       data-testid="gene-glyph"
       data-vv-transitioning={transitioning ? '' : undefined}
+      data-vv-interaction-mode={interactionMode}
+      tabIndex={0}
+      onKeyDown={interactions.onKeyDown}
     >
       {headerNode}
       {figureRow}

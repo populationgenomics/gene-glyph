@@ -28,6 +28,8 @@ export type {
   // Viewport
   CoordSystem,
   ViewMode,
+  InteractionMode,
+  ViewportChangeReason,
   CdsPosition,
   GenomicPosition,
   RangeProjection,
@@ -63,7 +65,12 @@ export type {
 export { isTrackGroup, isDataSource } from './types.js';
 
 export { createCoordinateMapper } from './coordinate-mapper.js';
-export { ViewportController, DEFAULT_TRANSITION_MS } from './viewport.js';
+export {
+  ViewportController,
+  DEFAULT_TRANSITION_MS,
+  DEFAULT_MAX_ZOOM,
+  VIEWPORT_PAN_PADDING,
+} from './viewport.js';
 export type {
   ViewportControllerInit,
   TransitionTarget,

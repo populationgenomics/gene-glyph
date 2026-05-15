@@ -185,3 +185,46 @@ describe('ViewportController — CSS variable publication', () => {
     expect(el.style.getPropertyValue('--vv-intron-scale')).toBe('0.5');
   });
 });
+
+describe('ViewportController — clampRange + paddedBounds', () => {
+  it('paddedBounds() extends the natural range by 5% on each side', () => {
+    const vp = fitGene('cds-spliced');
+    const [pLo, pHi] = vp.paddedBounds();
+    // Natural [1, 360]; len = 359; pad = 17.95.
+    expect(pLo).toBeCloseTo(1 - 359 * 0.05, 5);
+    expect(pHi).toBeCloseTo(360 + 359 * 0.05, 5);
+  });
+
+  it('clampRange snaps a too-wide range to the padded bounds', () => {
+    const vp = fitGene('cds-spliced');
+    const clamped = vp.clampRange([-1000, 1000], { maxZoom: 100 });
+    const [pLo, pHi] = vp.paddedBounds();
+    expect(clamped[0]).toBeCloseTo(pLo, 5);
+    expect(clamped[1]).toBeCloseTo(pHi, 5);
+  });
+
+  it('clampRange enforces minVisibleLen so we cannot zoom past maxZoom', () => {
+    const vp = fitGene('cds-spliced');
+    const clamped = vp.clampRange([180, 180.0001], { maxZoom: 10 });
+    const naturalLen = 360 - 1; // 359
+    const minLen = naturalLen / 10;
+    expect(clamped[1] - clamped[0]).toBeCloseTo(minLen, 3);
+  });
+
+  it('clampRange slides an off-edge range back inside the padded bounds', () => {
+    const vp = fitGene('cds-spliced');
+    const clamped = vp.clampRange([-100, -50], { maxZoom: 100 });
+    const [pLo] = vp.paddedBounds();
+    expect(clamped[0]).toBeCloseTo(pLo, 5);
+    expect(clamped[1] - clamped[0]).toBeCloseTo(50, 5);
+  });
+
+  it('rulerAtScreen returns aa in protein mode and CDS bp in CDS modes', () => {
+    const cds = fitGene('cds-spliced');
+    expect(cds.rulerAtScreen(0)).toBeCloseTo(1, 5);
+    expect(cds.rulerAtScreen(720)).toBeCloseTo(360, 5);
+    const protein = fitGene('protein');
+    expect(protein.rulerAtScreen(0)).toBeCloseTo(1, 5);
+    expect(protein.rulerAtScreen(720)).toBeCloseTo(120, 5);
+  });
+});

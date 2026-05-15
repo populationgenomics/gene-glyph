@@ -153,6 +153,22 @@
   flex: 1 1 auto;
   min-width: 0;
   background: var(--vv-color-bg-surface);
+  cursor: grab;
+  touch-action: pan-y; /* allow vertical page scroll, capture horizontal */
+}
+
+.gene-glyph.vv-dragging .vv-figure,
+.gene-glyph.vv-dragging .vv-figure * {
+  cursor: grabbing;
+}
+
+.gene-glyph:focus-visible {
+  outline: 2px solid var(--vv-color-focus, #2563eb);
+  outline-offset: 2px;
+}
+
+.gene-glyph:focus {
+  outline: none;
 }
 
 /* Per-exon translation is published by ViewportController as inline style on

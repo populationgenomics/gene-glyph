@@ -31,6 +31,17 @@ export interface TransitionOptions {
  *  Matches the CSS `transition` on `.vv-exon-group` (350ms). */
 export const DEFAULT_TRANSITION_MS = 350;
 
+/** Fraction of the natural range used as soft padding for pan clamping
+ *  (design §7: "pan clamps hard to gene bounds + ~5% padding"). The same
+ *  padding governs the most zoomed-out state — `minZoom` defaults to the
+ *  zoom that exactly fits `naturalRange + 2 × this fraction × naturalRange`. */
+export const VIEWPORT_PAN_PADDING = 0.05;
+
+/** Default upper zoom bound. ~200× the natural range covers "1 aa per 20px"
+ *  on typical-width figures without over-tuning per mode; hosts can override
+ *  via the `maxZoom` prop on `<GeneGlyph>`. */
+export const DEFAULT_MAX_ZOOM = 200;
+
 interface TransitionSchedule {
   fromRange: [number, number];
   toRange: [number, number];
@@ -135,6 +146,70 @@ export class ViewportController implements Viewport {
    *  in protein mode). */
   naturalRange(): readonly [number, number] {
     return defaultRangeFor(this._mode, this.mapper);
+  }
+
+  /** Outer bound that pan + zoom-out are clamped to: the natural range plus
+   *  `VIEWPORT_PAN_PADDING` on each side. The zoomed-all-the-way-out state
+   *  shows this padded box; you cannot pan further than its edges. */
+  paddedBounds(): readonly [number, number] {
+    const [lo, hi] = this.naturalRange();
+    const pad = (hi - lo) * VIEWPORT_PAN_PADDING;
+    return [lo - pad, hi + pad];
+  }
+
+  /** Smallest visible-range length permitted by `maxZoom` (the most zoomed-in
+   *  state). At zoom z, visible length = naturalLen / z, so minLen = naturalLen
+   *  / maxZoom. */
+  minVisibleLen(maxZoom: number): number {
+    const [lo, hi] = this.naturalRange();
+    const natural = hi - lo;
+    if (!Number.isFinite(maxZoom) || maxZoom <= 0) return Math.max(1, natural);
+    return Math.max(1, natural / maxZoom);
+  }
+
+  /** Largest visible-range length permitted by `minZoom`. Defaults to the
+   *  padded bounds' length when `minZoom <= naturalLen / paddedLen`, which is
+   *  what the design calls "min zoom = fit-gene + 5% padding". */
+  maxVisibleLen(minZoom: number | undefined): number {
+    const [lo, hi] = this.paddedBounds();
+    const paddedLen = hi - lo;
+    if (minZoom === undefined || !Number.isFinite(minZoom) || minZoom <= 0) {
+      return paddedLen;
+    }
+    const naturalLen = this.naturalRange()[1] - this.naturalRange()[0];
+    return Math.min(paddedLen, naturalLen / minZoom);
+  }
+
+  /** Pure clamp: tighten the given range so its length is in
+   *  `[minVisibleLen, maxVisibleLen]` and its endpoints sit within
+   *  `paddedBounds()`. Preserves the centre when possible. */
+  clampRange(
+    range: readonly [number, number],
+    opts: { minZoom?: number; maxZoom: number },
+  ): [number, number] {
+    const [pLo, pHi] = this.paddedBounds();
+    const minLen = this.minVisibleLen(opts.maxZoom);
+    const maxLen = this.maxVisibleLen(opts.minZoom);
+
+    let [lo, hi] = range[0] <= range[1] ? [range[0], range[1]] : [range[1], range[0]];
+    const len = Math.max(minLen, Math.min(maxLen, hi - lo));
+    const centre = (lo + hi) / 2;
+    lo = centre - len / 2;
+    hi = centre + len / 2;
+
+    if (len >= pHi - pLo) {
+      // Range can't fit inside the padded bounds — snap to the padded bounds.
+      return [pLo, pHi];
+    }
+    if (lo < pLo) {
+      hi += pLo - lo;
+      lo = pLo;
+    }
+    if (hi > pHi) {
+      lo -= hi - pHi;
+      hi = pHi;
+    }
+    return [lo, hi];
   }
 
   /** Mutates state to the target and records a transition schedule so that
@@ -311,6 +386,18 @@ export class ViewportController implements Viewport {
     const cds = this.screenToCds(x);
     if (!cds) return null;
     return this.mapper.cdsToGenomic(cds.cPos, cds.offset);
+  }
+
+  /** Ruler coordinate (CDS bp in CDS modes, aa in protein mode) at the given
+   *  screen x. Used as the anchor for cursor-anchored zoom. In
+   *  `cds-with-introns` mode we go through `screenToCds` (which understands
+   *  the piecewise geometry); in linear modes we use the simple ratio. */
+  rulerAtScreen(x: number): number | null {
+    if (this.usesPiecewiseGeometry()) {
+      const cds = this.screenToCds(x);
+      return cds ? cds.cPos : null;
+    }
+    return this.screenToRuler(x);
   }
 
   private screenToRuler(x: number): number | null {

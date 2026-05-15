@@ -114,6 +114,24 @@ export function isDataSource<TQuery, TResult>(
 
 export type ViewMode = 'cds-with-introns' | 'cds-spliced' | 'protein';
 
+/** Default-binding profile applied to user gestures on the figure. `standard`
+ *  enables drag-pan, wheel-pan, Cmd/Ctrl+wheel-zoom, pinch-zoom, and keyboard;
+ *  `embed` is the same set minus wheel-zoom (so the viewer doesn't fight a
+ *  scrolling host page); `fullscreen` is the same as `standard` for now and
+ *  exists as a hook for later (e.g. modal viewers that opt into wheel-zoom
+ *  without modifiers). */
+export type InteractionMode = 'standard' | 'embed' | 'fullscreen';
+
+/** Tag passed to `onViewportChange` so hosts can distinguish user gestures
+ *  from programmatic updates (e.g. for telemetry or undo stacks). */
+export type ViewportChangeReason =
+  | 'drag'
+  | 'wheel'
+  | 'wheel-zoom'
+  | 'pinch'
+  | 'keyboard'
+  | 'imperative';
+
 export type CoordSystem = 'genomic' | 'cds' | 'protein';
 
 export interface CdsPosition {
