@@ -60,14 +60,29 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       const exonY = midY - exonHalf;
       const exonH = exonHalf * 2;
       const intronY = midY;
+      const [rangeLo, rangeHi] = viewport.range;
 
       const exonRects: ReactNode[] = [];
       const intronDecorations: ReactNode[] = [];
 
+      // `clipCdsToScreen` projects a CDS position that may sit outside the
+      // active range. Without this, partially-visible exons drop out entirely
+      // (their `cdsStart` < `rangeLo` returns `null`) and any intron decoration
+      // between two visible neighbours appears to trail into empty space at
+      // the figure edge. Clipping to the range edge keeps a sliver of exon
+      // visible so the intron always lands on something solid.
+      const clipCdsToScreen = (cPos: number): number | null => {
+        const clipped = Math.max(rangeLo, Math.min(rangeHi, cPos));
+        return viewport.cdsToScreen(clipped, 0);
+      };
+
       for (let i = 0; i < exons.length; i++) {
         const e = exons[i]!;
-        const xStart = viewport.cdsToScreen(e.cdsStart, 0);
-        const xEnd = viewport.cdsToScreen(e.cdsEnd, 0);
+        const visibleLo = Math.max(rangeLo, e.cdsStart);
+        const visibleHi = Math.min(rangeHi, e.cdsEnd);
+        if (visibleHi < visibleLo) continue;
+        const xStart = viewport.cdsToScreen(visibleLo, 0);
+        const xEnd = viewport.cdsToScreen(visibleHi, 0);
         if (xStart === null || xEnd === null) continue;
         const w = Math.max(1, xEnd - xStart);
         exonRects.push(
@@ -93,8 +108,8 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       for (let i = 0; i < exons.length - 1; i++) {
         const a = exons[i]!;
         const b = exons[i + 1]!;
-        const aEnd = viewport.cdsToScreen(a.cdsEnd, 0);
-        const bStart = viewport.cdsToScreen(b.cdsStart, 0);
+        const aEnd = clipCdsToScreen(a.cdsEnd);
+        const bStart = clipCdsToScreen(b.cdsStart);
         if (aEnd === null || bStart === null) continue;
         if (bStart <= aEnd) continue;
         // Reserve at least 1/3 of the gap for the chevron-peaked section so the

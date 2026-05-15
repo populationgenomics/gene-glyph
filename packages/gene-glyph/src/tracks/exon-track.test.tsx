@@ -65,6 +65,42 @@ describe('exonTrack', () => {
     expect(container.querySelectorAll('.vv-exon-rect')).toHaveLength(3);
   });
 
+  it('renders a clipped sliver of partially-visible exons so intron decorations always anchor on something', () => {
+    const { mapper, painter, interaction } = setup();
+    // Range starts mid-exon-1 (50..250); exon 1 (1..100) is partially visible
+    // and exon 3 (201..300) is also partially visible. The bug this exercises:
+    // before clipping, those exons rendered no rect at all and the intron
+    // chevrons trailed into empty space at the figure edges.
+    const viewport = new ViewportController({
+      mapper,
+      width: 720,
+      mode: 'cds-with-introns',
+      range: [50, 250],
+    });
+    const t = exonTrack();
+
+    function Probe() {
+      return (
+        <svg>
+          {t.render({
+            data: { ready: true },
+            rect: { yTop: 0, yBottom: 24 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+    }
+
+    const { container } = render(<Probe />);
+    // Three exons visible (two clipped, one full); two intron decorations
+    // because all three are placed and the chevrons sit between them.
+    expect(container.querySelectorAll('.vv-exon-rect')).toHaveLength(3);
+    expect(container.querySelectorAll('.vv-intron-decoration')).toHaveLength(2);
+  });
+
   it('places exon-group transforms via per-exon CSS variables', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = exonTrack();
