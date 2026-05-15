@@ -62,6 +62,63 @@ export const TP53_PROTEIN: ProteinAnnotations = {
       description: 'P53 tetramerisation motif',
       entryType: 'domain',
     },
+    // InterPro entries — coarse-grained surfaces that lane-pack alongside the
+    // finer Pfam annotations above. Stretched a bit beyond Pfam to exercise
+    // the multi-lane case in the family lane (TADs overlap).
+    {
+      aaStart: 1,
+      aaEnd: 60,
+      source: 'InterPro',
+      sourceId: 'IPR011615',
+      shortName: 'p53 TAD',
+      description: 'p53 transactivation motif',
+      entryType: 'family',
+    },
+    {
+      aaStart: 40,
+      aaEnd: 95,
+      source: 'InterPro',
+      sourceId: 'IPR036674',
+      shortName: 'p53 TAD2',
+      description: 'p53 transactivation motif 2',
+      entryType: 'family',
+    },
+    {
+      aaStart: 95,
+      aaEnd: 288,
+      source: 'InterPro',
+      sourceId: 'IPR008967',
+      shortName: 'p53 DNA-binding sf',
+      description: 'p53-like transcription factor, DNA-binding superfamily',
+      entryType: 'homologous_superfamily',
+    },
+    {
+      aaStart: 102,
+      aaEnd: 292,
+      source: 'InterPro',
+      sourceId: 'IPR011619',
+      shortName: 'p53 DBD',
+      description: 'p53, DNA-binding domain',
+      entryType: 'domain',
+    },
+    {
+      aaStart: 319,
+      aaEnd: 360,
+      source: 'InterPro',
+      sourceId: 'IPR010991',
+      shortName: 'p53 tetramer',
+      description: 'p53, tetramerisation domain',
+      entryType: 'domain',
+    },
+    {
+      aaStart: 361,
+      aaEnd: 393,
+      source: 'InterPro',
+      sourceId: 'IPR002117',
+      shortName: 'p53 C-term',
+      description: 'p53, regulatory C-terminal',
+      entryType: 'repeat',
+    },
   ],
 };
 

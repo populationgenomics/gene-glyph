@@ -1,5 +1,5 @@
 export { GeneGlyph } from './viewer.js';
-export type { GeneGlyphProps } from './viewer.js';
+export type { GeneGlyphProps, GutterItem, LeftGutterProps } from './viewer.js';
 
 export type {
   // Domain
@@ -71,3 +71,10 @@ export type {
 } from './tracks/variant-track.js';
 export { pfamTrack, domainHue, fitText } from './tracks/pfam-track.js';
 export type { PfamTrackConfig, PfamTrackData } from './tracks/pfam-track.js';
+export { interProTrack, interProEntryTypeLabel } from './tracks/interpro-track.js';
+export type {
+  InterProTrackConfig,
+  InterProSubTrackData,
+} from './tracks/interpro-track.js';
+export { packLanes } from './pack-lanes.js';
+export type { LaneInput, PackedItem, PackResult } from './pack-lanes.js';

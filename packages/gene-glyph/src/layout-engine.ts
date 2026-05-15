@@ -11,6 +11,9 @@ import {
 export interface LayoutItem {
   kind: 'track' | 'group';
   id: string;
+  /** Group label, set when `kind === 'group'`. Surfaced via gutter slots so
+   *  hosts can render it without re-walking the input track list. */
+  label?: string;
   rect: TrackRect;
   didTruncate: boolean;
   droppedCount: number;
@@ -131,6 +134,7 @@ function layoutGroup(
     item: {
       kind: 'group',
       id: group.id,
+      label: group.label,
       rect: { yTop, yBottom: y },
       didTruncate: groupTruncated,
       droppedCount: droppedTotal,

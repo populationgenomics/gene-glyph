@@ -1,14 +1,18 @@
 import {
+  Children,
+  isValidElement,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentType,
+  type ReactElement,
   type ReactNode,
 } from 'react';
 import { createCoordinateMapper } from './coordinate-mapper.js';
-import { layoutTracks } from './layout-engine.js';
+import { layoutTracks, type LayoutItem } from './layout-engine.js';
 import { createSvgPainter } from './painter/svg-painter.js';
 import { exonTrack } from './tracks/exon-track.js';
 import {
@@ -17,6 +21,7 @@ import {
   type ProteinAnnotations,
   type Track,
   type TrackOrGroup,
+  type TrackRect,
   type Transcript,
   type ViewMode,
 } from './types.js';
@@ -47,8 +52,39 @@ export interface GeneGlyphProps {
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
   className?: string;
+  /** Compound-component slots — `GeneGlyph.LeftGutter` is the only one wired
+   *  up in Slice 6. Children that aren't recognised slot types are ignored
+   *  (header / footer / right-gutter land in Slice 7). */
   children?: ReactNode;
 }
+
+/** Item info delivered to gutter render-props, once per visible layout entry
+ *  (tracks + groups). The viewer recomputes this on every layout change so
+ *  hosts always see fresh rects. */
+export interface GutterItem {
+  kind: 'track' | 'group';
+  id: string;
+  /** Group label when `kind === 'group'`; undefined for tracks. */
+  label?: string;
+  rect: TrackRect;
+  didTruncate: boolean;
+  droppedCount: number;
+}
+
+export interface LeftGutterProps {
+  /** Pixel width reserved for the gutter to the left of the figure SVG. */
+  width: number;
+  /** Render-prop invoked once per visible track and group. Return `null` to
+   *  skip an item; the gutter rows are positioned by the viewer. */
+  children: (item: GutterItem) => ReactNode;
+}
+
+export function LeftGutter(_props: LeftGutterProps): null {
+  // Slot marker only. The viewer reads `props` directly off the element it
+  // matches against the `LeftGutter` type and renders the gutter chrome.
+  return null;
+}
+LeftGutter.displayName = 'GeneGlyph.LeftGutter';
 
 function flattenTracks(items: TrackOrGroup[]): Track[] {
   const out: Track[] = [];
@@ -70,6 +106,46 @@ function toReadonlySet(ids: ReadonlySet<string> | Iterable<string> | undefined):
 
 const EMPTY_SET: ReadonlySet<string> = new Set<string>();
 
+function findSlot<P>(
+  children: ReactNode,
+  component: ComponentType<P>,
+): ReactElement<P> | null {
+  let match: ReactElement<P> | null = null;
+  Children.forEach(children, (child) => {
+    if (match) return;
+    if (!isValidElement(child)) return;
+    if (child.type === component) match = child as ReactElement<P>;
+  });
+  return match;
+}
+
+function gutterItemsFor(items: LayoutItem[]): GutterItem[] {
+  const out: GutterItem[] = [];
+  for (const item of items) {
+    out.push({
+      kind: item.kind,
+      id: item.id,
+      label: item.label,
+      rect: item.rect,
+      didTruncate: item.didTruncate,
+      droppedCount: item.droppedCount,
+    });
+    if (item.kind === 'group' && item.children) {
+      for (const child of item.children) {
+        out.push({
+          kind: child.kind,
+          id: child.id,
+          label: child.label,
+          rect: child.rect,
+          didTruncate: child.didTruncate,
+          droppedCount: child.droppedCount,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 export function GeneGlyph({
   transcript,
   protein,
@@ -82,6 +158,7 @@ export function GeneGlyph({
   onHover,
   onFeatureClick,
   className,
+  children,
 }: GeneGlyphProps) {
   const trackList = useMemo<TrackOrGroup[]>(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
@@ -194,9 +271,35 @@ export function GeneGlyph({
     if (node) belowNodes.push(<div key={t.id}>{node}</div>);
   }
 
-  return (
-    <div className={['gene-glyph', className].filter(Boolean).join(' ')} data-testid="gene-glyph">
-      <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+  const leftGutter = findSlot<LeftGutterProps>(children, LeftGutter);
+  const gutterItems = useMemo(() => gutterItemsFor(layout.items), [layout.items]);
+
+  const figureRow = (
+    <div className="vv-figure-row">
+      {leftGutter ? (
+        <div
+          className="vv-left-gutter"
+          data-testid="gene-glyph-left-gutter"
+          style={{ width: leftGutter.props.width, height: totalHeight }}
+        >
+          {gutterItems.map((item) => {
+            const node = leftGutter.props.children(item);
+            if (node === null || node === undefined || node === false) return null;
+            const h = Math.max(0, item.rect.yBottom - item.rect.yTop);
+            return (
+              <div
+                key={`${item.kind}-${item.id}`}
+                className={`vv-gutter-item vv-gutter-${item.kind}`}
+                data-vv-item-id={item.id}
+                data-vv-item-kind={item.kind}
+                style={{ top: item.rect.yTop, height: h }}
+              >
+                {node}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <svg
         ref={svgRef}
         className="vv-figure"
@@ -218,6 +321,13 @@ export function GeneGlyph({
           );
         })}
       </svg>
+    </div>
+  );
+
+  return (
+    <div className={['gene-glyph', className].filter(Boolean).join(' ')} data-testid="gene-glyph">
+      <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+      {figureRow}
       {belowNodes.length > 0 && (
         <div className="vv-below" data-testid="gene-glyph-below">
           {belowNodes}
@@ -226,6 +336,8 @@ export function GeneGlyph({
     </div>
   );
 }
+
+GeneGlyph.LeftGutter = LeftGutter;
 
 interface HeaderProps {
   transcript: Transcript;

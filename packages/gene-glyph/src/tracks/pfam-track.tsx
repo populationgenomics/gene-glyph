@@ -47,11 +47,12 @@ interface PlacedDomain {
   xMid: number;
 }
 
-const DEFAULT_HEIGHT = 28;
-const DEFAULT_HALF = 8;
+const DEFAULT_HEIGHT = 32;
+const DEFAULT_HALF = 7;
 const DEFAULT_LABEL_GUTTER = 4;
 const DEFAULT_LABEL_FONT = 11;
-const DEFAULT_LABEL_OFFSET = 4;
+const DEFAULT_LABEL_OFFSET = 3;
+const DEFAULT_BOTTOM_PAD = 2;
 const CHAR_W_PER_PT = 0.58;
 
 function defaultPfamFilter(d: ProteinDomain): boolean {
@@ -243,9 +244,14 @@ function emitDomain(args: EmitArgs): void {
   const fullName = domain.description || domain.shortName;
   const tooltip = `${fullName} (aa ${domain.aaStart}–${domain.aaEnd})`;
 
-  const midY = (rect.yTop + rect.yBottom) / 2;
-  const rectY = midY - rectHalf;
+  // Anchor the rect to the bottom of the track so the label above it can
+  // sit fully inside this track's vertical slot, clear of the exon ribbon
+  // overhead. Earlier midY-centred layout meant the label overhung the
+  // track into the exon track above; bottom-anchored layout reserves a
+  // dedicated headroom strip equal to the font size + offset.
   const rectH = rectHalf * 2;
+  const rectY = rect.yBottom - DEFAULT_BOTTOM_PAD - rectH;
+  const midY = rectY + rectHalf;
   const exons = mapper.transcript.exons;
 
   for (const seg of placed.segments) {

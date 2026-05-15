@@ -92,8 +92,37 @@
   color: var(--vv-color-text-tertiary);
 }
 
+.gene-glyph .vv-figure-row {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.gene-glyph .vv-left-gutter {
+  position: relative;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--vv-color-text-secondary);
+}
+
+.gene-glyph .vv-gutter-item {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+
+.gene-glyph .vv-gutter-group {
+  font-style: italic;
+}
+
 .gene-glyph .vv-figure {
   display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   background: var(--vv-color-bg-surface);
 }
 
@@ -221,6 +250,23 @@
 }
 
 .gene-glyph .vv-pfam-label {
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* InterPro track. Same structural pattern as Pfam (per-exon segments + linker
+ * + centred label), but lane-packed so overlapping IPR entries of the same
+ * entry-type stack into rows without crashing. */
+.gene-glyph .vv-interpro-rect {
+  pointer-events: visiblePainted;
+}
+
+.gene-glyph .vv-interpro-linker {
+  pointer-events: none;
+}
+
+.gene-glyph .vv-interpro-label {
   font-family: inherit;
   pointer-events: none;
   user-select: none;
