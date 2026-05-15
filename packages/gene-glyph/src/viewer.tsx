@@ -52,9 +52,11 @@ export interface GeneGlyphProps {
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
   className?: string;
-  /** Compound-component slots — `GeneGlyph.LeftGutter` is the only one wired
-   *  up in Slice 6. Children that aren't recognised slot types are ignored
-   *  (header / footer / right-gutter land in Slice 7). */
+  /** Compound-component slots: `GeneGlyph.Header`, `GeneGlyph.Footer`,
+   *  `GeneGlyph.LeftGutter`, `GeneGlyph.RightGutter`. Slots are rendered as
+   *  React DOM siblings of the figure SVG (header/footer above/below; gutters
+   *  flanking it left/right) so they're structurally excluded from any future
+   *  `exportSVG()`. Children that don't match a slot type are ignored. */
   children?: ReactNode;
 }
 
@@ -85,6 +87,42 @@ export function LeftGutter(_props: LeftGutterProps): null {
   return null;
 }
 LeftGutter.displayName = 'GeneGlyph.LeftGutter';
+
+export interface RightGutterProps {
+  /** Pixel width reserved for the gutter to the right of the figure SVG. */
+  width: number;
+  /** Render-prop invoked once per visible track and group. Return `null` to
+   *  skip an item; the gutter rows are positioned by the viewer. */
+  children: (item: GutterItem) => ReactNode;
+}
+
+export function RightGutter(_props: RightGutterProps): null {
+  return null;
+}
+RightGutter.displayName = 'GeneGlyph.RightGutter';
+
+export interface HeaderProps {
+  /** Optional pixel min-height reserved for the header. Keeps the header row
+   *  stable when its content changes (e.g., dropdowns that grow). */
+  height?: number;
+  children?: ReactNode;
+}
+
+export function Header(_props: HeaderProps): null {
+  return null;
+}
+Header.displayName = 'GeneGlyph.Header';
+
+export interface FooterProps {
+  /** Optional pixel min-height reserved for the footer. */
+  height?: number;
+  children?: ReactNode;
+}
+
+export function Footer(_props: FooterProps): null {
+  return null;
+}
+Footer.displayName = 'GeneGlyph.Footer';
 
 function flattenTracks(items: TrackOrGroup[]): Track[] {
   const out: Track[] = [];
@@ -272,34 +310,43 @@ export function GeneGlyph({
   }
 
   const leftGutter = findSlot<LeftGutterProps>(children, LeftGutter);
+  const rightGutter = findSlot<RightGutterProps>(children, RightGutter);
+  const headerSlot = findSlot<HeaderProps>(children, Header);
+  const footerSlot = findSlot<FooterProps>(children, Footer);
   const gutterItems = useMemo(() => gutterItemsFor(layout.items), [layout.items]);
+
+  const renderGutter = (
+    side: 'left' | 'right',
+    gutterWidth: number,
+    renderItem: (item: GutterItem) => ReactNode,
+  ) => (
+    <div
+      className={`vv-${side}-gutter`}
+      data-testid={`gene-glyph-${side}-gutter`}
+      style={{ width: gutterWidth, height: totalHeight }}
+    >
+      {gutterItems.map((item) => {
+        const node = renderItem(item);
+        if (node === null || node === undefined || node === false) return null;
+        const h = Math.max(0, item.rect.yBottom - item.rect.yTop);
+        return (
+          <div
+            key={`${item.kind}-${item.id}`}
+            className={`vv-gutter-item vv-gutter-${item.kind}`}
+            data-vv-item-id={item.id}
+            data-vv-item-kind={item.kind}
+            style={{ top: item.rect.yTop, height: h }}
+          >
+            {node}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const figureRow = (
     <div className="vv-figure-row">
-      {leftGutter ? (
-        <div
-          className="vv-left-gutter"
-          data-testid="gene-glyph-left-gutter"
-          style={{ width: leftGutter.props.width, height: totalHeight }}
-        >
-          {gutterItems.map((item) => {
-            const node = leftGutter.props.children(item);
-            if (node === null || node === undefined || node === false) return null;
-            const h = Math.max(0, item.rect.yBottom - item.rect.yTop);
-            return (
-              <div
-                key={`${item.kind}-${item.id}`}
-                className={`vv-gutter-item vv-gutter-${item.kind}`}
-                data-vv-item-id={item.id}
-                data-vv-item-kind={item.kind}
-                style={{ top: item.rect.yTop, height: h }}
-              >
-                {node}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {leftGutter ? renderGutter('left', leftGutter.props.width, leftGutter.props.children) : null}
       <svg
         ref={svgRef}
         className="vv-figure"
@@ -321,30 +368,57 @@ export function GeneGlyph({
           );
         })}
       </svg>
+      {rightGutter ? renderGutter('right', rightGutter.props.width, rightGutter.props.children) : null}
     </div>
   );
 
+  const headerNode = headerSlot ? (
+    <div
+      className="vv-header-slot"
+      data-testid="gene-glyph-header-slot"
+      style={headerSlot.props.height ? { minHeight: headerSlot.props.height } : undefined}
+    >
+      {headerSlot.props.children}
+    </div>
+  ) : (
+    <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+  );
+
+  const footerNode = footerSlot ? (
+    <div
+      className="vv-footer-slot"
+      data-testid="gene-glyph-footer-slot"
+      style={footerSlot.props.height ? { minHeight: footerSlot.props.height } : undefined}
+    >
+      {footerSlot.props.children}
+    </div>
+  ) : null;
+
   return (
     <div className={['gene-glyph', className].filter(Boolean).join(' ')} data-testid="gene-glyph">
-      <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+      {headerNode}
       {figureRow}
       {belowNodes.length > 0 && (
         <div className="vv-below" data-testid="gene-glyph-below">
           {belowNodes}
         </div>
       )}
+      {footerNode}
     </div>
   );
 }
 
 GeneGlyph.LeftGutter = LeftGutter;
+GeneGlyph.RightGutter = RightGutter;
+GeneGlyph.Header = Header;
+GeneGlyph.Footer = Footer;
 
-interface HeaderProps {
+interface DefaultHeaderProps {
   transcript: Transcript;
   protein: ProteinAnnotations | null;
 }
 
-function GeneGlyphHeader({ transcript, protein }: HeaderProps) {
+function GeneGlyphHeader({ transcript, protein }: DefaultHeaderProps) {
   const cdsLen = Math.max(1, transcript.cdsLength);
   return (
     <div className="vv-header" data-testid="gene-glyph-header">

@@ -1,5 +1,12 @@
 export { GeneGlyph } from './viewer.js';
-export type { GeneGlyphProps, GutterItem, LeftGutterProps } from './viewer.js';
+export type {
+  GeneGlyphProps,
+  GutterItem,
+  LeftGutterProps,
+  RightGutterProps,
+  HeaderProps,
+  FooterProps,
+} from './viewer.js';
 
 export type {
   // Domain

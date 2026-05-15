@@ -98,9 +98,30 @@
   width: 100%;
 }
 
-.gene-glyph .vv-left-gutter {
+.gene-glyph .vv-left-gutter,
+.gene-glyph .vv-right-gutter {
   position: relative;
   flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--vv-color-text-secondary);
+}
+
+.gene-glyph .vv-right-gutter {
+  text-align: right;
+}
+
+.gene-glyph .vv-header-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.gene-glyph .vv-footer-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
   font-size: 0.78rem;
   color: var(--vv-color-text-secondary);
 }
@@ -111,8 +132,16 @@
   right: 0;
   display: flex;
   align-items: center;
-  padding-right: 8px;
   box-sizing: border-box;
+}
+
+.gene-glyph .vv-left-gutter .vv-gutter-item {
+  padding-right: 8px;
+}
+
+.gene-glyph .vv-right-gutter .vv-gutter-item {
+  padding-left: 8px;
+  justify-content: flex-end;
 }
 
 .gene-glyph .vv-gutter-group {
