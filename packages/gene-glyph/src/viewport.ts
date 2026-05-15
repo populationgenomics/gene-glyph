@@ -23,6 +23,31 @@ interface CssTarget {
   style: CSSStyleDeclaration;
 }
 
+/** Preferred pixel width of one collapsed-intron gap at full visibility. */
+const PREF_GAP_PX = 24;
+const MIN_GAP_PX = 4;
+/** Cap total collapsed-intron pixels at this fraction of viewport width so
+ *  genes with many exons still leave room for in-scale exon drawing. */
+const GAP_BUDGET_FRACTION = 0.35;
+
+interface ExonScreenSegment {
+  exonIdx: number;
+  /** Visible CDS bounds of this exon, clipped to the active range. */
+  cdsLo: number;
+  cdsHi: number;
+  /** Screen x bounds of this exon. */
+  xStart: number;
+  xEnd: number;
+}
+
+interface CdsGeometry {
+  segments: ExonScreenSegment[];
+  /** Screen pixels per CDS bp inside exons. */
+  pxPerBp: number;
+  /** Width of one collapsed-intron gap in screen pixels. */
+  gapPx: number;
+}
+
 function defaultRangeFor(mode: ViewMode, mapper: CoordinateMapper): [number, number] {
   if (mode === 'protein') {
     const aaLength = Math.floor(mapper.transcript.cdsLength / 3);
@@ -112,15 +137,32 @@ export class ViewportController implements Viewport {
     s.setProperty('--vv-pan-x', '0px');
     s.setProperty('--vv-intron-scale', this._intronScale.toString());
     const exons = this.mapper.transcript.exons;
-    for (let i = 0; i < exons.length; i++) {
-      const e = exons[i]!;
-      const xStart = this.cdsToScreen(e.cdsStart, 0);
-      const xEnd = this.cdsToScreen(e.cdsEnd, 0);
-      const placedStart = xStart ?? 0;
-      const placedEnd = xEnd ?? placedStart;
-      s.setProperty(`--vv-exon-x-${i}`, `${placedStart}px`);
-      s.setProperty(`--vv-exon-w-${i}`, `${Math.max(0, placedEnd - placedStart)}px`);
+    const segByIdx = new Map<number, ExonScreenSegment>();
+    if (this.usesPiecewiseGeometry()) {
+      const geom = this.cdsGeometry();
+      for (const seg of geom.segments) segByIdx.set(seg.exonIdx, seg);
     }
+    for (let i = 0; i < exons.length; i++) {
+      const seg = segByIdx.get(i);
+      const e = exons[i]!;
+      let xStart: number;
+      let xEnd: number;
+      if (seg) {
+        xStart = seg.xStart;
+        xEnd = seg.xEnd;
+      } else {
+        const a = this.cdsToScreen(e.cdsStart, 0);
+        const b = this.cdsToScreen(e.cdsEnd, 0);
+        xStart = a ?? 0;
+        xEnd = b ?? xStart;
+      }
+      s.setProperty(`--vv-exon-x-${i}`, `${xStart}px`);
+      s.setProperty(`--vv-exon-w-${i}`, `${Math.max(0, xEnd - xStart)}px`);
+    }
+  }
+
+  private usesPiecewiseGeometry(): boolean {
+    return this._mode === 'cds-with-introns';
   }
 
   /** Zoom scalar relative to fit-gene. >1 = zoomed in. */
@@ -134,7 +176,8 @@ export class ViewportController implements Viewport {
   // ---- Point projection --------------------------------------------------
 
   private rulerOf(cPos: number): number | null {
-    // Convert a CDS position to the active ruler coordinate.
+    // Convert a CDS position to the active ruler coordinate (protein mode only;
+    // CDS modes go through the piecewise geometry instead).
     if (this._mode === 'protein') {
       const aa = this.mapper.cdsToProtein(cPos);
       return aa;
@@ -152,10 +195,11 @@ export class ViewportController implements Viewport {
   cdsToScreen(cPos: number, offset: number): number | null {
     if (this._mode === 'cds-spliced' && offset !== 0) return null;
     if (this._mode === 'protein' && offset !== 0) return null;
-    // cds-with-introns: intronic offsets are rendered relative to the flanking
-    // exon edge. Slice 2 returns null for offset != 0 to keep the contract
-    // honest until intron geometry is wired up in Slice 3.
     if (offset !== 0) return null;
+    if (this.usesPiecewiseGeometry()) {
+      const geom = this.cdsGeometry();
+      return cdsToScreenViaGeometry(geom, cPos);
+    }
     const ruler = this.rulerOf(cPos);
     if (ruler === null) return null;
     return this.mapToScreen(ruler);
@@ -166,7 +210,7 @@ export class ViewportController implements Viewport {
       return this.mapToScreen(aa);
     }
     const cPos = this.mapper.proteinToCds(aa);
-    return this.mapToScreen(cPos);
+    return this.cdsToScreen(cPos, 0);
   }
 
   genomicToScreen(chr: string, pos: number): number | null {
@@ -176,10 +220,14 @@ export class ViewportController implements Viewport {
   }
 
   screenToCds(x: number): CdsPosition | null {
+    if (this.usesPiecewiseGeometry()) {
+      if (x < 0 || x > this._width) return null;
+      const geom = this.cdsGeometry();
+      return screenToCdsViaGeometry(geom, x);
+    }
     const ruler = this.screenToRuler(x);
     if (ruler === null) return null;
     if (this._mode === 'protein') {
-      // Snap to the start of the codon containing this aa.
       const aa = Math.round(ruler);
       return { cPos: this.mapper.proteinToCds(aa), offset: 0 };
     }
@@ -230,7 +278,6 @@ export class ViewportController implements Viewport {
     let droppedIntronicCount = 0;
     let droppedExonicCount = 0;
 
-    // Walk exons in transcript order so segment ordering matches the figure.
     const exonHits: Array<{ idx: number; cdsLo: number; cdsHi: number }> = [];
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
@@ -245,9 +292,6 @@ export class ViewportController implements Viewport {
       exonHits.push({ idx: i, cdsLo, cdsHi });
     }
 
-    // In fragmenting modes, each exonic overlap becomes its own segment;
-    // gaps between adjacent hits are intronic drops. In cds-with-introns,
-    // we fold the whole genomic range into a single ruler-space segment.
     if (fragmenting) {
       for (let k = 0; k < exonHits.length; k++) {
         const hit = exonHits[k]!;
@@ -265,9 +309,6 @@ export class ViewportController implements Viewport {
       if (seg) segments.push(seg);
     }
 
-    // Out-of-bounds: portions of the genomic range not covered by any exon
-    // overlap before the first hit, after the last hit, or between hits
-    // when not fragmenting. We treat fully-outside ranges as out-of-bounds.
     if (exonHits.length === 0) {
       droppedExonicCount += 1;
       droppedRanges.push({ kind: 'out-of-bounds' });
@@ -326,12 +367,61 @@ export class ViewportController implements Viewport {
     const xEnd = this.cdsToScreen(cdsHi, 0);
     if (xStart === null && xEnd === null) return null;
     if (xStart === null || xEnd === null) {
-      // Partial visibility: clip to viewport bounds.
       const clampedStart = xStart ?? 0;
       const clampedEnd = xEnd ?? this._width;
       return { xStart: clampedStart, xEnd: clampedEnd, exonIdx };
     }
     return { xStart, xEnd, exonIdx };
+  }
+
+  // ---- Geometry ----------------------------------------------------------
+
+  /**
+   * Piecewise screen layout in CDS modes. Exons get pixel space proportional
+   * to their visible CDS bp; consecutive visible exons are separated by a
+   * collapsed-intron gap whose width scales with `intronScale` and a
+   * preferred-width-capped budget.
+   *
+   * Recomputed on demand each call. Tracks may call multiple times per
+   * render; the work is O(exons) and fine for the current scale.
+   */
+  cdsGeometry(): CdsGeometry {
+    const [lo, hi] = this._range;
+    const exons = this.mapper.transcript.exons;
+
+    const visible: Array<{ idx: number; cdsLo: number; cdsHi: number; bp: number }> = [];
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      const cdsLo = Math.max(lo, e.cdsStart);
+      const cdsHi = Math.min(hi, e.cdsEnd);
+      if (cdsHi < cdsLo) continue;
+      // Use interval count (not point count) so a contiguous CDS still maps
+      // edge-to-edge in screen space when gapPx === 0.
+      visible.push({ idx: i, cdsLo, cdsHi, bp: cdsHi - cdsLo });
+    }
+
+    const nGaps = Math.max(0, visible.length - 1);
+    const gapBudget = this._width * GAP_BUDGET_FRACTION;
+    const naturalGapPx = nGaps > 0
+      ? Math.max(MIN_GAP_PX, Math.min(PREF_GAP_PX, gapBudget / nGaps))
+      : 0;
+    const gapPx = naturalGapPx * this._intronScale;
+
+    const totalBp = visible.reduce((s, v) => s + v.bp, 0);
+    const exonPx = Math.max(0, this._width - nGaps * gapPx);
+    const pxPerBp = totalBp > 0 ? exonPx / totalBp : 0;
+
+    const segments: ExonScreenSegment[] = [];
+    let x = 0;
+    for (let k = 0; k < visible.length; k++) {
+      const v = visible[k]!;
+      const xStart = x;
+      const xEnd = xStart + v.bp * pxPerBp;
+      segments.push({ exonIdx: v.idx, cdsLo: v.cdsLo, cdsHi: v.cdsHi, xStart, xEnd });
+      x = xEnd;
+      if (k < visible.length - 1) x += gapPx;
+    }
+    return { segments, pxPerBp, gapPx };
   }
 
   // ---- Anchors -----------------------------------------------------------
@@ -358,8 +448,6 @@ export class ViewportController implements Viewport {
         return x === null ? null : { x, y: 0 };
       }
       case 'feature':
-        // Features are resolved by tracks via `Track.resolveAnchor`. The
-        // viewport doesn't know the track-level data layout.
         return null;
     }
   }
@@ -373,4 +461,35 @@ function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd:
   return strand === '+'
     ? exon.cdsStart + (pos - exon.genomicStart)
     : exon.cdsStart + (exon.genomicEnd - pos);
+}
+
+function cdsToScreenViaGeometry(geom: CdsGeometry, cPos: number): number | null {
+  for (const seg of geom.segments) {
+    if (cPos >= seg.cdsLo && cPos <= seg.cdsHi) {
+      return seg.xStart + (cPos - seg.cdsLo) * geom.pxPerBp;
+    }
+  }
+  return null;
+}
+
+function screenToCdsViaGeometry(geom: CdsGeometry, x: number): CdsPosition | null {
+  if (geom.segments.length === 0) return null;
+  for (let i = 0; i < geom.segments.length; i++) {
+    const seg = geom.segments[i]!;
+    if (x >= seg.xStart && x <= seg.xEnd) {
+      const bp = (x - seg.xStart) / Math.max(geom.pxPerBp, Number.EPSILON);
+      const cPos = Math.round(seg.cdsLo + bp);
+      return { cPos, offset: 0 };
+    }
+    // Snap onto the nearest exon edge when the point lands in an intron gap.
+    const next = geom.segments[i + 1];
+    if (next && x > seg.xEnd && x < next.xStart) {
+      // Round to whichever edge is closer (mirrors lit-manager's deep-intron
+      // centre-pin: between flanks, the user clicked nothing in particular).
+      return x - seg.xEnd <= next.xStart - x
+        ? { cPos: seg.cdsHi, offset: 0 }
+        : { cPos: next.cdsLo, offset: 0 };
+    }
+  }
+  return null;
 }

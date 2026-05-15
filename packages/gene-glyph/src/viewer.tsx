@@ -1,13 +1,201 @@
-import type { ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { createCoordinateMapper } from './coordinate-mapper.js';
+import { layoutTracks } from './layout-engine.js';
+import { createSvgPainter } from './painter/svg-painter.js';
+import { exonTrack } from './tracks/exon-track.js';
+import {
+  isTrackGroup,
+  type InteractionState,
+  type ProteinAnnotations,
+  type Track,
+  type TrackOrGroup,
+  type Transcript,
+  type ViewMode,
+} from './types.js';
+import { ViewportController } from './viewport.js';
 
 export interface GeneGlyphProps {
+  transcript: Transcript;
+  protein?: ProteinAnnotations | null;
+  /** Track list, ordered top to bottom. Defaults to a single `exonTrack`. */
+  tracks?: TrackOrGroup[];
+  /** Logical width of the figure SVG in viewBox units. Default 1000. */
+  width?: number;
+  /** Initial view mode. Default `cds-with-introns`. */
+  mode?: ViewMode;
+  /** Maximum vertical height budget for the track stack. Default 200. */
+  trackHeightBudget?: number;
+  className?: string;
   children?: ReactNode;
 }
 
-export function GeneGlyph({ children: _children }: GeneGlyphProps) {
+const EMPTY_INTERACTION: InteractionState = {
+  hoveredFeatureId: null,
+  selectedFeatureIds: new Set<string>(),
+  brushRange: null,
+};
+
+function flattenTracks(items: TrackOrGroup[]): Track[] {
+  const out: Track[] = [];
+  for (const item of items) {
+    if (isTrackGroup(item)) {
+      for (const t of item.tracks) out.push(t);
+    } else {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+export function GeneGlyph({
+  transcript,
+  protein,
+  tracks,
+  width = 1000,
+  mode = 'cds-with-introns',
+  trackHeightBudget = 200,
+  className,
+}: GeneGlyphProps) {
+  const trackList = useMemo<TrackOrGroup[]>(
+    () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
+    [tracks],
+  );
+  const flatTracks = useMemo(() => flattenTracks(trackList), [trackList]);
+  const mapper = useMemo(() => createCoordinateMapper(transcript), [transcript]);
+  const viewport = useMemo(
+    () => new ViewportController({ mapper, width, mode }),
+    [mapper, width, mode],
+  );
+  const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    viewport.attach(el);
+    return () => viewport.detach();
+  }, [viewport]);
+
+  const [trackData, setTrackData] = useState<Map<string, unknown>>(() => new Map());
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    void Promise.all(
+      flatTracks.map(async (t) => {
+        const data = await t.load({ viewport, mapper, signal: controller.signal });
+        return [t.id, data] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setTrackData(new Map(entries));
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [flatTracks, viewport, mapper]);
+
+  const layout = useMemo(
+    () =>
+      layoutTracks({
+        tracks: trackList,
+        viewport,
+        data: trackData,
+        totalHeightBudget: trackHeightBudget,
+      }),
+    [trackList, viewport, trackData, trackHeightBudget],
+  );
+
+  const totalHeight = Math.max(1, layout.totalHeight);
+
+  const aaLength = Math.floor(transcript.cdsLength / 3);
+  const aria = `${transcript.geneSymbol} (${transcript.transcriptId}) — ${aaLength} aa`;
+
   return (
-    <div className="gene-glyph" data-testid="gene-glyph">
-      <span className="gene-glyph-placeholder">gene-glyph 0.0.0 — empty viewer</span>
+    <div className={['gene-glyph', className].filter(Boolean).join(' ')} data-testid="gene-glyph">
+      <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+      <svg
+        ref={svgRef}
+        className="vv-figure"
+        viewBox={`0 0 ${width} ${totalHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+        width="100%"
+        height={totalHeight}
+        role="img"
+        aria-label={aria}
+      >
+        <title>{aria}</title>
+        {flatTracks.map((t) => {
+          const rect = layout.trackRects.get(t.id);
+          if (!rect) return null;
+          const data = trackData.get(t.id);
+          if (data === undefined) return null;
+          return (
+            <g key={t.id} data-vv-track-id={t.id}>
+              {t.render({
+                data,
+                rect,
+                viewport,
+                mapper,
+                interaction: EMPTY_INTERACTION,
+                painter,
+              })}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+interface HeaderProps {
+  transcript: Transcript;
+  protein: ProteinAnnotations | null;
+}
+
+function GeneGlyphHeader({ transcript, protein }: HeaderProps) {
+  const cdsLen = Math.max(1, transcript.cdsLength);
+  return (
+    <div className="vv-header" data-testid="gene-glyph-header">
+      <span className="vv-header-left">
+        <span className="vv-gene-symbol">{transcript.geneSymbol}</span>
+        <span className="vv-sep"> · </span>
+        <span className="vv-transcript-id">{transcript.transcriptId}</span>
+        {transcript.isManeSelect && (
+          <>
+            <span className="vv-sep"> · </span>
+            <span className="vv-mane-badge" title="MANE Select transcript">
+              MANE Select
+            </span>
+          </>
+        )}
+        {protein?.alphafoldId && (
+          <>
+            <span className="vv-sep"> · </span>
+            <a
+              className="vv-alphafold-link"
+              href={`https://alphafold.ebi.ac.uk/entry/${protein.alphafoldId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open AlphaFold structure"
+            >
+              AlphaFold ↗
+            </a>
+          </>
+        )}
+      </span>
+      <span className="vv-header-right">
+        <span className="vv-strand">{transcript.strand === '+' ? "5' →" : "← 5'"}</span>
+        <span className="vv-sep"> · </span>
+        <span className="vv-cds-length">{cdsLen.toLocaleString()} nt CDS</span>
+      </span>
     </div>
   );
 }

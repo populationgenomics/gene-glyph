@@ -5,9 +5,110 @@
  * the transition rules that drive CSS-only animation, the print-theme
  * overrides under [data-vv-print], and the prefers-reduced-motion rule.
  *
- * Slice 1 ships an empty file. Slices 3+ populate it incrementally.
+ * Slice 3 lights up the variables consumed by the first real render path:
+ * --vv-intron-scale (intron-decoration opacity) and the per-exon-x / per-
+ * exon-w published by ViewportController. Track-specific colour vars take
+ * sensible defaults; consumers override at any cascade level.
  */
 
 .gene-glyph {
-  /* placeholder — populated in later slices */
+  /* Layout shell — host pages can override fonts via cascade. */
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--vv-color-text-primary, #0f172a);
+
+  /* Viewport state — overridden inline on the figure SVG by the controller. */
+  --vv-zoom: 1;
+  --vv-pan-x: 0px;
+  --vv-intron-scale: 1;
+
+  /* Track palette defaults. */
+  --vv-color-text-primary: #0f172a;
+  --vv-color-text-secondary: #475569;
+  --vv-color-text-tertiary: #94a3b8;
+  --vv-color-exon-fill: #cbd5e1;
+  --vv-color-exon-stroke: #475569;
+  --vv-color-intron-line: #64748b;
+  --vv-color-bg-surface: transparent;
+}
+
+.gene-glyph .vv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--vv-color-text-secondary);
+  margin-bottom: 4px;
+}
+
+.gene-glyph .vv-gene-symbol {
+  font-weight: 600;
+  color: var(--vv-color-text-primary);
+}
+
+.gene-glyph .vv-transcript-id {
+  font-variant-numeric: tabular-nums;
+}
+
+.gene-glyph .vv-mane-badge {
+  display: inline-block;
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--vv-color-mane-bg, #dbeafe);
+  color: var(--vv-color-mane-text, #1d4ed8);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.gene-glyph .vv-alphafold-link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.gene-glyph .vv-sep {
+  color: var(--vv-color-text-tertiary);
+}
+
+.gene-glyph .vv-figure {
+  display: block;
+  background: var(--vv-color-bg-surface);
+}
+
+/* Per-exon translation is published by ViewportController as inline style on
+ * each .vv-exon-group element. The transition rules below let intron-scale
+ * and exon-x interpolate smoothly when CSS variables change. */
+.gene-glyph .vv-exon-group {
+  transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gene-glyph .vv-intron-decoration {
+  transition: opacity 400ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* During direct manipulation (drag, wheel), the viewer adds .vv-no-transition
+ * so the variables update instantaneously without animation thrash. */
+.gene-glyph.vv-no-transition .vv-exon-group,
+.gene-glyph.vv-no-transition .vv-intron-decoration {
+  transition: none;
+}
+
+/* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
+[data-vv-print] .gene-glyph {
+  --vv-color-text-primary: #1f2937;
+  --vv-color-text-secondary: #374151;
+  --vv-color-text-tertiary: #6b7280;
+  --vv-color-exon-fill: #9ca3af;
+  --vv-color-exon-stroke: #1f2937;
+  --vv-color-intron-line: #1f2937;
+  --vv-color-bg-surface: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gene-glyph .vv-exon-group,
+  .gene-glyph .vv-intron-decoration {
+    transition: none;
+  }
 }
