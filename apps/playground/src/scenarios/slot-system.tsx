@@ -1,42 +1,59 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   GeneGlyph,
   exonTrack,
   interProTrack,
   variantTrack,
 } from '@populationgenomics/gene-glyph';
-import type { GutterItem, ViewMode } from '@populationgenomics/gene-glyph';
+import type {
+  GeneGlyphRef,
+  GutterItem,
+  ViewMode,
+  ViewportInfo,
+} from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.js';
 
 /**
- * Slot-system scenario — Slice 7 acceptance bar.
+ * Slot-system scenario — exercises every compound-component slot plus the
+ * Slice 8 imperative-ref API.
  *
- * Demonstrates all four compound-component slots together: a custom header
- * with a mode dropdown + zoom controls placeholder, a left-gutter group label,
- * a right-gutter truncation badge, and a footer with placeholder text. The
- * header dropdown and zoom buttons are inert in this slice (mode transitions
- * land in Slice 12; the imperative zoom API lands in Slice 8); they exist to
- * exercise slot layout reservation against real-shaped chrome.
+ * The header dropdown is still inert pending Slice 12 (mode transitions); the
+ * zoom toolbar now drives `fitTo` / `zoomBy` through a `GeneGlyphRef` and
+ * shows a live readout from `getViewportInfo`. "Fit Variant" picks the first
+ * hotspot variant from the fixture so the user can watch the viewport zoom
+ * onto it.
  */
 export function SlotSystemScenario() {
   const [mode, setMode] = useState<ViewMode>('cds-with-introns');
+  const ref = useRef<GeneGlyphRef | null>(null);
+  const [info, setInfo] = useState<ViewportInfo | null>(null);
+  const refreshReadout = () => {
+    if (ref.current) setInfo(ref.current.getViewportInfo());
+  };
+  useEffect(() => {
+    refreshReadout();
+  }, []);
+
+  const focusVariant = TP53_VARIANTS[0]?.id ?? null;
+  const focusLabel = TP53_VARIANTS[0]?.label ?? null;
 
   return (
     <section className="scenario" aria-labelledby="scenario-slots">
       <h2 id="scenario-slots">Slot system — TP53</h2>
       <p className="scenario-blurb">
-        Slice 7 acceptance bar: header, footer, and both gutters render as
-        siblings of the figure SVG. The header dropdown / zoom controls and the
-        right-gutter truncation badges are wired to live state but the
-        viewport-mutating callbacks are still placeholders (they light up in
-        slices 8 + 12).
+        Slice 8 wires the toolbar through the imperative ref API. Fit-gene,
+        fit-variant, and zoom buttons drive the viewport via{' '}
+        <code>GeneGlyphRef</code>; the right-hand readout pulls live state from{' '}
+        <code>getViewportInfo()</code>. The mode dropdown is still inert
+        (animated mode transitions land in Slice 12).
       </p>
       <GeneGlyph
+        ref={ref}
         transcript={TP53_TRANSCRIPT}
         protein={TP53_PROTEIN}
         tracks={[
           exonTrack({}),
-          variantTrack({ source: TP53_VARIANTS }),
+          variantTrack({ id: 'variants', source: TP53_VARIANTS }),
           interProTrack({}),
         ]}
         trackHeightBudget={240}
@@ -56,10 +73,70 @@ export function SlotSystemScenario() {
             </select>
           </label>
           <span style={{ flex: 1 }} />
-          <div role="group" aria-label="Zoom controls" style={{ display: 'inline-flex', gap: 4 }}>
-            <button type="button" disabled title="Zoom out (Slice 8)">−</button>
-            <button type="button" disabled title="Fit gene (Slice 8)">Fit</button>
-            <button type="button" disabled title="Zoom in (Slice 8)">+</button>
+          <div
+            role="group"
+            aria-label="Zoom controls"
+            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+          >
+            {info && (
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  color: '#64748b',
+                  fontVariantNumeric: 'tabular-nums',
+                  marginRight: 8,
+                }}
+                title={`Range ${info.range[0].toFixed(0)}–${info.range[1].toFixed(0)}`}
+              >
+                {info.zoom.toFixed(2)}×
+              </span>
+            )}
+            <button
+              type="button"
+              title="Zoom out"
+              onClick={() => {
+                ref.current?.zoomBy(0.5);
+                refreshReadout();
+              }}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              title="Fit gene"
+              onClick={() => {
+                ref.current?.fitTo({ kind: 'gene' });
+                refreshReadout();
+              }}
+            >
+              Fit
+            </button>
+            <button
+              type="button"
+              title={focusLabel ? `Fit ${focusLabel}` : 'No variant available'}
+              disabled={!focusVariant}
+              onClick={() => {
+                if (!focusVariant) return;
+                ref.current?.fitTo({
+                  kind: 'feature',
+                  trackId: 'variants',
+                  featureId: focusVariant,
+                });
+                refreshReadout();
+              }}
+            >
+              Variant
+            </button>
+            <button
+              type="button"
+              title="Zoom in"
+              onClick={() => {
+                ref.current?.zoomBy(2);
+                refreshReadout();
+              }}
+            >
+              +
+            </button>
           </div>
         </GeneGlyph.Header>
 

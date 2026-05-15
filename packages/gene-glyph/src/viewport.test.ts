@@ -121,6 +121,56 @@ describe('ViewportController — range projection', () => {
   });
 });
 
+describe('ViewportController — programmatic transitions', () => {
+  it('transitionTo snaps the committed range to the target and reports interpolated values until the duration elapses', () => {
+    const vp = fitGene('cds-spliced');
+    const startRange: readonly [number, number] = [...vp.range] as readonly [number, number];
+    const target: readonly [number, number] = [100, 200];
+
+    const t0 = performance.now();
+    vp.transitionTo({ range: target }, { duration: 200 });
+
+    // Committed range jumps to target so CSS variables publish target values;
+    // CSS transitions handle the visual interpolation.
+    expect(vp.range[0]).toBe(target[0]);
+    expect(vp.range[1]).toBe(target[1]);
+    expect(vp.isTransitioning()).toBe(true);
+
+    // Interpolated range sits between the from and to range while in flight.
+    const mid = vp.getInterpolatedRange();
+    expect(mid[0]).toBeGreaterThan(Math.min(startRange[0], target[0]) - 0.001);
+    expect(mid[0]).toBeLessThan(target[0] + 0.001);
+
+    // After the duration elapses, getInterpolatedRange returns the committed
+    // range and isTransitioning flips false.
+    const elapsed = performance.now() - t0;
+    const wait = Math.max(0, 250 - elapsed);
+    // Spin until the duration has passed without using async sleep.
+    const until = performance.now() + wait;
+    while (performance.now() < until) {
+      /* spin */
+    }
+    expect(vp.getInterpolatedRange()).toEqual(target);
+    expect(vp.isTransitioning()).toBe(false);
+  });
+
+  it('setRange clears any in-flight transition', () => {
+    const vp = fitGene('cds-spliced');
+    vp.transitionTo({ range: [50, 150] }, { duration: 500 });
+    expect(vp.isTransitioning()).toBe(true);
+    vp.setRange([200, 300]);
+    expect(vp.isTransitioning()).toBe(false);
+    expect(vp.getInterpolatedRange()).toEqual([200, 300]);
+  });
+
+  it('naturalRange returns the fit-gene span for the active mode', () => {
+    const cds = fitGene('cds-spliced');
+    expect(cds.naturalRange()).toEqual([1, 360]);
+    const protein = fitGene('protein');
+    expect(protein.naturalRange()).toEqual([1, 120]);
+  });
+});
+
 describe('ViewportController — CSS variable publication', () => {
   it('publishes --vv-* variables to an attached element on attach() and on state changes', () => {
     const vp = fitGene('cds-spliced');

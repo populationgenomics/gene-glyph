@@ -1,6 +1,9 @@
 export { GeneGlyph } from './viewer.js';
 export type {
   GeneGlyphProps,
+  GeneGlyphRef,
+  FitTarget,
+  ViewportInfo,
   GutterItem,
   LeftGutterProps,
   RightGutterProps,
@@ -60,8 +63,12 @@ export type {
 export { isTrackGroup, isDataSource } from './types.js';
 
 export { createCoordinateMapper } from './coordinate-mapper.js';
-export { ViewportController } from './viewport.js';
-export type { ViewportControllerInit } from './viewport.js';
+export { ViewportController, DEFAULT_TRANSITION_MS } from './viewport.js';
+export type {
+  ViewportControllerInit,
+  TransitionTarget,
+  TransitionOptions,
+} from './viewport.js';
 export { layoutTracks } from './layout-engine.js';
 export type { LayoutEngineArgs, LayoutItem, LayoutResult } from './layout-engine.js';
 export { createSvgPainter } from './painter/svg-painter.js';

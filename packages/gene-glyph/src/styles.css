@@ -173,6 +173,12 @@
   transition: none;
 }
 
+/* Programmatic viewport transitions (fitTo, zoomBy, mode change) toggle
+ * .vv-transitioning on the root for the duration of the animation. Scope
+ * hook for slot chrome (e.g., the minimap viewport rect) that wants to
+ * cross-fade alongside the figure; the figure's own per-exon transforms
+ * use the always-on transition above. */
+
 /* Variant track. Each variant lives inside a per-exon group; the outer `g`
  * carries focus and hit-test, the inner `g` carries the hover-lift transform
  * so the lift is a CSS-only animation. */

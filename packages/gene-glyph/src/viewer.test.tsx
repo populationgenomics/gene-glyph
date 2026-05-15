@@ -1,6 +1,7 @@
+import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { GeneGlyph } from './viewer.js';
+import { GeneGlyph, type GeneGlyphRef } from './viewer.js';
 import { variantTrack } from './tracks/variant-track.js';
 import { exonTrack } from './tracks/exon-track.js';
 import type { ProteinAnnotations, Transcript, ViewerVariant } from './types.js';
@@ -31,6 +32,15 @@ async function flushTrackLoads() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
+  });
+}
+
+async function waitForTransition(ms = 400) {
+  // `getViewportInfo()` returns interpolated values while a transition is in
+  // flight; tests that assert against the final state wait the transition
+  // duration first.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   });
 }
 
@@ -122,6 +132,99 @@ describe('GeneGlyph', () => {
       await flushTrackLoads();
       const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]');
       expect(v1?.classList.contains('is-selected')).toBe(true);
+    });
+
+    it('forwards an imperative ref exposing fitTo / zoomBy / getViewportInfo', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        />,
+      );
+      await flushTrackLoads();
+      expect(ref.current).not.toBeNull();
+      const info = ref.current!.getViewportInfo();
+      expect(info.mode).toBe('cds-with-introns');
+      expect(info.range).toEqual([1, transcript.cdsLength]);
+      expect(info.zoom).toBeCloseTo(1);
+      expect(info.layout.length).toBeGreaterThan(0);
+    });
+
+    it('fitTo({kind: feature}) narrows the range around the feature and toggles vv-transitioning', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        />,
+      );
+      await flushTrackLoads();
+      await act(async () => {
+        ref.current!.fitTo({ kind: 'feature', trackId: 'variants', featureId: 'v2' });
+      });
+      const root = container.querySelector('[data-testid="gene-glyph"]');
+      expect(root?.classList.contains('vv-transitioning')).toBe(true);
+      await waitForTransition();
+      const after = ref.current!.getViewportInfo();
+      expect(after.range[1] - after.range[0]).toBeLessThan(transcript.cdsLength);
+      // v2 is at cPos 150; the new range should bracket it.
+      expect(after.range[0]).toBeLessThanOrEqual(150);
+      expect(after.range[1]).toBeGreaterThanOrEqual(150);
+      expect(root?.classList.contains('vv-transitioning')).toBe(false);
+    });
+
+    it('fitTo({kind: gene}) restores the full natural range', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        />,
+      );
+      await flushTrackLoads();
+      await act(async () => {
+        ref.current!.fitTo({ kind: 'range', range: [80, 120] });
+      });
+      await waitForTransition();
+      expect(ref.current!.getViewportInfo().range).toEqual([80, 120]);
+      await act(async () => {
+        ref.current!.fitTo({ kind: 'gene' });
+      });
+      await waitForTransition();
+      expect(ref.current!.getViewportInfo().range).toEqual([1, transcript.cdsLength]);
+    });
+
+    it('zoomBy halves and doubles the visible range, centered on the current viewport', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        />,
+      );
+      await flushTrackLoads();
+      await act(async () => {
+        ref.current!.fitTo({ kind: 'range', range: [100, 200] });
+      });
+      await waitForTransition();
+      await act(async () => {
+        ref.current!.zoomBy(2);
+      });
+      await waitForTransition();
+      const zoomed = ref.current!.getViewportInfo().range;
+      expect(zoomed[1] - zoomed[0]).toBeCloseTo(50, 5);
+      expect((zoomed[0] + zoomed[1]) / 2).toBeCloseTo(150, 5);
+      await act(async () => {
+        ref.current!.zoomBy(0.5);
+      });
+      await waitForTransition();
+      const back = ref.current!.getViewportInfo().range;
+      expect(back[1] - back[0]).toBeCloseTo(100, 5);
     });
 
     it('renders an unplaced-variants chip row when variants cannot project', async () => {

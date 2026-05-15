@@ -19,6 +19,25 @@ export interface ViewportControllerInit {
   intronScale?: number;
 }
 
+export interface TransitionTarget {
+  range?: readonly [number, number];
+}
+
+export interface TransitionOptions {
+  duration?: number;
+}
+
+/** Default duration for programmatic viewport transitions, in milliseconds.
+ *  Matches the CSS `transition` on `.vv-exon-group` (350ms). */
+export const DEFAULT_TRANSITION_MS = 350;
+
+interface TransitionSchedule {
+  fromRange: [number, number];
+  toRange: [number, number];
+  startTime: number;
+  duration: number;
+}
+
 interface CssTarget {
   style: CSSStyleDeclaration;
 }
@@ -66,6 +85,7 @@ export class ViewportController implements Viewport {
   private _width: number;
   private _intronScale: number;
   private _attached: CssTarget | null = null;
+  private _transition: TransitionSchedule | null = null;
   readonly mapper: CoordinateMapper;
 
   constructor(init: ViewportControllerInit) {
@@ -101,12 +121,59 @@ export class ViewportController implements Viewport {
     this._intronScale = defaultIntronScale(mode);
     // Reproject the range onto the new mode's natural ruler.
     this._range = defaultRangeFor(mode, this.mapper);
+    this._transition = null;
     this.publish();
   }
 
   setRange(range: readonly [number, number]): void {
     this._range = [range[0], range[1]];
+    this._transition = null;
     this.publish();
+  }
+
+  /** Natural fit-gene range for the active mode (1..cdsLength, or 1..aaLength
+   *  in protein mode). */
+  naturalRange(): readonly [number, number] {
+    return defaultRangeFor(this._mode, this.mapper);
+  }
+
+  /** Mutates state to the target and records a transition schedule so that
+   *  `getInterpolatedRange()` can report intermediate values during animation.
+   *  CSS transitions on `.vv-exon-group` and `.vv-intron-decoration` provide
+   *  the visual interpolation; this method only sets the new CSS-variable
+   *  targets and records the schedule for host queries. */
+  transitionTo(target: TransitionTarget, options?: TransitionOptions): void {
+    const duration = options?.duration ?? DEFAULT_TRANSITION_MS;
+    if (target.range) {
+      const fromRange: [number, number] = [this._range[0], this._range[1]];
+      const toRange: [number, number] = [target.range[0], target.range[1]];
+      this._transition = { fromRange, toRange, startTime: now(), duration };
+      this._range = toRange;
+    }
+    this.publish();
+  }
+
+  /** Range as it would be at the current animation timestamp — interpolated
+   *  through the in-flight transition curve, or the committed range if no
+   *  transition is active or the transition has elapsed. */
+  getInterpolatedRange(): readonly [number, number] {
+    const t = this._transition;
+    if (!t) return this._range;
+    const elapsed = now() - t.startTime;
+    if (elapsed >= t.duration) {
+      this._transition = null;
+      return this._range;
+    }
+    const eased = easeOutQuart(Math.max(0, elapsed / t.duration));
+    const a = t.fromRange[0] + (t.toRange[0] - t.fromRange[0]) * eased;
+    const b = t.fromRange[1] + (t.toRange[1] - t.fromRange[1]) * eased;
+    return [a, b];
+  }
+
+  /** Whether a programmatic transition is currently in flight. */
+  isTransitioning(): boolean {
+    if (!this._transition) return false;
+    return now() - this._transition.startTime < this._transition.duration;
   }
 
   setWidth(width: number): void {
@@ -446,6 +513,21 @@ export class ViewportController implements Viewport {
 
 function clampOrdered(a: number, b: number): [number, number] {
   return a <= b ? [a, b] : [b, a];
+}
+
+function now(): number {
+  // performance.now() is monotonic and present in JSDOM + browsers; fall back
+  // to Date.now() in the unlikely case it isn't.
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+/** Polynomial approximation of cubic-bezier(0.22, 1, 0.36, 1) — the ease-out-
+ *  quart curve used for programmatic viewport transitions per design §8. */
+function easeOutQuart(t: number): number {
+  const u = 1 - t;
+  return 1 - u * u * u * u;
 }
 
 function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd: number }, pos: number, strand: '+' | '-'): number {
