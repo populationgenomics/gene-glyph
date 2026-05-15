@@ -27,11 +27,20 @@ export function SlotSystemScenario() {
   const [mode, setMode] = useState<ViewMode>('cds-with-introns');
   const ref = useRef<GeneGlyphRef | null>(null);
   const [info, setInfo] = useState<ViewportInfo | null>(null);
-  const refreshReadout = () => {
-    if (ref.current) setInfo(ref.current.getViewportInfo());
-  };
+
+  // The readout polls via rAF: `getViewportInfo()` returns the *interpolated*
+  // range during a transition, so reading it immediately after each button
+  // click would always lag one operation behind (t=0 of the new transition
+  // equals the previous target). A 60Hz tick keeps the value synced and lets
+  // the host see the same easing curve the user sees on screen.
   useEffect(() => {
-    refreshReadout();
+    let rafId = 0;
+    const tick = () => {
+      if (ref.current) setInfo(ref.current.getViewportInfo());
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   const focusVariant = TP53_VARIANTS[0]?.id ?? null;
@@ -96,7 +105,6 @@ export function SlotSystemScenario() {
               title="Zoom out"
               onClick={() => {
                 ref.current?.zoomBy(0.5);
-                refreshReadout();
               }}
             >
               −
@@ -106,7 +114,6 @@ export function SlotSystemScenario() {
               title="Fit gene"
               onClick={() => {
                 ref.current?.fitTo({ kind: 'gene' });
-                refreshReadout();
               }}
             >
               Fit
@@ -122,7 +129,6 @@ export function SlotSystemScenario() {
                   trackId: 'variants',
                   featureId: focusVariant,
                 });
-                refreshReadout();
               }}
             >
               Variant
@@ -132,7 +138,6 @@ export function SlotSystemScenario() {
               title="Zoom in"
               onClick={() => {
                 ref.current?.zoomBy(2);
-                refreshReadout();
               }}
             >
               +
