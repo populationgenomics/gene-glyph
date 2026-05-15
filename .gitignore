@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+coverage/
+
+# yalc
+.yalc/
+yalc.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+*.log

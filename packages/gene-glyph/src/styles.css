@@ -1,0 +1,13 @@
+/*
+ * gene-glyph default stylesheet.
+ *
+ * Defines CSS custom properties that the viewer reads as viewport state,
+ * the transition rules that drive CSS-only animation, the print-theme
+ * overrides under [data-vv-print], and the prefers-reduced-motion rule.
+ *
+ * Slice 1 ships an empty file. Slices 3+ populate it incrementally.
+ */
+
+.gene-glyph {
+  /* placeholder — populated in later slices */
+}
