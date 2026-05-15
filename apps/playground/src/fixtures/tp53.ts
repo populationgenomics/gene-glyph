@@ -1,4 +1,4 @@
-import type { ProteinAnnotations, Transcript } from '@populationgenomics/gene-glyph';
+import type { ProteinAnnotations, Transcript, ViewerVariant } from '@populationgenomics/gene-glyph';
 
 /**
  * TP53 (NM_000546.6) — a 10-exon CDS used as the default demonstration
@@ -64,3 +64,62 @@ export const TP53_PROTEIN: ProteinAnnotations = {
     },
   ],
 };
+
+/**
+ * A canonical handful of TP53 variants drawn from well-known reports. The
+ * mix exercises:
+ *   - placeable CDS-coord variants spread across multiple exons
+ *   - a protein-coord variant (R175H — hotspot)
+ *   - an intronic variant with non-zero offset (unplaced in any CDS mode)
+ *   - an out-of-bounds variant (unplaced)
+ */
+export const TP53_VARIANTS: ViewerVariant[] = [
+  {
+    id: 'tp53-R175H',
+    label: 'R175H',
+    coord: { kind: 'protein', aa: 175 },
+    category: 'missense',
+  },
+  {
+    id: 'tp53-R248Q',
+    label: 'R248Q',
+    coord: { kind: 'cds', cPos: 743, offset: 0 },
+    category: 'missense',
+  },
+  {
+    id: 'tp53-R273H',
+    label: 'R273H',
+    coord: { kind: 'cds', cPos: 818, offset: 0 },
+    category: 'missense',
+  },
+  {
+    id: 'tp53-R342X',
+    label: 'R342*',
+    coord: { kind: 'cds', cPos: 1024, offset: 0 },
+    category: 'nonsense',
+  },
+  {
+    id: 'tp53-S46fs',
+    label: 'S46fs',
+    coord: { kind: 'cds', cPos: 136, offset: 0 },
+    category: 'frameshift',
+  },
+  {
+    id: 'tp53-splice-int4',
+    label: 'c.560-2A>G (intron 5 acceptor)',
+    coord: { kind: 'cds', cPos: 560, offset: -2 },
+    category: 'splice',
+  },
+  {
+    id: 'tp53-syn-T125',
+    label: 'T125T (syn)',
+    coord: { kind: 'cds', cPos: 375, offset: 0 },
+    category: 'synonymous',
+  },
+  {
+    id: 'tp53-utr3',
+    label: "3' UTR variant",
+    coord: { kind: 'cds', cPos: 2000, offset: 0 },
+    category: 'utr',
+  },
+];

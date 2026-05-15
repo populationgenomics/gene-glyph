@@ -80,6 +80,35 @@ export interface ViewerVariant {
 }
 
 // ---------------------------------------------------------------------------
+// Data sources
+// ---------------------------------------------------------------------------
+
+export interface ViewportQuery {
+  mode: ViewMode;
+  range: readonly [number, number];
+}
+
+export type DataSourceFreshness = 'on-viewport-change' | 'sticky' | 'realtime';
+
+export interface DataSource<TQuery, TResult> {
+  readonly id: string;
+  cacheKey(query: TQuery): string;
+  query(query: TQuery, signal: AbortSignal): Promise<TResult>;
+  freshness?: DataSourceFreshness;
+}
+
+export function isDataSource<TQuery, TResult>(
+  value: unknown,
+): value is DataSource<TQuery, TResult> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { query?: unknown }).query === 'function' &&
+    typeof (value as { id?: unknown }).id === 'string'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Viewport types
 // ---------------------------------------------------------------------------
 
@@ -204,6 +233,13 @@ export interface TrackRenderArgs<TData> {
   mapper: CoordinateMapper;
   interaction: InteractionState;
   painter: Painter;
+  /** Fires when the cursor enters or leaves a feature in this track; pass
+   *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
+   *  render. The viewer maps it onto the host's `onHover` prop. */
+  onFeatureHover?: (featureId: string | null) => void;
+  /** Fires when a feature in this track is clicked. The viewer maps it onto
+   *  the host's `onFeatureClick` prop. */
+  onFeatureClick?: (featureId: string) => void;
 }
 
 export interface Track<TConfig = unknown, TData = unknown> {
@@ -213,6 +249,11 @@ export interface Track<TConfig = unknown, TData = unknown> {
   load(args: TrackLoadArgs): Promise<TData>;
   height(args: TrackHeightArgs<TData>): TrackHeightResult;
   render(args: TrackRenderArgs<TData>): ReactNode;
+  /** Optional DOM rendered below the figure SVG (e.g., unplaced-feature
+   *  lists). Lives in a sibling `<div class="vv-below">` outside the figure
+   *  so it never leaks into export. Slice 7 introduces formal slots; this
+   *  hook keeps the below-figure surface simple until then. */
+  renderBelow?(args: TrackRenderArgs<TData>): ReactNode | null;
   resolveAnchor?(data: TData, anchorId: string, viewport: Viewport): ScreenPoint | null;
   toJSON(): TConfig;
 }

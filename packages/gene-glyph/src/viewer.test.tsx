@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { GeneGlyph } from './viewer.js';
-import type { ProteinAnnotations, Transcript } from './types.js';
+import { variantTrack } from './tracks/variant-track.js';
+import { exonTrack } from './tracks/exon-track.js';
+import type { ProteinAnnotations, Transcript, ViewerVariant } from './types.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -65,5 +67,75 @@ describe('GeneGlyph', () => {
     expect(svg!.style.getPropertyValue('--vv-exon-x-0')).toBe('0px');
     expect(svg!.style.getPropertyValue('--vv-exon-w-0')).not.toBe('');
     expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('1');
+  });
+
+  describe('variant interaction wiring', () => {
+    const variants: ViewerVariant[] = [
+      { id: 'v1', label: 'V1', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
+      { id: 'v2', label: 'V2', coord: { kind: 'cds', cPos: 150, offset: 0 }, category: 'nonsense' },
+      { id: 'oob', label: 'OOB', coord: { kind: 'cds', cPos: 9999, offset: 0 }, category: 'utr' },
+    ];
+
+    it('forwards onHover and onFeatureClick from a placed variant', async () => {
+      const onHover = vi.fn();
+      const onFeatureClick = vi.fn();
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+          onHover={onHover}
+          onFeatureClick={onFeatureClick}
+        />,
+      );
+      await flushTrackLoads();
+      const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]');
+      expect(v1).not.toBeNull();
+      fireEvent.mouseEnter(v1!);
+      fireEvent.click(v1!);
+      fireEvent.mouseLeave(v1!);
+      expect(onHover).toHaveBeenCalledWith('v1', 'variants');
+      expect(onHover).toHaveBeenCalledWith(null, 'variants');
+      expect(onFeatureClick).toHaveBeenCalledWith('v1', 'variants');
+    });
+
+    it('applies the hover lift class when hoveredFeatureId is supplied', async () => {
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+          hoveredFeatureId="v2"
+        />,
+      );
+      await flushTrackLoads();
+      const v2 = container.querySelector<SVGGElement>('[data-vv-feature-id="v2"]');
+      expect(v2?.classList.contains('is-hovered')).toBe(true);
+    });
+
+    it('applies the selection class when selectedFeatureIds includes a variant', async () => {
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+          selectedFeatureIds={new Set(['v1'])}
+        />,
+      );
+      await flushTrackLoads();
+      const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]');
+      expect(v1?.classList.contains('is-selected')).toBe(true);
+    });
+
+    it('renders an unplaced-variants chip row when variants cannot project', async () => {
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        />,
+      );
+      await flushTrackLoads();
+      expect(container.querySelector('[data-testid="gene-glyph-below"]')).not.toBeNull();
+      const chips = container.querySelectorAll('.vv-unplaced-chip');
+      expect(chips.length).toBeGreaterThanOrEqual(1);
+      expect(container.querySelector('[data-vv-feature-id="oob"]')).not.toBeNull();
+    });
   });
 });

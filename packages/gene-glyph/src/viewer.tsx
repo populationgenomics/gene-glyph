@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -32,15 +33,22 @@ export interface GeneGlyphProps {
   mode?: ViewMode;
   /** Maximum vertical height budget for the track stack. Default 200. */
   trackHeightBudget?: number;
+  /** Controlled-prop: feature id currently hovered by the host (e.g., from a
+   *  table row). Tracks render the matching feature with a hover lift. */
+  hoveredFeatureId?: string | null;
+  /** Controlled-prop: feature ids currently selected by the host. Tracks
+   *  render the matching features with a selection ring. Accepts a Set or any
+   *  iterable for ergonomic callers. */
+  selectedFeatureIds?: ReadonlySet<string> | Iterable<string>;
+  /** Fires when the cursor enters a feature (with featureId) or leaves all
+   *  features (`null`). The originating track id is passed for hosts that
+   *  multiplex over tracks. */
+  onHover?: (featureId: string | null, trackId: string) => void;
+  /** Fires when a feature is clicked. */
+  onFeatureClick?: (featureId: string, trackId: string) => void;
   className?: string;
   children?: ReactNode;
 }
-
-const EMPTY_INTERACTION: InteractionState = {
-  hoveredFeatureId: null,
-  selectedFeatureIds: new Set<string>(),
-  brushRange: null,
-};
 
 function flattenTracks(items: TrackOrGroup[]): Track[] {
   const out: Track[] = [];
@@ -54,6 +62,14 @@ function flattenTracks(items: TrackOrGroup[]): Track[] {
   return out;
 }
 
+function toReadonlySet(ids: ReadonlySet<string> | Iterable<string> | undefined): ReadonlySet<string> {
+  if (!ids) return EMPTY_SET;
+  if (ids instanceof Set) return ids;
+  return new Set(ids);
+}
+
+const EMPTY_SET: ReadonlySet<string> = new Set<string>();
+
 export function GeneGlyph({
   transcript,
   protein,
@@ -61,6 +77,10 @@ export function GeneGlyph({
   width = 1000,
   mode = 'cds-with-introns',
   trackHeightBudget = 200,
+  hoveredFeatureId = null,
+  selectedFeatureIds,
+  onHover,
+  onFeatureClick,
   className,
 }: GeneGlyphProps) {
   const trackList = useMemo<TrackOrGroup[]>(
@@ -115,8 +135,58 @@ export function GeneGlyph({
 
   const totalHeight = Math.max(1, layout.totalHeight);
 
+  const selectedSet = useMemo(() => toReadonlySet(selectedFeatureIds), [selectedFeatureIds]);
+  const interaction = useMemo<InteractionState>(
+    () => ({
+      hoveredFeatureId,
+      selectedFeatureIds: selectedSet,
+      brushRange: null,
+    }),
+    [hoveredFeatureId, selectedSet],
+  );
+
+  const handleHover = useCallback(
+    (trackId: string, featureId: string | null) => {
+      onHover?.(featureId, trackId);
+    },
+    [onHover],
+  );
+
+  const handleClick = useCallback(
+    (trackId: string, featureId: string) => {
+      onFeatureClick?.(featureId, trackId);
+    },
+    [onFeatureClick],
+  );
+
   const aaLength = Math.floor(transcript.cdsLength / 3);
   const aria = `${transcript.geneSymbol} (${transcript.transcriptId}) — ${aaLength} aa`;
+
+  const trackRenderArgsFor = (t: Track) => {
+    const rect = layout.trackRects.get(t.id);
+    if (!rect) return null;
+    const data = trackData.get(t.id);
+    if (data === undefined) return null;
+    return {
+      data,
+      rect,
+      viewport,
+      mapper,
+      interaction,
+      painter,
+      onFeatureHover: (featureId: string | null) => handleHover(t.id, featureId),
+      onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
+    };
+  };
+
+  const belowNodes: ReactNode[] = [];
+  for (const t of flatTracks) {
+    if (!t.renderBelow) continue;
+    const args = trackRenderArgsFor(t);
+    if (!args) continue;
+    const node = t.renderBelow(args);
+    if (node) belowNodes.push(<div key={t.id}>{node}</div>);
+  }
 
   return (
     <div className={['gene-glyph', className].filter(Boolean).join(' ')} data-testid="gene-glyph">
@@ -133,24 +203,20 @@ export function GeneGlyph({
       >
         <title>{aria}</title>
         {flatTracks.map((t) => {
-          const rect = layout.trackRects.get(t.id);
-          if (!rect) return null;
-          const data = trackData.get(t.id);
-          if (data === undefined) return null;
+          const args = trackRenderArgsFor(t);
+          if (!args) return null;
           return (
             <g key={t.id} data-vv-track-id={t.id}>
-              {t.render({
-                data,
-                rect,
-                viewport,
-                mapper,
-                interaction: EMPTY_INTERACTION,
-                painter,
-              })}
+              {t.render(args)}
             </g>
           );
         })}
       </svg>
+      {belowNodes.length > 0 && (
+        <div className="vv-below" data-testid="gene-glyph-below">
+          {belowNodes}
+        </div>
+      )}
     </div>
   );
 }

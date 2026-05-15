@@ -31,6 +31,26 @@
   --vv-color-exon-stroke: #475569;
   --vv-color-intron-line: #64748b;
   --vv-color-bg-surface: transparent;
+
+  /* Variant category palette. Per-category vars let host pages restyle
+   * without recompiling the package. */
+  --vv-variant-color-missense: #f59e0b;
+  --vv-variant-color-nonsense: #dc2626;
+  --vv-variant-color-synonymous: #94a3b8;
+  --vv-variant-color-frameshift: #b91c1c;
+  --vv-variant-color-inframe-indel: #f97316;
+  --vv-variant-color-splice: #8b5cf6;
+  --vv-variant-color-start-lost: #dc2626;
+  --vv-variant-color-stop-lost: #dc2626;
+  --vv-variant-color-regulatory: #0ea5e9;
+  --vv-variant-color-utr: #64748b;
+  --vv-variant-color-intronic: #94a3b8;
+  --vv-variant-color-structural: #ec4899;
+  --vv-variant-color-other: #94a3b8;
+  --vv-variant-color-unknown: #cbd5e1;
+  --vv-variant-dot-stroke: #ffffff;
+
+  --vv-variant-hover-lift-px: 4px;
 }
 
 .gene-glyph .vv-header {
@@ -95,6 +115,97 @@
   transition: none;
 }
 
+/* Variant track. Each variant lives inside a per-exon group; the outer `g`
+ * carries focus and hit-test, the inner `g` carries the hover-lift transform
+ * so the lift is a CSS-only animation. */
+.gene-glyph .vv-variant {
+  outline: none;
+}
+
+.gene-glyph .vv-variant-inner {
+  transform: translateY(0);
+  transition: transform 120ms ease-out;
+}
+
+.gene-glyph .vv-variant.is-hovered .vv-variant-inner,
+.gene-glyph .vv-variant:hover .vv-variant-inner,
+.gene-glyph .vv-variant:focus-visible .vv-variant-inner {
+  transform: translateY(calc(var(--vv-variant-hover-lift-px) * -1));
+}
+
+.gene-glyph .vv-variant-ring {
+  opacity: 0;
+  transition: opacity 100ms ease-out;
+}
+
+.gene-glyph .vv-variant.is-selected .vv-variant-ring {
+  opacity: 1;
+}
+
+.gene-glyph .vv-variant:focus-visible .vv-variant-ring {
+  opacity: 0.6;
+}
+
+/* Unplaced-variants list. Lives outside the figure SVG so it is structurally
+ * excluded from export. Slice 7 will move this into the Footer slot. */
+.gene-glyph .vv-below {
+  margin-top: 4px;
+}
+
+.gene-glyph .vv-unplaced-variants {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 0.78rem;
+  color: var(--vv-color-text-secondary);
+  padding: 4px 0;
+}
+
+.gene-glyph .vv-unplaced-label {
+  font-weight: 600;
+  color: var(--vv-color-text-secondary);
+}
+
+.gene-glyph .vv-unplaced-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.gene-glyph .vv-unplaced-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--vv-variant-color, #94a3b8);
+  border-radius: 999px;
+  background: var(--vv-color-bg-surface, transparent);
+  color: var(--vv-color-text-primary);
+  cursor: pointer;
+  transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+
+.gene-glyph .vv-unplaced-chip.is-hovered,
+.gene-glyph .vv-unplaced-chip:hover {
+  transform: translateY(-1px);
+}
+
+.gene-glyph .vv-unplaced-chip.is-selected {
+  outline: 2px solid var(--vv-variant-color, #94a3b8);
+  outline-offset: 1px;
+}
+
+.gene-glyph .vv-unplaced-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vv-variant-color, #94a3b8);
+}
+
 /* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
 [data-vv-print] .gene-glyph {
   --vv-color-text-primary: #1f2937;
@@ -104,11 +215,28 @@
   --vv-color-exon-stroke: #1f2937;
   --vv-color-intron-line: #1f2937;
   --vv-color-bg-surface: #ffffff;
+  --vv-variant-color-missense: #b45309;
+  --vv-variant-color-nonsense: #991b1b;
+  --vv-variant-color-synonymous: #4b5563;
+  --vv-variant-color-frameshift: #7f1d1d;
+  --vv-variant-color-inframe-indel: #c2410c;
+  --vv-variant-color-splice: #6d28d9;
+  --vv-variant-color-start-lost: #991b1b;
+  --vv-variant-color-stop-lost: #991b1b;
+  --vv-variant-color-regulatory: #0369a1;
+  --vv-variant-color-utr: #374151;
+  --vv-variant-color-intronic: #4b5563;
+  --vv-variant-color-structural: #9d174d;
+  --vv-variant-color-other: #4b5563;
+  --vv-variant-color-unknown: #6b7280;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gene-glyph .vv-exon-group,
-  .gene-glyph .vv-intron-decoration {
+  .gene-glyph .vv-intron-decoration,
+  .gene-glyph .vv-variant-inner,
+  .gene-glyph .vv-variant-ring,
+  .gene-glyph .vv-unplaced-chip {
     transition: none;
   }
 }
