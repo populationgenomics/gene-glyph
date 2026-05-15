@@ -15,7 +15,9 @@ export interface ExonTrackConfig {
   exonHalfHeight?: number;
   /** Pixel width of the donor / acceptor flank drawn at exon scale on either
    *  side of every collapsed intron. Drawn inside the intron-decoration group
-   *  whose opacity is tied to `--vv-intron-scale`. */
+   *  whose opacity is tied to `--vv-intron-scale`. When the inter-exon gap is
+   *  narrow the flank is capped so the central chevron-peaked section keeps a
+   *  visible horizontal extent. */
   flankPx?: number;
   /** Vertical lift of the chevron peak above the intron baseline. */
   chevronLift?: number;
@@ -95,7 +97,11 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         const bStart = viewport.cdsToScreen(b.cdsStart, 0);
         if (aEnd === null || bStart === null) continue;
         if (bStart <= aEnd) continue;
-        const flank = Math.min(flankPx, (bStart - aEnd) / 2);
+        // Reserve at least 1/3 of the gap for the chevron-peaked section so the
+        // peak always has a visible horizontal extent — at fit-gene zoom on a
+        // many-exon transcript the gap is well under 2*flankPx and the original
+        // gap/2 cap collapsed donorEnd === acceptorStart.
+        const flank = Math.min(flankPx, (bStart - aEnd) / 3);
         const donorEnd = aEnd + flank;
         const acceptorStart = bStart - flank;
         const peakX = (donorEnd + acceptorStart) / 2;
