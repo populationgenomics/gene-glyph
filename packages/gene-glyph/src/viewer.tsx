@@ -44,6 +44,11 @@ import {
   type TransitionTarget,
 } from './viewport.js';
 import { useViewportInteractions } from './use-viewport-interactions.js';
+import {
+  exportSvgString,
+  exportPngBlob,
+  type ExportArgs,
+} from './export.js';
 
 export interface GeneGlyphProps {
   transcript: Transcript;
@@ -218,11 +223,18 @@ export interface ViewportInfo {
 }
 
 /** Imperative-ref API surface exposed by `<GeneGlyph>`. Slice 8 ships the
- *  first three methods; `exportSVG` and `exportPNG` land in Slice 17. */
+ *  first three methods; Slice 19 adds `exportSVG` / `exportPNG`. */
 export interface GeneGlyphRef {
   fitTo(target: FitTarget): void;
   zoomBy(factor: number): void;
   getViewportInfo(): ViewportInfo;
+  /** Serialize the figure SVG to a stand-alone, theme-resolved string. The
+   *  returned SVG opens cleanly in Inkscape with no external CSS attached.
+   *  Slice 19. */
+  exportSVG(args?: ExportArgs): Promise<string>;
+  /** Rasterise the figure SVG to a PNG `Blob` at the requested pixel width.
+   *  Height is derived from the figure's aspect ratio. Slice 19. */
+  exportPNG(args?: ExportArgs & { widthPx: number }): Promise<Blob>;
 }
 
 function flattenTracks(items: TrackOrGroup[]): Track[] {
@@ -766,14 +778,58 @@ function GeneGlyphInner(
     };
   }, [viewport, layout]);
 
-  useImperativeHandle(
-    ref,
-    () => ({ fitTo, zoomBy, getViewportInfo }),
-    [fitTo, zoomBy, getViewportInfo],
-  );
-
   const aaLength = Math.floor(transcript.cdsLength / 3);
   const aria = `${transcript.geneSymbol} (${transcript.transcriptId}) — ${aaLength} aa`;
+  // The description is `<desc>`-bound — a slightly richer accessibility blurb
+  // than the bare title so screen readers and the Inkscape "Object
+  // Properties" panel both get useful context.
+  const exportDescription = `gene-glyph figure of ${transcript.geneSymbol} (${transcript.transcriptId}); view mode ${mode}.`;
+
+  const exportSVG = useCallback(
+    async (args?: ExportArgs): Promise<string> => {
+      const svg = svgRef.current;
+      if (!svg) throw new Error('exportSVG: figure SVG is not mounted yet.');
+      return exportSvgString({
+        svg,
+        ariaLabel: aria,
+        description: exportDescription,
+        args,
+      });
+    },
+    [aria, exportDescription],
+  );
+
+  const exportPNG = useCallback(
+    async (args?: ExportArgs & { widthPx: number }): Promise<Blob> => {
+      const svg = svgRef.current;
+      if (!svg) throw new Error('exportPNG: figure SVG is not mounted yet.');
+      const widthPx = args?.widthPx ?? 1800;
+      const { widthPx: _, ...svgArgs } = args ?? {};
+      const svgString = exportSvgString({
+        svg,
+        ariaLabel: aria,
+        description: exportDescription,
+        args: svgArgs,
+      });
+      const viewBox = svg.getAttribute('viewBox') ?? `0 0 ${width} ${totalHeight}`;
+      const parts = viewBox.split(/[\s,]+/).map(Number);
+      const vbW = Number.isFinite(parts[2]) ? (parts[2] as number) : width;
+      const vbH = Number.isFinite(parts[3]) ? (parts[3] as number) : totalHeight;
+      return exportPngBlob({
+        svgString,
+        widthPx,
+        viewBoxWidth: vbW,
+        viewBoxHeight: vbH,
+      });
+    },
+    [aria, exportDescription, width, totalHeight],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({ fitTo, zoomBy, getViewportInfo, exportSVG, exportPNG }),
+    [fitTo, zoomBy, getViewportInfo, exportSVG, exportPNG],
+  );
 
   // Aggregate hidden-feature counts across tracks once per render so the exon
   // track (and any host-supplied indicator track) sees a single per-gap total

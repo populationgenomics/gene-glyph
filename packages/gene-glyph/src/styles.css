@@ -543,16 +543,26 @@
   transition: filter 120ms ease-out, opacity 120ms ease-out;
 }
 
-/* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
+/* Print theme — applied via the offscreen wrapper that exportSVG mounts the
+ * cloned figure into. Three jobs:
+ *   1. Swap the screen palette for high-contrast colours that read on paper
+ *      (white background, dark text, saturated category swatches).
+ *   2. Bump stroke widths so the figure stays legible at thumbnail sizes when
+ *      a journal reflows it.
+ *   3. Kill any soft chrome (saturate/desaturate filters from the stale-data
+ *      affordance, drop shadows, low-opacity overlays) that would muddy print. */
 [data-vv-print] .gene-glyph {
-  --vv-color-text-primary: #1f2937;
-  --vv-color-text-secondary: #374151;
-  --vv-color-text-tertiary: #6b7280;
+  --vv-color-text-primary: #111827;
+  --vv-color-text-secondary: #1f2937;
+  --vv-color-text-tertiary: #4b5563;
   --vv-color-exon-fill: #9ca3af;
-  --vv-color-exon-stroke: #1f2937;
-  --vv-color-intron-line: #1f2937;
-  --vv-color-pfam-stroke: #1f2937;
-  --vv-color-pfam-label: #1f2937;
+  --vv-color-exon-stroke: #111827;
+  --vv-color-intron-line: #111827;
+  --vv-color-pfam-stroke: #111827;
+  --vv-color-pfam-label: #111827;
+  --vv-color-hidden-mark-bg: #fde68a;
+  --vv-color-hidden-mark-stroke: #78350f;
+  --vv-color-hidden-mark-text: #78350f;
   --vv-color-bg-surface: #ffffff;
   --vv-variant-color-missense: #b45309;
   --vv-variant-color-nonsense: #991b1b;
@@ -568,6 +578,52 @@
   --vv-variant-color-structural: #9d174d;
   --vv-variant-color-other: #4b5563;
   --vv-variant-color-unknown: #6b7280;
+  --vv-variant-dot-stroke: #ffffff;
+  --vv-brush-fill: rgba(37, 99, 235, 0.18);
+  --vv-brush-stroke: #1d4ed8;
+}
+
+[data-vv-print] .gene-glyph .vv-figure {
+  background: #ffffff;
+}
+
+/* Print stroke uplift. SVG presentation attributes lose to CSS rules so we
+ * can boost stroke-width without touching every track render. */
+[data-vv-print] .gene-glyph .vv-exon-rect,
+[data-vv-print] .gene-glyph .vv-pfam-rect,
+[data-vv-print] .gene-glyph .vv-interpro-rect {
+  stroke-width: 1.5;
+}
+
+[data-vv-print] .gene-glyph .vv-intron-polyline {
+  stroke-width: 2;
+}
+
+[data-vv-print] .gene-glyph .vv-variant-tick,
+[data-vv-print] .gene-glyph .vv-variant-ring,
+[data-vv-print] .gene-glyph .vv-variant-dot {
+  stroke-width: 2;
+}
+
+/* In-print, kill the stale-data desaturation filter and any transitions so the
+ * computed styles read by exportSVG land on the target frame. */
+[data-vv-print] .gene-glyph[data-vv-stale] .vv-variant,
+[data-vv-print] .gene-glyph[data-vv-stale] .vv-pfam-rect,
+[data-vv-print] .gene-glyph[data-vv-stale] .vv-interpro-rect,
+[data-vv-print] .gene-glyph[data-vv-stale] .vv-unplaced-chip {
+  filter: none;
+  opacity: 1;
+}
+
+[data-vv-print] .gene-glyph .vv-exon-group,
+[data-vv-print] .gene-glyph .vv-intron-decoration,
+[data-vv-print] .gene-glyph .vv-pfam-label-wrap,
+[data-vv-print] .gene-glyph .vv-interpro-label-wrap,
+[data-vv-print] .gene-glyph .vv-variant-inner,
+[data-vv-print] .gene-glyph .vv-variant-ring,
+[data-vv-print] .gene-glyph .vv-variant-shape,
+[data-vv-print] .gene-glyph .vv-hidden-feature-mark {
+  transition: none;
 }
 
 /* Reduced-motion override. Two trigger paths share the same selector list:
