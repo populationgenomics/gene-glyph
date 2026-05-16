@@ -183,6 +183,80 @@ describe('GeneGlyph — Slice 9 interactions', () => {
     });
   });
 
+  describe('brush selection', () => {
+    it('shift+drag emits a non-null brush range and shift-click clears it', async () => {
+      const onBrush = vi.fn();
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({})]}
+          onBrushChange={onBrush}
+        />,
+      );
+      await flushTrackLoads();
+      const svg = stubFigureRect(container, 1000);
+      // Shift-drag from cssX=300 to cssX=600. With width=1000 and the rect
+      // stubbed at 0..1000 css, that's a viewBox-x sweep of 300→600 which
+      // covers a substantial slice of the gene's CDS-bp ruler.
+      fireEvent.pointerDown(svg, {
+        pointerId: 7,
+        clientX: 300,
+        button: 0,
+        shiftKey: true,
+      });
+      fireEvent.pointerMove(window, { pointerId: 7, clientX: 600 });
+      fireEvent.pointerUp(window, { pointerId: 7, clientX: 600 });
+      expect(onBrush).toHaveBeenCalled();
+      const lastNonNull = [...onBrush.mock.calls].reverse().find((c) => c[0] !== null);
+      expect(lastNonNull).toBeDefined();
+      const range = lastNonNull![0] as [number, number];
+      expect(range[0]).toBeLessThan(range[1]);
+      expect(range[0]).toBeGreaterThan(0);
+      expect(range[1]).toBeLessThan(transcript.cdsLength + 1);
+
+      // Brush rect renders inside the figure SVG.
+      expect(
+        container.querySelector('svg.vv-figure .vv-brush-overlay'),
+      ).not.toBeNull();
+
+      // A shift-click with no drag clears the brush.
+      onBrush.mockClear();
+      fireEvent.pointerDown(svg, {
+        pointerId: 8,
+        clientX: 500,
+        button: 0,
+        shiftKey: true,
+      });
+      fireEvent.pointerUp(window, { pointerId: 8, clientX: 500 });
+      expect(onBrush).toHaveBeenLastCalledWith(null);
+    });
+
+    it('fitTo({kind:"selection"}) zooms to the active brush range', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({})]}
+          brushRange={[80, 220]}
+        />,
+      );
+      await flushTrackLoads();
+      // Avoid the unused warning while keeping the symbol stable for future
+      // hit-tests; the rect stub isn't needed because fitTo is imperative.
+      void container;
+      act(() => {
+        ref.current!.fitTo({ kind: 'selection' });
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 400));
+      });
+      const range = ref.current!.getViewportInfo().range;
+      expect(range[0]).toBeCloseTo(80, 5);
+      expect(range[1]).toBeCloseTo(220, 5);
+    });
+  });
+
   describe('keyboard', () => {
     it('arrow keys pan and +/- zoom; "1" returns to fit-gene', async () => {
       const ref = createRef<GeneGlyphRef>();

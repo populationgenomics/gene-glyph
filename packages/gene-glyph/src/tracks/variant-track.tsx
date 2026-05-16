@@ -153,6 +153,40 @@ export function partitionVariants(
   return { placed, unplaced };
 }
 
+/** Variant's ruler position for the current viewport mode — CDS bp in CDS
+ *  modes, aa in protein. Used by selection-highlight logic (Slice 16) to
+ *  decide whether a placed variant intersects a brush range. Returns `null`
+ *  for variants whose coord can't be resolved in the active mode (e.g., a
+ *  genomic coord that doesn't land on any exon). */
+export function variantRulerPos(
+  v: ViewerVariant,
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+): number | null {
+  let cPos: number;
+  let offset = 0;
+  switch (v.coord.kind) {
+    case 'cds':
+      cPos = v.coord.cPos;
+      offset = v.coord.offset;
+      break;
+    case 'protein':
+      if (viewport.mode === 'protein') return v.coord.aa;
+      cPos = mapper.proteinToCds(v.coord.aa);
+      break;
+    case 'genomic': {
+      const g = mapper.genomicToCds(v.coord.chr, v.coord.pos);
+      if (!g) return null;
+      cPos = g.cPos;
+      offset = g.offset;
+      break;
+    }
+  }
+  if (offset !== 0) return null;
+  if (viewport.mode === 'protein') return mapper.cdsToProtein(cPos);
+  return cPos;
+}
+
 function placeVariant(
   v: ViewerVariant,
   viewport: Viewport,
@@ -244,6 +278,17 @@ export function variantTrack(
     render(args: TrackRenderArgs<VariantTrackData>): ReactNode {
       const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } = args;
       const partition = partitionVariants(data.variants, viewport, mapper);
+      const brush = interaction.brushRange;
+      const inBrushIds = new Set<string>();
+      if (brush) {
+        const lo = Math.min(brush[0], brush[1]);
+        const hi = Math.max(brush[0], brush[1]);
+        for (const v of data.variants) {
+          const r = variantRulerPos(v, viewport, mapper);
+          if (r === null) continue;
+          if (r >= lo && r <= hi) inBrushIds.add(v.id);
+        }
+      }
       const midY = (rect.yTop + rect.yBottom) / 2;
       const dotCy = rect.yTop + dotRadius + 2;
       const tickTop = midY - tickHalf;
@@ -269,6 +314,7 @@ export function variantTrack(
             tickBottom,
             dotRadius,
             interaction,
+            inBrush: inBrushIds.has(p.variant.id),
             onFeatureHover,
             onFeatureClick,
           }),
@@ -369,12 +415,13 @@ interface RenderVariantArgs {
   tickBottom: number;
   dotRadius: number;
   interaction: TrackRenderArgs<VariantTrackData>['interaction'];
+  inBrush: boolean;
   onFeatureHover?: (featureId: string | null) => void;
   onFeatureClick?: (featureId: string) => void;
 }
 
 function renderVariant(args: RenderVariantArgs): ReactNode {
-  const { placement, dotCy, tickTop, tickBottom, dotRadius, interaction, onFeatureHover, onFeatureClick } = args;
+  const { placement, dotCy, tickTop, tickBottom, dotRadius, interaction, inBrush, onFeatureHover, onFeatureClick } = args;
   const v = placement.variant;
   const isHovered = interaction.hoveredFeatureId === v.id;
   const isSelected = interaction.selectedFeatureIds.has(v.id);
@@ -383,6 +430,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     `vv-variant-${v.category}`,
     isHovered && 'is-hovered',
     isSelected && 'is-selected',
+    inBrush && 'is-in-brush',
   ]
     .filter(Boolean)
     .join(' ');

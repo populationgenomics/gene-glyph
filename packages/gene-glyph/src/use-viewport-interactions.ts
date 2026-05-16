@@ -41,6 +41,11 @@ export interface UseViewportInteractionsArgs {
     range: readonly [number, number],
     reason: ViewportChangeReason,
   ) => void;
+  /** Called when a shift+drag (or right-button drag) brush gesture starts,
+   *  updates, or ends. `null` clears the brush (a shift-click with no drag).
+   *  Slice 16: viewers wire this onto their brush state (controlled or local)
+   *  and pass the result back via `interaction.brushRange`. */
+  onBrush: (range: readonly [number, number] | null) => void;
   /** Cancel any in-flight programmatic transition before applying a gesture
    *  update — direct manipulation supersedes a transition immediately. */
   cancelTransition: () => void;
@@ -67,6 +72,23 @@ interface PinchState {
   startRange: [number, number];
 }
 
+interface BrushState {
+  pointerId: number;
+  /** Ruler position (CDS bp or aa) at the pointer's down location. */
+  anchorRuler: number;
+  /** Client-px x at pointer-down; movement is judged against this so the
+   *  threshold doesn't change with zoom. */
+  startClientX: number;
+  /** True once the cursor has moved beyond {@link BRUSH_MIN_PX} client px.
+   *  Pointer-up before this clears the brush instead of emitting a zero-width
+   *  range. */
+  moved: boolean;
+}
+
+/** Minimum px movement before a shift-drag becomes a brush (anything less
+ *  registers as a click, which clears the brush). */
+const BRUSH_MIN_PX = 2;
+
 /**
  * Wires the default interaction bindings — drag/wheel/pinch/keyboard — onto
  * the figure SVG. The hook owns gesture-local refs (no React state during a
@@ -76,6 +98,7 @@ interface PinchState {
 export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   onPointerDown: (e: React.PointerEvent<SVGSVGElement>) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  onContextMenu: (e: React.MouseEvent<SVGSVGElement>) => void;
 } {
   const {
     viewport,
@@ -87,12 +110,14 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     controlled,
     bumpTick,
     onChange,
+    onBrush,
     cancelTransition,
     setNoTransition,
   } = args;
 
   const dragRef = useRef<DragState | null>(null);
   const pinchRef = useRef<PinchState | null>(null);
+  const brushRef = useRef<BrushState | null>(null);
 
   // Stable clamp helper bound to current opts.
   const clampOpts = useMemo(() => ({ minZoom, maxZoom }), [minZoom, maxZoom]);
@@ -140,6 +165,21 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return cssDx;
       return cssDx * (viewport.width / rect.width);
+    },
+    [svgRef, viewport],
+  );
+
+  /** Convert a client-space clientX to a ruler coordinate (CDS bp or aa,
+   *  per current mode). Clamps the input to the figure's visible width so
+   *  brush dragging past the figure edge pegs at the edge rather than
+   *  returning null. */
+  const clientXToRuler = useCallback(
+    (clientX: number): number | null => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return null;
+      const raw = ((clientX - rect.left) / rect.width) * viewport.width;
+      const clamped = Math.max(0, Math.min(viewport.width, raw));
+      return viewport.rulerAtScreen(clamped);
     },
     [svgRef, viewport],
   );
@@ -221,11 +261,33 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     setNoTransition(false);
   }, [setNoTransition]);
 
+  const endBrush = useCallback(() => {
+    brushRef.current = null;
+    const c = containerRef.current;
+    if (c) c.classList.remove('vv-brushing');
+  }, [containerRef]);
+
   // Pointer move / up listeners attach to the window once a pointer is down
   // so the gesture continues even if the cursor leaves the SVG.
   useEffect(() => {
     const onMove = (ev: PointerEvent) => {
-      // Pinch first — two pointers always overrides drag.
+      // Brush takes priority over drag/pinch — once a brush gesture is
+      // active, single-pointer move updates the brush range.
+      const brushSt = brushRef.current;
+      if (brushSt && brushSt.pointerId === ev.pointerId) {
+        if (!brushSt.moved && Math.abs(ev.clientX - brushSt.startClientX) < BRUSH_MIN_PX) {
+          return;
+        }
+        const r = clientXToRuler(ev.clientX);
+        if (r === null) return;
+        brushSt.moved = true;
+        const lo = Math.min(brushSt.anchorRuler, r);
+        const hi = Math.max(brushSt.anchorRuler, r);
+        onBrush([lo, hi]);
+        bumpTick();
+        return;
+      }
+      // Pinch next — two pointers always overrides drag.
       const pinch = pinchRef.current;
       if (pinch) {
         if (pinch.pointers.has(ev.pointerId)) {
@@ -247,6 +309,14 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       }
     };
     const onUp = (ev: PointerEvent) => {
+      const brushSt = brushRef.current;
+      if (brushSt && brushSt.pointerId === ev.pointerId) {
+        // Shift-click with no drag clears the brush; a real drag leaves the
+        // last emitted range in place.
+        if (!brushSt.moved) onBrush(null);
+        endBrush();
+        return;
+      }
       const pinch = pinchRef.current;
       if (pinch && pinch.pointers.has(ev.pointerId)) {
         pinch.pointers.delete(ev.pointerId);
@@ -277,8 +347,12 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     applyRange,
     panByPx,
     cssDxToViewbox,
+    clientXToRuler,
     endDrag,
     endPinch,
+    endBrush,
+    onBrush,
+    bumpTick,
     setNoTransition,
     svgRef,
     viewport,
@@ -286,6 +360,30 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
+      // Brush gesture: shift+drag (mouse or pen/touch) or secondary-button
+      // drag. Branches above the drag/pinch handling so a shift-down on top
+      // of an in-flight drag doesn't promote into a pinch by mistake.
+      const isBrushButton = e.button === 2;
+      const isBrushModifier = e.shiftKey;
+      if (isBrushButton || isBrushModifier) {
+        const r = clientXToRuler(e.clientX);
+        if (r === null) return;
+        // Drop any in-flight drag so we don't pan and brush simultaneously.
+        if (dragRef.current) endDrag();
+        brushRef.current = {
+          pointerId: e.pointerId,
+          anchorRuler: r,
+          startClientX: e.clientX,
+          moved: false,
+        };
+        const c = containerRef.current;
+        if (c) c.classList.add('vv-brushing');
+        // Mouse-button-2 needs preventDefault to suppress the context menu;
+        // the contextmenu handler on the SVG also suppresses it but stopping
+        // here means we don't have to round-trip.
+        if (isBrushButton) e.preventDefault();
+        return;
+      }
       if (e.button !== 0 && e.pointerType === 'mouse') return; // left-click only
       const drag = dragRef.current;
       if (drag) {
@@ -317,7 +415,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const c = containerRef.current;
       if (c) c.classList.add('vv-dragging');
     },
-    [viewport, svgRef, containerRef, setNoTransition],
+    [viewport, svgRef, containerRef, setNoTransition, clientXToRuler, endDrag],
   );
 
   const onKeyDown = useCallback(
@@ -375,7 +473,17 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     [viewport, applyRange, zoomAtX, setNoTransition],
   );
 
-  return { onPointerDown, onKeyDown };
+  const onContextMenu = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      // Suppress the native context menu so right-button-drag is usable as
+      // a brush gesture. Shift+right-click still opens the menu in browsers
+      // that bypass contextmenu (rare); shift+drag is the documented binding.
+      if (brushRef.current) e.preventDefault();
+    },
+    [],
+  );
+
+  return { onPointerDown, onKeyDown, onContextMenu };
 }
 
 function normaliseWheelDelta(delta: number, deltaMode: number): number {

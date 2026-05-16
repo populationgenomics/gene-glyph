@@ -88,6 +88,7 @@ export {
   variantTrack,
   partitionVariants,
   variantIntronGap,
+  variantRulerPos,
 } from './tracks/variant-track.js';
 export type {
   VariantTrackConfig,

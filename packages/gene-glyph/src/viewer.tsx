@@ -70,6 +70,17 @@ export interface GeneGlyphProps {
    *  render the matching features with a selection ring. Accepts a Set or any
    *  iterable for ergonomic callers. */
   selectedFeatureIds?: ReadonlySet<string> | Iterable<string>;
+  /** Controlled brush range. When supplied, the viewer renders the brush
+   *  overlay against this range and fires `onBrushChange` for shift+drag
+   *  gestures instead of mutating local state. Range is in current-mode ruler
+   *  coords (CDS bp in CDS modes, aa in protein). `null` clears the brush. */
+  brushRange?: readonly [number, number] | null;
+  /** Initial brush range for uncontrolled use. Default `null` (no brush). */
+  defaultBrushRange?: readonly [number, number] | null;
+  /** Fires after every committed brush mutation (gesture or imperative). The
+   *  range is `null` when the brush is cleared (shift-click without drag, or a
+   *  programmatic clear). */
+  onBrushChange?: (range: readonly [number, number] | null) => void;
   /** Fires when the cursor enters a feature (with featureId) or leaves all
    *  features (`null`). The originating track id is passed for hosts that
    *  multiplex over tracks. */
@@ -172,11 +183,12 @@ export function Footer(_props: FooterProps): null {
 Footer.displayName = 'GeneGlyph.Footer';
 
 /** Target for `GeneGlyphRef.fitTo`. Slice 8 lands `gene`, `feature`, and
- *  `range`; `selection` arrives with brush in Slice 16. */
+ *  `range`; Slice 16 adds `selection` which reads the active brush range. */
 export type FitTarget =
   | { kind: 'gene' }
   | { kind: 'feature'; trackId: string; featureId: string }
-  | { kind: 'range'; range: readonly [number, number] };
+  | { kind: 'range'; range: readonly [number, number] }
+  | { kind: 'selection' };
 
 /** Snapshot of viewport state returned by `getViewportInfo()`. `range` is
  *  interpolated through any in-flight programmatic transition; `zoom` is
@@ -268,6 +280,9 @@ function GeneGlyphInner(
     trackHeightBudget = 200,
     hoveredFeatureId = null,
     selectedFeatureIds,
+    brushRange: controlledBrushRange,
+    defaultBrushRange,
+    onBrushChange,
     onHover,
     onFeatureClick,
     interactionMode = 'standard',
@@ -282,10 +297,17 @@ function GeneGlyphInner(
   ref: Ref<GeneGlyphRef>,
 ) {
   const controlled = viewportRange !== undefined;
+  const brushControlled = controlledBrushRange !== undefined;
   const [uncontrolledMode] = useState<ViewMode>(
     () => defaultMode ?? 'cds-with-introns',
   );
   const mode = controlledMode ?? uncontrolledMode;
+  const [uncontrolledBrush, setUncontrolledBrush] = useState<
+    readonly [number, number] | null
+  >(() => defaultBrushRange ?? null);
+  const brush: readonly [number, number] | null = brushControlled
+    ? controlledBrushRange ?? null
+    : uncontrolledBrush;
   const trackList = useMemo<TrackOrGroup[]>(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
     [tracks],
@@ -442,9 +464,17 @@ function GeneGlyphInner(
     () => ({
       hoveredFeatureId,
       selectedFeatureIds: selectedSet,
-      brushRange: null,
+      brushRange: brush,
     }),
-    [hoveredFeatureId, selectedSet],
+    [hoveredFeatureId, selectedSet, brush],
+  );
+
+  const applyBrush = useCallback(
+    (next: readonly [number, number] | null) => {
+      if (!brushControlled) setUncontrolledBrush(next);
+      onBrushChange?.(next);
+    },
+    [brushControlled, onBrushChange],
   );
 
   const handleHover = useCallback(
@@ -493,6 +523,7 @@ function GeneGlyphInner(
       },
       [onViewportChange],
     ),
+    onBrush: applyBrush,
     cancelTransition,
     setNoTransition,
   });
@@ -503,10 +534,13 @@ function GeneGlyphInner(
         beginTransition({ range: viewport.naturalRange() });
         return;
       }
-      if (target.kind === 'range') {
+      if (target.kind === 'range' || target.kind === 'selection') {
+        const range =
+          target.kind === 'range' ? target.range : brush;
+        if (!range) return;
         const natural = viewport.naturalRange();
-        const lo = Math.max(natural[0], Math.min(target.range[0], target.range[1]));
-        const hi = Math.min(natural[1], Math.max(target.range[0], target.range[1]));
+        const lo = Math.max(natural[0], Math.min(range[0], range[1]));
+        const hi = Math.min(natural[1], Math.max(range[0], range[1]));
         if (hi <= lo) return;
         beginTransition({ range: [lo, hi] });
         return;
@@ -553,7 +587,7 @@ function GeneGlyphInner(
       if (hi <= lo) return;
       beginTransition({ range: [lo, hi] });
     },
-    [beginTransition, viewport, flatTracks, trackData, mapper],
+    [beginTransition, viewport, flatTracks, trackData, mapper, brush],
   );
 
   const zoomBy = useCallback(
@@ -655,6 +689,80 @@ function GeneGlyphInner(
     };
   };
 
+  const brushOverlay = useMemo<ReactNode>(() => {
+    if (!brush) return null;
+    const [a, b] = brush;
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    if (!(hi > lo)) return null;
+    const projection =
+      viewport.mode === 'protein'
+        ? viewport.projectProteinRange(lo, hi)
+        : viewport.projectCdsRange(lo, hi);
+    if (projection.segments.length === 0) return null;
+    const geom = viewport.baselineGeometry();
+    const cellsByExon = new Map<number, { xStart: number; xEnd: number }>();
+    for (const seg of projection.segments) {
+      const eb = geom.exons[seg.exonIdx];
+      if (!eb) continue;
+      const xStart = Math.max(0, seg.xStart - eb.xStart);
+      const xEnd = Math.min(eb.width, seg.xEnd - eb.xStart);
+      if (!(xEnd > xStart)) continue;
+      cellsByExon.set(seg.exonIdx, { xStart, xEnd });
+    }
+    const parts: ReactNode[] = [];
+    const sortedIdx = [...cellsByExon.keys()].sort((p, q) => p - q);
+    for (const i of sortedIdx) {
+      const c = cellsByExon.get(i)!;
+      parts.push(
+        painter.placeInExonGroup(
+          i,
+          <rect
+            key={`brush-exon-${i}`}
+            className="vv-brush-rect"
+            x={c.xStart}
+            y={0}
+            width={c.xEnd - c.xStart}
+            height={totalHeight}
+            vectorEffect="non-scaling-stroke"
+          />,
+        ),
+      );
+    }
+    // Fill inter-exon gaps in cds-with-introns mode so the brush reads as a
+    // single continuous strip across adjacent touched exons. In spliced /
+    // protein modes the gap collapses (intronScale=0) so the gap rect is
+    // invisible there anyway; rendering it is still cheap and keeps the
+    // mode-transition cross-fade aligned with the exon decoration.
+    for (let k = 0; k < sortedIdx.length - 1; k++) {
+      const a0 = sortedIdx[k]!;
+      const b0 = sortedIdx[k + 1]!;
+      if (b0 !== a0 + 1) continue;
+      const gap = geom.gaps[a0];
+      if (!gap || gap.width <= 0) continue;
+      parts.push(
+        painter.placeInInterExon(
+          a0,
+          b0,
+          <rect
+            key={`brush-gap-${a0}-${b0}`}
+            className="vv-brush-rect vv-brush-rect-gap"
+            x={0}
+            y={0}
+            width={gap.width}
+            height={totalHeight}
+            vectorEffect="non-scaling-stroke"
+          />,
+        ),
+      );
+    }
+    return (
+      <g className="vv-brush-overlay" data-testid="gene-glyph-brush" aria-hidden>
+        {parts}
+      </g>
+    );
+  }, [brush, viewport, painter, totalHeight, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const belowNodes: ReactNode[] = [];
   for (const t of flatTracks) {
     if (!t.renderBelow) continue;
@@ -712,6 +820,7 @@ function GeneGlyphInner(
         role="img"
         aria-label={aria}
         onPointerDown={interactions.onPointerDown}
+        onContextMenu={interactions.onContextMenu}
       >
         <title>{aria}</title>
         {flatTracks.map((t) => {
@@ -723,6 +832,7 @@ function GeneGlyphInner(
             </g>
           );
         })}
+        {brushOverlay}
       </svg>
       {rightGutter ? renderGutter('right', rightGutter.props.width, rightGutter.props.children) : null}
     </div>

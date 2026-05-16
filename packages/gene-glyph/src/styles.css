@@ -296,6 +296,33 @@
     opacity 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+/* Slice 16: brush overlay. Each touched exon contributes a rect inside its
+ * per-exon group, and (in cds-with-introns) each intervening gap contributes
+ * a rect inside the inter-exon decoration group. The exon rect rides the live
+ * pan/zoom transform; the gap rect rides `--vv-intron-scale` so the brush
+ * cross-fades alongside the polyline on mode change. */
+.gene-glyph {
+  --vv-brush-fill: rgba(37, 99, 235, 0.14);
+  --vv-brush-stroke: rgba(37, 99, 235, 0.65);
+}
+
+.gene-glyph .vv-brush-rect {
+  fill: var(--vv-brush-fill);
+  stroke: var(--vv-brush-stroke);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.gene-glyph .vv-brush-rect-gap {
+  stroke: none;
+}
+
+.gene-glyph.vv-brushing,
+.gene-glyph.vv-brushing .vv-figure,
+.gene-glyph.vv-brushing .vv-figure * {
+  cursor: crosshair;
+}
+
 /* Variant track. Each variant lives inside a per-exon group; the outer `g`
  * carries focus and hit-test, the inner `g` carries the hover-lift transform
  * so the lift is a CSS-only animation. */
@@ -321,6 +348,10 @@
 
 .gene-glyph .vv-variant.is-selected .vv-variant-ring {
   opacity: 1;
+}
+
+.gene-glyph .vv-variant.is-in-brush .vv-variant-ring {
+  opacity: 0.75;
 }
 
 .gene-glyph .vv-variant:focus-visible .vv-variant-ring {
