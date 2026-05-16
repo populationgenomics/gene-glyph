@@ -51,6 +51,20 @@
   --vv-variant-dot-stroke: #ffffff;
 
   --vv-variant-hover-lift-px: 4px;
+
+  /* ClinVar clinical-significance palette. Hosts can override on either the
+   * gene-glyph root or a parent surface to retheme without recompiling. */
+  --vv-clinvar-color-pathogenic: #b91c1c;
+  --vv-clinvar-color-likely-pathogenic: #dc2626;
+  --vv-clinvar-color-uncertain: #a16207;
+  --vv-clinvar-color-likely-benign: #65a30d;
+  --vv-clinvar-color-benign: #16a34a;
+  --vv-clinvar-color-conflicting: #7c3aed;
+  --vv-clinvar-color-other: #64748b;
+  --vv-clinvar-dot-stroke: #ffffff;
+  --vv-clinvar-count-fill: #ffffff;
+  --vv-clinvar-popover-bg: #ffffff;
+  --vv-clinvar-popover-stroke: #cbd5e1;
 }
 
 .gene-glyph .vv-header {
@@ -789,4 +803,30 @@
 
 [data-vv-reduce-motion] .gene-glyph .vv-default-chevron-icon {
   transition: none;
+}
+
+/* ClinVar track. Density-clustered marks render either as a circle (single
+ * record) or a diamond (cluster of N) with a count overlay. Each mark sits
+ * inside its host exon's per-exon `<g>` so it animates with that exon during
+ * pan/zoom; the inner shape carries a counter-scale so circles/diamonds stay
+ * round regardless of the parent exon's horizontal scaleX. */
+.gene-glyph .vv-clinvar-mark {
+  outline: none;
+}
+
+.gene-glyph .vv-clinvar-mark.is-open .vv-clinvar-shape {
+  filter: drop-shadow(0 0 1px rgba(15, 23, 42, 0.5));
+}
+
+.gene-glyph .vv-clinvar-popover {
+  pointer-events: auto;
+}
+
+.gene-glyph .vv-clinvar-popover-row:hover rect,
+.gene-glyph .vv-clinvar-popover-row.is-hovered rect {
+  fill: var(--vv-clinvar-popover-row-hover, rgba(15, 23, 42, 0.05));
+}
+
+.gene-glyph .vv-clinvar-popover-backdrop {
+  pointer-events: all;
 }

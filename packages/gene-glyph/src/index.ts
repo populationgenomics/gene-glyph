@@ -118,5 +118,24 @@ export type {
   InterProTrackConfig,
   InterProSubTrackData,
 } from './tracks/interpro-track.js';
+export {
+  clinVarTrack,
+  clusterClinVar,
+  placeClinVarRecords,
+  parseClinVarSignificance,
+  clinVarSignificanceColor,
+  humanSignificance,
+} from './tracks/clinvar-track.js';
+export type {
+  ClinVarTrackConfig,
+  ClinVarTrackData,
+  ClinVarSource,
+  ClinVarRecord,
+  ClinVarSignificance,
+  ClinVarCluster,
+  PlacedClinVar,
+} from './tracks/clinvar-track.js';
+export { createClinVarDataSource } from './adapters/clinvar.js';
+export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
 export { packLanes } from './pack-lanes.js';
 export type { LaneInput, PackedItem, PackResult } from './pack-lanes.js';
