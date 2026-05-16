@@ -392,6 +392,12 @@
   --vv-variant-color-unknown: #6b7280;
 }
 
+/* Reduced-motion override. Two trigger paths share the same selector list:
+ *   1. `@media (prefers-reduced-motion: reduce)` — real-user OS preference.
+ *   2. `[data-vv-reduce-motion]` on any ancestor — manual simulation for
+ *      testing (the playground exposes a checkbox; Playwright can also use
+ *      `page.emulateMedia({ reducedMotion: 'reduce' })` which fires the
+ *      @media path). Both reach the same target rules. */
 @media (prefers-reduced-motion: reduce) {
   .gene-glyph .vv-exon-group,
   .gene-glyph .vv-intron-decoration,
@@ -403,4 +409,15 @@
   .gene-glyph .vv-unplaced-chip {
     transition: none;
   }
+}
+
+[data-vv-reduce-motion] .gene-glyph .vv-exon-group,
+[data-vv-reduce-motion] .gene-glyph .vv-intron-decoration,
+[data-vv-reduce-motion] .gene-glyph .vv-pfam-label-wrap,
+[data-vv-reduce-motion] .gene-glyph .vv-interpro-label-wrap,
+[data-vv-reduce-motion] .gene-glyph .vv-variant-inner,
+[data-vv-reduce-motion] .gene-glyph .vv-variant-ring,
+[data-vv-reduce-motion] .gene-glyph .vv-variant-shape,
+[data-vv-reduce-motion] .gene-glyph .vv-unplaced-chip {
+  transition: none;
 }
