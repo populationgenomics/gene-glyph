@@ -15,13 +15,13 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.j
 
 /**
  * Slot-system scenario — exercises every compound-component slot plus the
- * Slice 8 imperative-ref API.
+ * Slice 8 imperative-ref API and the Slice 14 mode transition.
  *
- * The header dropdown is still inert pending Slice 12 (mode transitions); the
- * zoom toolbar now drives `fitTo` / `zoomBy` through a `GeneGlyphRef` and
- * shows a live readout from `getViewportInfo`. "Fit Variant" picks the first
- * hotspot variant from the fixture so the user can watch the viewport zoom
- * onto it.
+ * The header `<select>` is wired as a controlled `mode` prop; switching
+ * cross-fades intron decorations and slides per-exon transforms onto the new
+ * mode's baseline via the 450ms ease-in-out-quart curve in `styles.css`. The
+ * zoom toolbar drives `fitTo` / `zoomBy` through a `GeneGlyphRef`; the
+ * right-hand readout pulls live state from `getViewportInfo`.
  */
 export function SlotSystemScenario() {
   const [mode, setMode] = useState<ViewMode>('cds-with-introns');
@@ -50,11 +50,10 @@ export function SlotSystemScenario() {
     <section className="scenario" aria-labelledby="scenario-slots">
       <h2 id="scenario-slots">Slot system — TP53</h2>
       <p className="scenario-blurb">
-        Slice 8 wires the toolbar through the imperative ref API. Fit-gene,
-        fit-variant, and zoom buttons drive the viewport via{' '}
+        Fit-gene, fit-variant, and zoom buttons drive the viewport via{' '}
         <code>GeneGlyphRef</code>; the right-hand readout pulls live state from{' '}
-        <code>getViewportInfo()</code>. The mode dropdown is still inert
-        (animated mode transitions land in Slice 12).
+        <code>getViewportInfo()</code>. The mode dropdown is now live — switching
+        cross-fades intron decorations and slides exons onto the new ruler.
       </p>
       <GeneGlyph
         ref={ref}
