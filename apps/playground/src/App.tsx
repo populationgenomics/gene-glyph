@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import '@populationgenomics/gene-glyph/styles.css';
 import { AsyncDataSourceScenario } from './scenarios/async-data-source.js';
+import { ClinVarDemoScenario } from './scenarios/clinvar-demo.js';
 import { DefaultChromeScenario } from './scenarios/default-chrome.js';
 import { ExportDemoScenario } from './scenarios/export-demo.js';
 import { InteractionDemoScenario } from './scenarios/interaction-demo.js';
@@ -34,6 +35,7 @@ export function App() {
       <AsyncDataSourceScenario />
       <DefaultChromeScenario />
       <ExportDemoScenario />
+      <ClinVarDemoScenario />
       <PaperReportScenario />
       <PfamDemoScenario />
       <InterProDemoScenario />
