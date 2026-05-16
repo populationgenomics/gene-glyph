@@ -2,7 +2,7 @@
 
 Tracer-bullet vertical slices ordered to deliver visible value incrementally. Each slice ends with a runnable demonstration in `apps/playground` and a defined acceptance bar.
 
-Slices 1–18 deliver the cutover-ready package. Slices 19–24 deliver the post-cutover feature wishlist.
+Slices 1–20 deliver the cutover-ready package. Slices 21–26 deliver the post-cutover feature wishlist.
 
 ---
 
@@ -201,12 +201,66 @@ Wire up the default interaction bindings; viewer becomes interactive.
 
 ---
 
-### Slice 10 — CSS-driven hover lift + selection feedback
+### Slice 10 — Smooth pan internals
 
-Polish on per-feature micro-interactions; locks in the discipline of "all motion via `transform` on wrappers."
+Make programmatic pan / zoom / mode transitions actually glide. Slice 9 shipped the gesture bindings but exposed that per-exon widths change as the visible-bp ratio changes: the wrapping `.vv-exon-group` `<g>` animates its `translateX`, while content inside it re-renders at new local coords *instantly* — so during a transition the figure visibly snaps. Keyboard pans set `vv-no-transition` as a workaround; this slice lets the transitions stay on.
 
 **In scope:**
-- Audit all track render functions to ensure motion is via wrapping `<g>` transform, not via attribute interpolation
+- `ViewportController` publishes a per-exon `--vv-exon-scale-x-{N}` (current visible width ÷ baseline width) on top of the existing `--vv-exon-x-{N}` / `--vv-exon-w-{N}`
+- `placeInExonGroup` applies `transform: translateX(var(--vv-exon-x-N)) scaleX(var(--vv-exon-scale-x-N))`
+- Tracks express feature coords in a baseline-local frame (fit-gene exon width) so the scaleX carries them to current width without re-rendering on every range tick
+- All strokes inside exon groups get `vector-effect="non-scaling-stroke"`
+- Pfam / InterPro labels apply a counter `scaleX(calc(1 / var(--vv-exon-scale-x-N)))` so text doesn't squish
+- Variant ticks + dots use non-scaling stroke; dots stay circular
+- Remove the `vv-no-transition` set on keyboard pan/zoom from Slice 9 (no longer needed)
+- Audit all track render functions: motion must be via wrapping `<g>` transform, never via SVG attribute interpolation
+- Playground smoke scenario: fitTo across the gene with the figure in cds-with-introns mode, eyeball that exons + introns + Pfam segments all slide together
+
+**Definition of done:**
+- `fitTo`, `zoomBy`, mode transitions in `cds-with-introns` mode glide smoothly — no content snap inside the animation window
+- Pfam / InterPro labels stay readable at all zoom levels (no horizontal stretch/squish artifacts)
+- Variant dots stay circular regardless of zoom
+- Keyboard pan animates smoothly without the `vv-no-transition` override
+- Animation discipline documented in CONTRIBUTING.md
+
+---
+
+### Slice 11 — Playwright browser tests (backfill + going-forward)
+
+JSDOM-only coverage misses the visual coordination the design relies on — CSS transitions, layout reflow under width changes, pinch gestures, intron-vs-exon animation alignment. Stand up Playwright so we can exercise the rendered playground, then backfill tests for every slice already on `main`.
+
+**In scope:**
+- Add `@playwright/test` as a workspace devDep + `playwright.config.ts` at the repo root (or under `apps/playground`) with a `webServer` block that starts `vite` and tears it down at end of run
+- Browser bootstrap: `npx playwright install --with-deps chromium`
+- Workspace script `npm run test:e2e`
+- Tests under `tests/e2e/` (or `apps/playground/tests/`) backfilling each shipped slice's acceptance bar:
+  - Slice 3 (paper-report renders, exons + intron decorations visible)
+  - Slice 4 (variant hover lift, click selection ring)
+  - Slice 5 (Pfam multi-exon domain shows a linker over the gap; labels truncate)
+  - Slice 6 (InterPro group labels surface via the LeftGutter)
+  - Slice 7 (Header / Footer / RightGutter slots render; figure SVG width adjusts to gutter widths)
+  - Slice 8 (imperative `fitTo` + `zoomBy` via the GeneGlyphRef, viewport readout updates)
+  - Slice 9 (drag-pan moves the gene under the cursor; wheel pans; Cmd/Ctrl+wheel zooms; keyboard `+ − ← → 1`; pan-limit fall-through)
+  - Slice 10 (smooth-pan: capture screenshots mid-transition and assert exon + intron transforms move together; Pfam labels not stretched)
+- Visual regression snapshots for canonical scenarios under `tests/e2e/__snapshots__/`
+- CI workflow `.github/workflows/ci.yml` gains a `playwright` job that runs after the unit suite passes; uploads diff artifacts on failure
+- `CONTRIBUTING.md`: how to update snapshots, how to run a single test, how to debug with `--headed`
+- Future slices add at least one Playwright test as part of their acceptance bar (document this convention in `slices.md`)
+
+**Definition of done:**
+- `npm run test:e2e` passes locally and in CI
+- Every shipped slice (3–10) has at least one Playwright assertion pinning its acceptance bar
+- Visual regression snapshots committed for `paper-report`, `slot-system`, and `interaction-demo`
+- CI Playwright job goes green on `main`
+
+---
+
+### Slice 12 — CSS-driven hover lift + selection feedback
+
+Polish on per-feature micro-interactions; locks in the discipline of "all motion via `transform` on wrappers." (Previously Slice 10; now follows Slice 10 — smooth pan internals — and Slice 11 — Playwright backfill.)
+
+**In scope:**
+- Re-audit track render functions after Slice 10 (which already lands part of this discipline) to ensure motion is via wrapping `<g>` transform, not via attribute interpolation
 - Selection ring uses CSS opacity transition
 - Hover lift uses CSS transform transition
 - `prefers-reduced-motion` global rule in `styles.css` overriding all transitions to `none`
@@ -221,7 +275,7 @@ Polish on per-feature micro-interactions; locks in the discipline of "all motion
 
 ## Phase 3: Cutover
 
-### Slice 11 — Lit-manager adapter + cutover
+### Slice 13 — Lit-manager adapter + cutover
 
 Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
@@ -255,7 +309,7 @@ Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
 ## Phase 4: Post-cutover features
 
-### Slice 12 — Mode transitions (CDS ↔ spliced ↔ protein)
+### Slice 14 — Mode transitions (CDS ↔ spliced ↔ protein)
 
 The first feature the rewrite was for. Modes are viewport projections, not separate render paths.
 
@@ -274,7 +328,7 @@ The first feature the rewrite was for. Modes are viewport projections, not separ
 
 ---
 
-### Slice 13 — Hidden-feature indicators
+### Slice 15 — Hidden-feature indicators
 
 Tracks that care surface counts of features dropped by current viewport.
 
@@ -292,7 +346,7 @@ Tracks that care surface counts of features dropped by current viewport.
 
 ---
 
-### Slice 14 — Brush selection
+### Slice 16 — Brush selection
 
 Users can drag-select a range; tracks reflect the selection.
 
@@ -311,7 +365,7 @@ Users can drag-select a range; tracks reflect the selection.
 
 ---
 
-### Slice 15 — Overlay layer
+### Slice 17 — Overlay layer
 
 Tooltips, "you are here" markers, transient UI floating above tracks.
 
@@ -330,7 +384,7 @@ Tooltips, "you are here" markers, transient UI floating above tracks.
 
 ---
 
-### Slice 16 — DataSource adapter pattern + async track loading
+### Slice 18 — DataSource adapter pattern + async track loading
 
 The infrastructure for pluggable backends.
 
@@ -351,7 +405,7 @@ The infrastructure for pluggable backends.
 
 ---
 
-### Slice 17 — Camera-ready export (SVG + PNG)
+### Slice 19 — Camera-ready export (SVG + PNG)
 
 The "camera-ready vector graphics" goal lands.
 
@@ -374,7 +428,7 @@ The "camera-ready vector graphics" goal lands.
 
 ---
 
-### Slice 18 — Convenience chrome exports
+### Slice 20 — Convenience chrome exports
 
 Pre-built chrome components for hosts that don't want to write their own.
 
@@ -392,9 +446,9 @@ Pre-built chrome components for hosts that don't want to write their own.
 
 ## Phase 5: New data tracks
 
-These are independent of each other and can be grabbed in parallel after Slice 16.
+These are independent of each other and can be grabbed in parallel after Slice 18.
 
-### Slice 19 — ClinVar track
+### Slice 21 — ClinVar track
 
 **In scope:**
 - `clinVarTrack({source})` factory
@@ -411,7 +465,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 20 — gnomAD track
+### Slice 22 — gnomAD track
 
 **In scope:**
 - `gnomADTrack({source, populations})` factory
@@ -427,7 +481,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 21 — AlphaMissense track
+### Slice 23 — AlphaMissense track
 
 **In scope:**
 - `alphaMissenseTrack({source})` factory
@@ -443,7 +497,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 22 — MAVE track
+### Slice 24 — MAVE track
 
 **In scope:**
 - `maveTrack({source})` factory
@@ -459,7 +513,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 23 — User annotation track
+### Slice 25 — User annotation track
 
 **In scope:**
 - `userAnnotationTrack({store})` factory
@@ -476,12 +530,12 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 24 — Mini-map as standalone component + Overview track
+### Slice 26 — Mini-map as standalone component + Overview track
 
 Two final pieces of polish.
 
 **In scope:**
-- `DefaultMinimap` already exists from Slice 18; ensure it shares the imperative-ref machinery cleanly
+- `DefaultMinimap` already exists from Slice 20; ensure it shares the imperative-ref machinery cleanly
 - `overviewTrack({})` — alternative to footer minimap: a track that renders the full gene at fixed scale with a draggable viewport rectangle, embedded *inside* the figure SVG as a track (for hosts that want it in-figure rather than in chrome)
 - Documentation comparing the two approaches and when to use each
 
@@ -496,28 +550,28 @@ Two final pieces of polish.
 ### Documentation
 - `README.md` with install + minimal example + link to playground
 - API reference auto-generated from TypeScript declarations
-- Migration guide for lit-manager (referenced from Slice 11)
+- Migration guide for lit-manager (referenced from Slice 13)
 - CONTRIBUTING.md covering yalc workflow, animation discipline, painter abstraction rules
 
 ### CI / quality gates
 - All slices keep CI green
 - Visual regression snapshots updated as part of each slice's PR
-- Bundle-size budget enforced post-Slice 11 (target: <50KB gzipped for the core lib)
+- Bundle-size budget enforced post-Slice 13 (target: <50KB gzipped for the core lib)
 
 ### Versioning milestones
 - `0.1.0` — after Slice 3 (first real render)
-- `0.5.0` — after Slice 10 (parity render path complete, no cutover yet)
-- `1.0.0` — Slice 11 (lit-manager cutover)
+- `0.5.0` — after Slice 12 (parity render path complete, no cutover yet)
+- `1.0.0` — Slice 13 (lit-manager cutover)
 - `1.x` — subsequent slices (additive features, no breaking changes)
 
 ---
 
 ## Notes on parallelisation
 
-- Slices 1–11 are mostly sequential (each builds on the previous render path).
-- Slice 12 (mode transitions) blocks new tracks that need to respect modes (Slices 20, 21).
-- Slices 16, 17, 18 unblock independent work.
-- Slices 19–23 (data tracks) are all parallel after Slice 16.
-- Slice 24 is a polish slice; can land any time after Slice 18.
+- Slices 1–13 are mostly sequential (each builds on the previous render path).
+- Slice 14 (mode transitions) blocks new tracks that need to respect modes (Slices 22, 23).
+- Slices 18, 19, 20 unblock independent work.
+- Slices 21–25 (data tracks) are all parallel after Slice 18.
+- Slice 26 is a polish slice; can land any time after Slice 20.
 
-A two-person team could split: one drives the render path (Slices 1–11), the other follows behind with infrastructure (Slices 14–18) and then peels off data tracks in parallel.
+A two-person team could split: one drives the render path (Slices 1–13), the other follows behind with infrastructure (Slices 16–20) and then peels off data tracks in parallel.
