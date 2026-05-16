@@ -298,6 +298,18 @@ Polish on per-feature micro-interactions; locks in the discipline of "all motion
 
 Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
+> **Status: shipped.** lit-manager now renders gene schematics via
+> `<GeneGlyph>`. The translation layer lives in
+> `frontend/src/components/gene-glyph-adapter.ts` (lit-manager `GeneSchematic`
+> → `Transcript`, `ProteinRecord` → `ProteinAnnotations`,
+> `ExtractedVariantRecord` → `ViewerVariant`); a thin
+> `GeneGlyphPanel.tsx` wraps the viewer with exon + variant + Pfam + InterPro
+> tracks and the InterPro left-gutter group label. Variants without a
+> parseable HGVS `c.` notation are mapped to a sentinel out-of-range CDS
+> position so they bubble into the viewer's unplaced-variants list. The
+> bespoke `GeneSchematic.tsx` is deleted. gene-glyph `1.0.0` published in
+> tandem.
+
 **In scope:**
 - `frontend/src/components/gene-glyph-adapter.ts`: maps `ExtractedVariantRecord` → `ViewerVariant`, `ProteinRecord` → `ProteinAnnotations`, lit-manager's `GeneSchematic` type → `Transcript`
 - Replace `<GeneSchematicView ...>` in `ReportsTabContent.tsx` (lines 302 and 413) with `<GeneGlyph ...>`
