@@ -5,6 +5,7 @@ import { InterProDemoScenario } from './scenarios/interpro-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
 import { PfamDemoScenario } from './scenarios/pfam-demo.js';
 import { SlotSystemScenario } from './scenarios/slot-system.js';
+import { TooltipDemoScenario } from './scenarios/tooltip-demo.js';
 
 export function App() {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -26,6 +27,7 @@ export function App() {
       </label>
       <InteractionDemoScenario />
       <SlotSystemScenario />
+      <TooltipDemoScenario />
       <PaperReportScenario />
       <PfamDemoScenario />
       <InterProDemoScenario />

@@ -23,13 +23,16 @@ async function getFigure(page: Page): Promise<Locator> {
 test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
   test('keyboard right-arrow pans the range to the right', async ({ page }) => {
     await page.goto('/');
-    const figure = await getFigure(page);
-    // Focus the figure's container so onKeyDown fires.
-    await figure.locator('..').locator('..').focus();
+    await getFigure(page);
+    // Focus the keyboard-handling root directly. Slice 17 added a
+    // .vv-figure-wrap between the SVG and the figure row, so relative
+    // parent-walks are now brittle.
+    const container = page.locator('section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]');
+    await container.focus();
     const before = await readRange(page);
     await page.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await readRange(page))[0], { timeout: 2_000 }).toBeGreaterThan(before[0]);
     const after = await readRange(page);
-    expect(after[0]).toBeGreaterThan(before[0]);
     expect(after[1]).toBeGreaterThan(before[1]);
     expect(await lastReason(page)).toBe('keyboard');
   });
