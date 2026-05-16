@@ -201,27 +201,44 @@ Wire up the default interaction bindings; viewer becomes interactive.
 
 ---
 
-### Slice 10 — Smooth pan internals
+### Slice 10 — Smooth pan internals (stable geometry + viewport-only transforms)
 
-Make programmatic pan / zoom / mode transitions actually glide. Slice 9 shipped the gesture bindings but exposed that per-exon widths change as the visible-bp ratio changes: the wrapping `.vv-exon-group` `<g>` animates its `translateX`, while content inside it re-renders at new local coords *instantly* — so during a transition the figure visibly snaps. Keyboard pans set `vv-no-transition` as a workaround; this slice lets the transitions stay on.
+Make pan / zoom / mode transitions actually glide. Slice 9 surfaced two related bugs that share a single root cause: **track geometry is recomputed against the current viewport range on every render**.
+
+- During an animated `fitTo` / `zoomBy`, per-exon widths change because `pxPerBp` depends on the visible-bp total; the wrapping `.vv-exon-group` `<g>` slides via CSS transform while React snaps its children to new local coords mid-flight (the "content jumps inside the animated frame" symptom Slice 9 worked around by snapping keyboard pans).
+- During a drag, `exon-track` clips each exon's CDS range to `[rangeLo, rangeHi]` and recomputes the rect width from the clipped endpoints. Edge exons reshape continuously instead of sliding off-figure (the "popping at the ends" symptom). The same `clipCdsToScreen` helper is mirrored in Pfam / InterPro tracks.
+- `ViewportController.publish` compounds it by falling back to `xStart = 0` for fully-hidden exons, so as an exon transitions from partially visible to off-figure its `--vv-exon-x-{N}` snaps to the figure's left edge rather than continuing past it.
+
+Both symptoms go away if geometry stops being viewport-dependent and clipping moves to the rendering layer.
+
+**Strategy:**
+1. **Baseline geometry per exon** — each exon owns a stable screen-x + width derived from a viewport-independent reference (fit-gene). Tracks render their features in that baseline frame; their rect `width` / `x` attributes don't change on pan or zoom.
+2. **Viewport drives translate + scale only** — `ViewportController` publishes `--vv-exon-x-{N}` (current screen-x, including off-figure values) and `--vv-exon-scale-x-{N}` (current width ÷ baseline width). `placeInExonGroup` applies `transform: translateX(var(--vv-exon-x-N)) scaleX(var(--vv-exon-scale-x-N))`.
+3. **Clip at the figure boundary, not at coordinates** — the figure SVG (or an inner `<g>`) clips via `clip-path` / `overflow: hidden`. Off-figure exons stay in the DOM and slide cleanly past the edge.
 
 **In scope:**
-- `ViewportController` publishes a per-exon `--vv-exon-scale-x-{N}` (current visible width ÷ baseline width) on top of the existing `--vv-exon-x-{N}` / `--vv-exon-w-{N}`
-- `placeInExonGroup` applies `transform: translateX(var(--vv-exon-x-N)) scaleX(var(--vv-exon-scale-x-N))`
-- Tracks express feature coords in a baseline-local frame (fit-gene exon width) so the scaleX carries them to current width without re-rendering on every range tick
-- All strokes inside exon groups get `vector-effect="non-scaling-stroke"`
-- Pfam / InterPro labels apply a counter `scaleX(calc(1 / var(--vv-exon-scale-x-N)))` so text doesn't squish
-- Variant ticks + dots use non-scaling stroke; dots stay circular
-- Remove the `vv-no-transition` set on keyboard pan/zoom from Slice 9 (no longer needed)
-- Audit all track render functions: motion must be via wrapping `<g>` transform, never via SVG attribute interpolation
-- Playground smoke scenario: fitTo across the gene with the figure in cds-with-introns mode, eyeball that exons + introns + Pfam segments all slide together
+- Refactor `cdsGeometry` / `ViewportController.publish` to emit `--vv-exon-x-{N}` and `--vv-exon-scale-x-{N}` for *every* exon (not just visible ones), with true off-figure values where appropriate.
+- Update `placeInExonGroup` to apply both `translateX` and `scaleX`.
+- Per-intron equivalent: `--vv-intron-x-{N}` already exists; add `--vv-intron-w-{N}` (or stable baseline gap) so intron polylines also follow the translate-only path.
+- Remove `clipCdsToScreen`-style clamping from `exon-track`, `pfam-track`, `interpro-track`. Tracks compute baseline coordinates and trust the figure's clip.
+- All strokes inside exon groups get `vector-effect="non-scaling-stroke"`.
+- Pfam / InterPro labels apply a counter `scaleX(calc(1 / var(--vv-exon-scale-x-N)))` so text doesn't squish.
+- Variant ticks + dots use non-scaling stroke; dots stay circular.
+- Figure SVG gains `overflow: hidden` (or a `clip-path` on a single inner group) so off-figure content disappears cleanly.
+- Remove the `vv-no-transition` override on keyboard pan/zoom from Slice 9 (no longer needed).
+- Audit all track render functions: motion must be via wrapping `<g>` transform, never via SVG attribute interpolation.
+- Playground smoke scenarios: drag the interaction-demo back and forth, eyeball that edge exons slide off cleanly with no rect-width pop; `fitTo` across the gene in `cds-with-introns` mode, eyeball that exons + introns + Pfam segments all slide together.
+- New Playwright tests (per Slice 11 convention): assert that edge-exon `rect.vv-exon-rect[width]` is stable across drag-pan, and that `--vv-exon-x-{N}` for an off-figure exon takes a true off-figure value (not `0px`).
 
 **Definition of done:**
-- `fitTo`, `zoomBy`, mode transitions in `cds-with-introns` mode glide smoothly — no content snap inside the animation window
-- Pfam / InterPro labels stay readable at all zoom levels (no horizontal stretch/squish artifacts)
-- Variant dots stay circular regardless of zoom
-- Keyboard pan animates smoothly without the `vv-no-transition` override
-- Animation discipline documented in CONTRIBUTING.md
+- Drag-pan in the interaction-demo: no edge popping. Edge exons / Pfam rects / IPR rects slide off the figure cleanly.
+- `fitTo`, `zoomBy`, mode transitions in `cds-with-introns` mode glide smoothly — no content snap inside the animation window.
+- Pfam / InterPro labels stay readable at all zoom levels (no horizontal stretch/squish artifacts).
+- Variant dots stay circular regardless of zoom.
+- Keyboard pan animates smoothly without the `vv-no-transition` override.
+- Off-figure exons have non-zero, true `--vv-exon-x-{N}` values; figure SVG clips them via `clip-path` / `overflow: hidden`.
+- Playwright + unit tests cover both symptoms (no edge pop on drag; no content snap on transition).
+- Animation + clipping discipline documented in `CONTRIBUTING.md`.
 
 ---
 
