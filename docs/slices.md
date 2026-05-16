@@ -382,22 +382,22 @@ Tracks that care surface counts of features dropped by current viewport.
 
 ---
 
-### Slice 16 — Brush selection
+### Slice 16 — Brush selection — **shipped**
 
 Users can drag-select a range; tracks reflect the selection.
 
-**In scope:**
-- Shift+drag (or right-click drag) brush handler
-- `brushRange` controlled prop + `onBrushChange`
-- Brush rectangle drawn as an overlay (not a track)
-- `interaction.brushRange` delivered to all track `render` calls
-- Default behaviour: variant tracks render selection highlights for features intersecting brush
-- Playground scenario: brush → host displays "selected N variants"
+**Landed:**
+- Shift+drag (or secondary-button drag) brush gesture in `useViewportInteractions`. The hook reads `shiftKey` / `button === 2` off the native PointerEvent before falling through to the drag/pinch path; `onContextMenu` suppresses the native menu only while a brush is in flight so right-click elsewhere keeps its default
+- `brushRange` controlled prop on `<GeneGlyph>` (+ uncontrolled `defaultBrushRange` and `onBrushChange`); `interaction.brushRange` reaches every track `render` via the existing `TrackRenderArgs.interaction` channel
+- Brush overlay rendered inside the figure SVG (export-clean) using `viewport.projectCdsRange` / `projectProteinRange`. Each touched exon contributes a rect inside `painter.placeInExonGroup` so the brush rides the live pan/zoom transform; cds-with-introns mode also fills intervening gaps via `placeInInterExon` so the brush reads as one continuous strip
+- `variantTrack` paints an `is-in-brush` ring on every variant whose ruler position falls inside the brush range; helper `variantRulerPos` exported for hosts that want to mirror the same membership test (the slot-system scenario uses it for its "Selected N variants" readout)
+- `GeneGlyphRef.fitTo({ kind: 'selection' })` reads the active brush range and zooms to it (clamped to natural bounds)
+- Playground `slot-system` scenario surfaces the readout and a "Selection" zoom button; Playwright spec `slice-16-brush.spec.ts` pins the acceptance bar (brush rect renders, host count updates, shift-click clears, fitTo selection zooms)
 
 **Definition of done:**
-- Brush works smoothly with no jank
-- Host can use brushed range to drive its own UI
-- "Zoom to selection" example via imperative `fitTo({kind: 'range', range: brushRange})`
+- Brush works smoothly with no jank ✓
+- Host can use brushed range to drive its own UI ✓
+- "Zoom to selection" example via imperative `fitTo({kind: 'selection'})` ✓
 
 ---
 
