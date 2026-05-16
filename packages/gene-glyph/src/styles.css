@@ -148,10 +148,20 @@
   font-style: italic;
 }
 
-.gene-glyph .vv-figure {
-  display: block;
+/* Slice 17: figure wrap. Sits as a flex item inside .vv-figure-row and is the
+ * positioning context for absolutely-placed overlays (tooltips, "you are
+ * here" markers). The figure SVG and the overlay layer are DOM siblings
+ * inside this wrap so exportSVG() can serialise the figure SVG cleanly. */
+.gene-glyph .vv-figure-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  display: block;
+}
+
+.gene-glyph .vv-figure {
+  display: block;
+  width: 100%;
   background: var(--vv-color-bg-surface);
   cursor: grab;
   touch-action: pan-y; /* allow vertical page scroll, capture horizontal */
@@ -455,6 +465,47 @@
   user-select: none;
 }
 
+/* Slice 17: overlay layer + default hover tooltip. The overlay layer is a
+ * sibling of the figure SVG inside .vv-figure-wrap so exportSVG() (Slice 19)
+ * can serialise the SVG without dragging overlays in. Layer is non-
+ * interactive by default; individual overlays opt into pointer-events. */
+.gene-glyph .vv-overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gene-glyph {
+  --vv-tooltip-bg: rgba(15, 23, 42, 0.92);
+  --vv-tooltip-color: #f8fafc;
+  --vv-tooltip-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+}
+
+.gene-glyph .vv-tooltip {
+  position: absolute;
+  /* Anchor is the feature dot/tick; nudge the tooltip up + horizontally
+   * centred so the lower edge sits above the lift-affected feature. */
+  transform: translate(-50%, calc(-100% - 10px));
+  padding: 4px 8px;
+  background: var(--vv-tooltip-bg);
+  color: var(--vv-tooltip-color);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  border-radius: 4px;
+  box-shadow: var(--vv-tooltip-shadow);
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 320px;
+  opacity: 0;
+  animation: vv-tooltip-fade-in 100ms ease-out forwards;
+}
+
+@keyframes vv-tooltip-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
 [data-vv-print] .gene-glyph {
   --vv-color-text-primary: #1f2937;
@@ -506,6 +557,10 @@
   .gene-glyph.vv-mode-transitioning .vv-variant-shape {
     transition: none;
   }
+  .gene-glyph .vv-tooltip {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 [data-vv-reduce-motion] .gene-glyph .vv-exon-group,
@@ -524,4 +579,9 @@
 [data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-interpro-label-wrap,
 [data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-variant-shape {
   transition: none;
+}
+
+[data-vv-reduce-motion] .gene-glyph .vv-tooltip {
+  animation: none;
+  opacity: 1;
 }

@@ -263,6 +263,16 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       return viewport.resolveAnchor({ kind: 'protein-aa', aa: mid });
     },
 
+    resolveFeature(data, featureId) {
+      return data.domains.find((x) => idOfDomain(x) === featureId) ?? null;
+    },
+
+    featureLabel(data, featureId) {
+      const d = data.domains.find((x) => idOfDomain(x) === featureId);
+      if (!d) return null;
+      return `${d.shortName} (${d.aaStart}–${d.aaEnd})`;
+    },
+
     toJSON() {
       return { id, entryType, laneHeight, rectHalf, labelFont, labelOffset, laneGapPx };
     },

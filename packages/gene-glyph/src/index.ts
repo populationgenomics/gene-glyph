@@ -39,6 +39,7 @@ export type {
   HiddenFeaturesArgs,
   AnchorTarget,
   ScreenPoint,
+  TooltipRenderArgs,
   CoordinateMapper,
   Viewport,
   // Tracks

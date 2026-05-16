@@ -129,7 +129,13 @@ describe('GeneGlyph slot system', () => {
     const row = container.querySelector('.vv-figure-row')!;
     const kids = Array.from(row.children);
     expect(kids[0]).toHaveProperty('className', expect.stringContaining('vv-left-gutter'));
-    expect(kids[1]?.tagName.toLowerCase()).toBe('svg');
+    // Slice 17: the figure SVG now lives inside a positioned wrap div that
+    // also hosts the overlay layer. The wrap stays a flex sibling of the
+    // gutters, so export discipline (SVG-only serialisation) is preserved.
+    expect(kids[1]).toHaveProperty('className', expect.stringContaining('vv-figure-wrap'));
+    const wrapKids = Array.from(kids[1]!.children);
+    expect(wrapKids[0]?.tagName.toLowerCase()).toBe('svg');
+    expect(wrapKids[1]).toHaveProperty('className', expect.stringContaining('vv-overlay-layer'));
     expect(kids[2]).toHaveProperty('className', expect.stringContaining('vv-right-gutter'));
   });
 

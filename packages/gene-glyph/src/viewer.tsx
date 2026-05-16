@@ -27,6 +27,7 @@ import {
   type InteractionState,
   type ProteinAnnotations,
   type Track,
+  type TooltipRenderArgs,
   type TrackOrGroup,
   type TrackRect,
   type Transcript,
@@ -87,6 +88,12 @@ export interface GeneGlyphProps {
   onHover?: (featureId: string | null, trackId: string) => void;
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
+  /** Host-supplied tooltip renderer. When provided, the viewer shows an
+   *  overlay anchored to the hovered feature with the host's content. When
+   *  omitted, the viewer falls back to its built-in label tooltip (driven by
+   *  {@link Track.featureLabel}). Return `null` to suppress the tooltip for a
+   *  given feature without disabling the system. Slice 17. */
+  renderTooltip?: (args: TooltipRenderArgs) => ReactNode | null;
   /** Default-binding profile. `'standard'` enables drag/wheel/pinch/keyboard;
    *  `'embed'` skips Cmd/Ctrl + wheel-zoom so the viewer doesn't fight a
    *  scrolling host page; `'fullscreen'` is reserved for later expansion.
@@ -285,6 +292,7 @@ function GeneGlyphInner(
     onBrushChange,
     onHover,
     onFeatureClick,
+    renderTooltip,
     interactionMode = 'standard',
     viewportRange,
     defaultViewportRange,
@@ -336,6 +344,7 @@ function GeneGlyphInner(
   const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const figureWrapRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -477,9 +486,24 @@ function GeneGlyphInner(
     [brushControlled, onBrushChange],
   );
 
+  const [tooltipTarget, setTooltipTarget] = useState<{
+    trackId: string;
+    featureId: string;
+  } | null>(null);
+
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+
   const handleHover = useCallback(
     (trackId: string, featureId: string | null) => {
       onHover?.(featureId, trackId);
+      if (featureId) {
+        setTooltipTarget({ trackId, featureId });
+      } else {
+        setTooltipTarget(null);
+        // Clear the stale position so a subsequent hover doesn't briefly
+        // render the new tooltip at the old anchor before the rAF tick lands.
+        setTooltipPos(null);
+      }
     },
     [onHover],
   );
@@ -763,6 +787,70 @@ function GeneGlyphInner(
     );
   }, [brush, viewport, painter, totalHeight, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!tooltipTarget) return undefined;
+    let raf = 0;
+    const tick = () => {
+      const track = flatTracks.find((t) => t.id === tooltipTarget.trackId);
+      const data = track ? trackData.get(track.id) : undefined;
+      const svg = svgRef.current;
+      const wrap = figureWrapRef.current;
+      if (track && data !== undefined && track.resolveAnchor && svg && wrap) {
+        const point = track.resolveAnchor(data, tooltipTarget.featureId, viewport);
+        const rect = layout.trackRects.get(track.id);
+        if (point && rect) {
+          const ctm = svg.getScreenCTM();
+          if (ctm) {
+            const pt = svg.createSVGPoint();
+            pt.x = point.x;
+            pt.y = (rect.yTop + rect.yBottom) / 2;
+            const sp = pt.matrixTransform(ctm);
+            const wr = wrap.getBoundingClientRect();
+            setTooltipPos({ x: sp.x - wr.left, y: sp.y - wr.top });
+          }
+        } else {
+          setTooltipPos(null);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [tooltipTarget, flatTracks, trackData, viewport, layout.trackRects]);
+
+  const tooltipNode = useMemo<ReactNode>(() => {
+    if (!tooltipTarget || !tooltipPos) return null;
+    const track = flatTracks.find((t) => t.id === tooltipTarget.trackId);
+    const data = track ? trackData.get(track.id) : undefined;
+    if (!track || data === undefined) return null;
+    const feature = track.resolveFeature ? track.resolveFeature(data, tooltipTarget.featureId) : undefined;
+    let content: ReactNode = null;
+    if (renderTooltip) {
+      content = renderTooltip({
+        trackId: tooltipTarget.trackId,
+        featureId: tooltipTarget.featureId,
+        feature,
+        point: tooltipPos,
+      });
+    } else if (track.featureLabel) {
+      const label = track.featureLabel(data, tooltipTarget.featureId);
+      if (label) content = label;
+    }
+    if (content === null || content === undefined || content === false) return null;
+    return (
+      <div
+        className="vv-tooltip"
+        role="tooltip"
+        data-testid="gene-glyph-tooltip"
+        data-vv-track-id={tooltipTarget.trackId}
+        data-vv-feature-id={tooltipTarget.featureId}
+        style={{ left: tooltipPos.x, top: tooltipPos.y }}
+      >
+        {content}
+      </div>
+    );
+  }, [tooltipTarget, tooltipPos, flatTracks, trackData, renderTooltip]);
+
   const belowNodes: ReactNode[] = [];
   for (const t of flatTracks) {
     if (!t.renderBelow) continue;
@@ -810,30 +898,39 @@ function GeneGlyphInner(
   const figureRow = (
     <div className="vv-figure-row">
       {leftGutter ? renderGutter('left', leftGutter.props.width, leftGutter.props.children) : null}
-      <svg
-        ref={svgRef}
-        className="vv-figure"
-        viewBox={`0 0 ${width} ${totalHeight}`}
-        preserveAspectRatio="xMidYMid meet"
-        width="100%"
-        height={totalHeight}
-        role="img"
-        aria-label={aria}
-        onPointerDown={interactions.onPointerDown}
-        onContextMenu={interactions.onContextMenu}
-      >
-        <title>{aria}</title>
-        {flatTracks.map((t) => {
-          const args = trackRenderArgsFor(t);
-          if (!args) return null;
-          return (
-            <g key={t.id} data-vv-track-id={t.id}>
-              {t.render(args)}
-            </g>
-          );
-        })}
-        {brushOverlay}
-      </svg>
+      <div className="vv-figure-wrap" ref={figureWrapRef}>
+        <svg
+          ref={svgRef}
+          className="vv-figure"
+          viewBox={`0 0 ${width} ${totalHeight}`}
+          preserveAspectRatio="xMidYMid meet"
+          width="100%"
+          height={totalHeight}
+          role="img"
+          aria-label={aria}
+          onPointerDown={interactions.onPointerDown}
+          onContextMenu={interactions.onContextMenu}
+        >
+          <title>{aria}</title>
+          {flatTracks.map((t) => {
+            const args = trackRenderArgsFor(t);
+            if (!args) return null;
+            return (
+              <g key={t.id} data-vv-track-id={t.id}>
+                {t.render(args)}
+              </g>
+            );
+          })}
+          {brushOverlay}
+        </svg>
+        <div
+          className="vv-overlay-layer"
+          data-testid="gene-glyph-overlay-layer"
+          aria-hidden
+        >
+          {tooltipNode}
+        </div>
+      </div>
       {rightGutter ? renderGutter('right', rightGutter.props.width, rightGutter.props.children) : null}
     </div>
   );

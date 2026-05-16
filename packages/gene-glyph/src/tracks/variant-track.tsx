@@ -396,6 +396,15 @@ export function variantTrack(
       }
     },
 
+    resolveFeature(data, featureId) {
+      return data.variants.find((v) => v.id === featureId) ?? null;
+    },
+
+    featureLabel(data, featureId) {
+      const v = data.variants.find((x) => x.id === featureId);
+      return v ? v.label : null;
+    },
+
     toJSON() {
       return {
         id,

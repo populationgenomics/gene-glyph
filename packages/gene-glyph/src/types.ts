@@ -189,6 +189,22 @@ export interface ScreenPoint {
   y: number;
 }
 
+/** Args passed to {@link GeneGlyphProps.renderTooltip}. Slice 17 ships hover
+ *  tooltips as the first overlay kind; future overlay anchors (intron
+ *  boundaries, "you are here" markers) reuse the same `point` contract. */
+export interface TooltipRenderArgs {
+  trackId: string;
+  featureId: string;
+  /** Track-specific feature payload, resolved via
+   *  {@link Track.resolveFeature}. `undefined` when the track does not
+   *  implement the hook. */
+  feature: unknown;
+  /** Anchor position in figure-SVG viewBox units; viewer converts to client
+   *  pixels for overlay placement. Hosts rarely need this — included for
+   *  symmetry with imperative overlay APIs landing in later slices. */
+  point: ScreenPoint;
+}
+
 export interface CoordinateMapper {
   readonly transcript: Transcript;
   genomicToCds(chr: string, pos: number): CdsPosition | null;
@@ -349,6 +365,15 @@ export interface Track<TConfig = unknown, TData = unknown> {
    *  hook keeps the below-figure surface simple until then. */
   renderBelow?(args: TrackRenderArgs<TData>): ReactNode | null;
   resolveAnchor?(data: TData, anchorId: string, viewport: Viewport): ScreenPoint | null;
+  /** Resolve the track-specific feature object for `featureId`. The viewer
+   *  passes the returned value to host-supplied
+   *  {@link GeneGlyphProps.renderTooltip} so hosts can render rich tooltips
+   *  without re-resolving from their own data. Slice 17. */
+  resolveFeature?(data: TData, featureId: string): unknown;
+  /** Short label for the viewer's built-in tooltip. Used when the host has
+   *  not supplied {@link GeneGlyphProps.renderTooltip}. Returning `null`
+   *  (or omitting the hook) suppresses the default tooltip. Slice 17. */
+  featureLabel?(data: TData, featureId: string): string | null;
   toJSON(): TConfig;
 }
 
