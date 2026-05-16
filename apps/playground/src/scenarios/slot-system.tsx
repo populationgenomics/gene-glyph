@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   GeneGlyph,
   exonTrack,
   interProTrack,
+  variantRulerPos,
   variantTrack,
+  ViewportController,
+  createCoordinateMapper,
 } from '@populationgenomics/gene-glyph';
 import type {
   GeneGlyphRef,
@@ -30,6 +33,25 @@ export function SlotSystemScenario() {
   const [hiddenClick, setHiddenClick] = useState<{ trackId: string; featureId: string } | null>(
     null,
   );
+  const [brush, setBrush] = useState<readonly [number, number] | null>(null);
+
+  // Re-resolve the brushed-variant count using the same ruler-coord helper the
+  // variant track uses for its highlight, so the readout always matches the
+  // ring count on screen. A throwaway viewport mirrors the active mode.
+  const brushedVariantCount = useMemo(() => {
+    if (!brush) return 0;
+    const mapper = createCoordinateMapper(TP53_TRANSCRIPT);
+    const tmp = new ViewportController({ mapper, width: 1000, mode });
+    const lo = Math.min(brush[0], brush[1]);
+    const hi = Math.max(brush[0], brush[1]);
+    let n = 0;
+    for (const v of TP53_VARIANTS) {
+      const r = variantRulerPos(v, tmp, mapper);
+      if (r === null) continue;
+      if (r >= lo && r <= hi) n += 1;
+    }
+    return n;
+  }, [brush, mode]);
 
   // The readout polls via rAF: `getViewportInfo()` returns the *interpolated*
   // range during a transition, so reading it immediately after each button
@@ -69,6 +91,8 @@ export function SlotSystemScenario() {
         ]}
         trackHeightBudget={240}
         mode={mode}
+        brushRange={brush}
+        onBrushChange={setBrush}
         onFeatureClick={(featureId, trackId) => {
           if (featureId.startsWith('__hidden_intron_')) {
             setHiddenClick({ trackId, featureId });
@@ -149,6 +173,17 @@ export function SlotSystemScenario() {
             >
               +
             </button>
+            <button
+              type="button"
+              title={brush ? 'Zoom to brush selection' : 'No selection — shift+drag to brush'}
+              disabled={!brush}
+              data-testid="zoom-to-selection"
+              onClick={() => {
+                ref.current?.fitTo({ kind: 'selection' });
+              }}
+            >
+              Selection
+            </button>
           </div>
         </GeneGlyph.Header>
 
@@ -190,6 +225,24 @@ export function SlotSystemScenario() {
             Placeholder footer — minimap lands in Slice 18; scale bar in a later
             slice.
           </span>
+          {brush && (
+            <span
+              data-testid="brush-readout"
+              style={{
+                marginLeft: 12,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: '#dbeafe',
+                color: '#1d4ed8',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+              title={`Brush: ${brush[0].toFixed(0)}–${brush[1].toFixed(0)}`}
+            >
+              Selected {brushedVariantCount} variant{brushedVariantCount === 1 ? '' : 's'}
+            </span>
+          )}
           {hiddenClick && (
             <span
               data-testid="hidden-click-readout"
