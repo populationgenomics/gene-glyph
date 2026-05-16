@@ -363,21 +363,22 @@ The first feature the rewrite was for. Modes are viewport projections, not separ
 
 ---
 
-### Slice 15 — Hidden-feature indicators
+### Slice 15 — Hidden-feature indicators — **shipped**
 
 Tracks that care surface counts of features dropped by current viewport.
 
-**In scope:**
-- Range projection's `droppedIntronicCount` + `droppedRanges` populated for all coord systems
-- `exonTrack` renders hidden-feature marks on dashed-gap polylines: small chevron or tick with count
-- Marks fade out when `intronScale === 1` and fade in when in spliced/protein mode
-- Click on mark fires `onFeatureClick(trackId, '__hidden_intron_{N}_{M}')` — host decides what that means
-- Playground scenario in spliced mode shows count indicators at intron boundaries
+**Landed:**
+- `projectCdsRange` / `projectProteinRange` now report `droppedIntronicCount` + intronic `droppedRanges` for every consecutive exon pair the range crosses — matching `projectGenomicRange`. `DroppedRange.intronic` carries `{exonIdxA, exonIdxB}` (was the ambiguous `near.exonIdx`) so aggregators can key by gap without disambiguating sides
+- New optional `Track.hiddenFeaturesByIntron(args)` contract: tracks return `HiddenFeatureBucket[]` (per-gap counts + optional feature ids). The viewer aggregates across every track once per render and surfaces totals via `TrackRenderArgs.hiddenByIntron` so a single track (the exon track by default) renders one indicator per gap rather than each track stacking its own
+- `variantTrack` implements `hiddenFeaturesByIntron`; helper `variantIntronGap` exported for hosts that want to map intronic variants to their gap
+- `exonTrack` paints a small pill+count badge per intron via a new `.vv-hidden-feature-mark` group, anchored to `--vv-intron-x-{N}` (so it slides with the gap) but at constant pixel size (the inter-exon `<g>` collapses to width 0 in spliced/protein). Opacity is `calc(1 - var(--vv-intron-scale))`, so the badge cross-fades opposite the polyline; the badge inherits the slice-12 transition curves and the mode-transitioning override
+- Click on a badge fires `onFeatureClick(trackId, '__hidden_intron_{exonIdxA}_{exonIdxB}')`; bucket `featureIds` are aggregated so hosts can pop a list from the click. Reduced-motion override extended to zero badge transitions
+- Playground `slot-system` scenario surfaces a click readout in the footer; Playwright spec `slice-15-hidden-features.spec.ts` pins the acceptance bar (badge fades in on `cds-spliced`, click fires with the documented id, badge lives inside the figure SVG for export-cleanness)
 
 **Definition of done:**
-- Hidden-feature indicators render as data marks (not chrome) at correct positions
-- Indicators are export-clean
-- Click fires the documented callback
+- Hidden-feature indicators render as data marks (not chrome) at correct positions ✓
+- Indicators are export-clean (live inside the figure SVG) ✓
+- Click fires the documented callback ✓
 
 ---
 
