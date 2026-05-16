@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import '@populationgenomics/gene-glyph/styles.css';
+import { AsyncDataSourceScenario } from './scenarios/async-data-source.js';
 import { InteractionDemoScenario } from './scenarios/interaction-demo.js';
 import { InterProDemoScenario } from './scenarios/interpro-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
@@ -28,6 +29,7 @@ export function App() {
       <InteractionDemoScenario />
       <SlotSystemScenario />
       <TooltipDemoScenario />
+      <AsyncDataSourceScenario />
       <PaperReportScenario />
       <PfamDemoScenario />
       <InterProDemoScenario />
