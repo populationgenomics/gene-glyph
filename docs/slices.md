@@ -465,19 +465,22 @@ The "camera-ready vector graphics" goal lands.
 
 ---
 
-### Slice 20 — Convenience chrome exports
+### Slice 20 — Convenience chrome exports — **shipped**
 
 Pre-built chrome components for hosts that don't want to write their own.
 
-**In scope:**
-- `DefaultTrackChevron({item, collapsed, onToggle})` — renders in `LeftGutter`
-- `DefaultMinimap({viewerRef})` — renders in `Footer`; shows full-gene thumbnail with draggable window rectangle; drag pans the viewer; resize handles zoom
-- Both built using only the public API (no privileged access)
-- Playground scenario using both defaults
+**Landed:**
+- `DefaultTrackChevron({item, collapsed, onToggle, label?})` in `packages/gene-glyph/src/chrome/default-track-chevron.tsx`. Pure presentational: renders a chevron button with the item's label, `aria-expanded` mirrors the `collapsed` prop, and the icon rotates 90° between states via a CSS transition zeroed out under `prefers-reduced-motion` / `[data-vv-reduce-motion]`. The host owns the collapse state and the matching `tracks` edit — the chevron has no opinion about what "collapsed" means
+- `DefaultMinimap({viewerRef, width?, height?})` in `packages/gene-glyph/src/chrome/default-minimap.tsx`. Renders a full-gene SVG thumbnail (exons at the active mode's baseline, polylines across collapsed introns) with a draggable window rectangle and two edge handles. Drag the window → pan; drag a handle → zoom; click the background → jump to that location centred on the click. Polls viewer state via rAF on `getViewportInfo()` and writes back via the imperative `fitTo`
+- `fitTo(target, options?)` and `zoomBy(factor, options?)` on `GeneGlyphRef` accept `{ animate?: boolean }`. `animate: false` skips the 350ms CSS transition (toggles `vv-no-transition` and runs the viewport `transitionTo` with `duration: 0`). DefaultMinimap drag/handle gestures use `animate: false` so the figure tracks the cursor in real time; click-to-jump uses the default animated path so reduced-motion handling stays consistent with the rest of the public API
+- `ViewportInfo` gains `naturalRange` + `transcript` so chrome built on the ref can render the full-gene context without the host having to thread the transcript separately. `<DefaultMinimap>`'s only prop is `viewerRef`
+- Built using only the public ref API and the slot system — no privileged access into `ViewportController` or layout internals
+- Playground `DefaultChromeScenario` lives between async-data and export-demo; it puts chevrons on the variants / Pfam / InterPro entries and a minimap in the footer. The scenario demonstrates the host-side "collapse to stub" pattern: when collapsed, a fresh `Track` with the same id is mounted in place of the real track, returning shape-compatible empty data (`{variants: []}`, `{domains: []}`) and rendering nothing. Without the shape match, re-expand briefly renders the real track against the stub's data and crashes — the demo highlights why this matters
+- Playwright spec `slice-20-default-chrome.spec.ts`: (a) chevron collapse hides the figure-side render; (b) chevron re-expand restores `aria-expanded='true'`; (c) minimap renders one rect per exon plus a window rect; (d) clicking the minimap background jumps the figure right; (e) dragging the window pans the figure; (f) dragging the right edge handle zooms in. Unit tests in `default-track-chevron.test.tsx` and `default-minimap.test.tsx` cover the chevron's toggle wiring and the minimap's structural surface (exon rects, handles, transcript-derived aria-label)
 
 **Definition of done:**
-- Hosts can drop in `<DefaultTrackChevron />` and `<DefaultMinimap />` and get functioning chrome with no extra code
-- Both components honour `prefers-reduced-motion`
+- Hosts can drop in `<DefaultTrackChevron />` and `<DefaultMinimap />` and get functioning chrome with no extra code ✓
+- Both components honour `prefers-reduced-motion` ✓ (chevron rotation transition + minimap click-to-jump's underlying `fitTo` both fall through to the shared CSS reduced-motion rules; the minimap intentionally adds no animations of its own that could bypass them)
 
 ---
 
