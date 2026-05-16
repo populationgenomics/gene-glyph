@@ -165,9 +165,15 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
         .slice()
         .sort((a, b) => a.lane - b.lane || a.xMid - b.xMid);
 
-      const segmentNodes: ReactNode[] = [];
-      const linkerNodes: ReactNode[] = [];
-      const labelNodes: ReactNode[] = [];
+      // One per-exon wrapper per track shared across overlapping domains
+      // (multiple IPR entries commonly land in the same exon). See pfam-track
+      // for the same pattern and rationale.
+      const rectsByExon = new Map<number, ReactNode[]>();
+      const labelsByExon = new Map<number, ReactNode[]>();
+      const linkersByGap = new Map<
+        string,
+        { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
+      >();
 
       const trackLeft = 0;
       const trackRight = baseline.totalWidth;
@@ -203,18 +209,49 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
             labelMaxW: 2 * maxHalf,
             exonByIdx,
             painter,
-            segmentNodes,
-            linkerNodes,
-            labelNodes,
+            rectsByExon,
+            labelsByExon,
+            linkersByGap,
           });
         }
       }
 
+      const linkerGroups: ReactNode[] = [];
+      for (const { exonIdxA, exonIdxB, nodes } of linkersByGap.values()) {
+        linkerGroups.push(
+          painter.placeInInterExon(
+            exonIdxA,
+            exonIdxB,
+            <Fragment key={`ipr-linkers-${exonIdxA}-${exonIdxB}`}>
+              {nodes}
+            </Fragment>,
+          ),
+        );
+      }
+
+      const exonGroups: ReactNode[] = [];
+      const exonIdxs = new Set<number>([
+        ...rectsByExon.keys(),
+        ...labelsByExon.keys(),
+      ]);
+      for (const idx of exonIdxs) {
+        const rects = rectsByExon.get(idx) ?? [];
+        const labels = labelsByExon.get(idx) ?? [];
+        exonGroups.push(
+          painter.placeInExonGroup(
+            idx,
+            <Fragment key={`ipr-exon-${idx}`}>
+              {rects}
+              {labels}
+            </Fragment>,
+          ),
+        );
+      }
+
       return (
         <g className={`vv-interpro-track vv-interpro-${entryType}`} data-vv-track-id={id} key={id}>
-          {linkerNodes}
-          {segmentNodes}
-          {labelNodes}
+          {linkerGroups}
+          {exonGroups}
         </g>
       );
     },
@@ -252,9 +289,21 @@ interface EmitArgs {
   labelMaxW: number;
   exonByIdx: Map<number, ExonBaseline>;
   painter: Painter;
-  segmentNodes: ReactNode[];
-  linkerNodes: ReactNode[];
-  labelNodes: ReactNode[];
+  rectsByExon: Map<number, ReactNode[]>;
+  labelsByExon: Map<number, ReactNode[]>;
+  linkersByGap: Map<
+    string,
+    { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
+  >;
+}
+
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  let arr = map.get(key);
+  if (!arr) {
+    arr = [];
+    map.set(key, arr);
+  }
+  arr.push(value);
 }
 
 function emitDomain(args: EmitArgs): void {
@@ -269,9 +318,9 @@ function emitDomain(args: EmitArgs): void {
     labelMaxW,
     exonByIdx,
     painter,
-    segmentNodes,
-    linkerNodes,
-    labelNodes,
+    rectsByExon,
+    labelsByExon,
+    linkersByGap,
   } = args;
 
   const domain = placed.domain;
@@ -296,26 +345,25 @@ function emitDomain(args: EmitArgs): void {
     if (!exon) continue;
     const localX = seg.xStart - exon.xStart;
     const width = Math.max(1, seg.xEnd - seg.xStart);
-    segmentNodes.push(
-      painter.placeInExonGroup(
-        seg.exonIdx,
-        <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
-          {painter.drawRect({
-            key: `ipr-${featureId}-rect-${seg.exonIdx}`,
-            x: localX,
-            y: rectY,
-            width,
-            height: rectH,
-            rx: 2,
-            ry: 2,
-            fill,
-            stroke: painter.color('vv-color-pfam-stroke', '#475569'),
-            strokeWidth: 0.5,
-            vectorEffect: 'non-scaling-stroke',
-            className: 'vv-interpro-rect',
-          })}
-        </Fragment>,
-      ),
+    pushTo(
+      rectsByExon,
+      seg.exonIdx,
+      <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
+        {painter.drawRect({
+          key: `ipr-${featureId}-rect-${seg.exonIdx}`,
+          x: localX,
+          y: rectY,
+          width,
+          height: rectH,
+          rx: 2,
+          ry: 2,
+          fill,
+          stroke: painter.color('vv-color-pfam-stroke', '#475569'),
+          strokeWidth: 0.5,
+          vectorEffect: 'non-scaling-stroke',
+          className: 'vv-interpro-rect',
+        })}
+      </Fragment>,
     );
   }
 
@@ -324,59 +372,58 @@ function emitDomain(args: EmitArgs): void {
     const b = placed.segments[i + 1]!;
     if (b.xStart <= a.xEnd) continue;
     const linkerY = rectY + rectH / 2;
-    linkerNodes.push(
-      painter.placeInInterExon(
-        a.exonIdx,
-        b.exonIdx,
-        <Fragment key={`ipr-${featureId}-link-${a.exonIdx}-${b.exonIdx}`}>
-          <line
-            key={`ipr-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-            x1={0}
-            x2={b.xStart - a.xEnd}
-            y1={linkerY}
-            y2={linkerY}
-            stroke={fill}
-            strokeWidth={1.25}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            className="vv-interpro-linker"
-          />
-        </Fragment>,
-      ),
+    const gapKey = `${a.exonIdx}:${b.exonIdx}`;
+    let bucket = linkersByGap.get(gapKey);
+    if (!bucket) {
+      bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
+      linkersByGap.set(gapKey, bucket);
+    }
+    bucket.nodes.push(
+      <line
+        key={`ipr-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
+        x1={0}
+        x2={b.xStart - a.xEnd}
+        y1={linkerY}
+        y2={linkerY}
+        stroke={fill}
+        strokeWidth={1.25}
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+        className="vv-interpro-linker"
+      />,
     );
   }
 
   const label = fitText(fullName, labelMaxW, labelFont);
   if (label && labelExon) {
     const localXMid = placed.xMid - labelExon.xStart;
-    labelNodes.push(
-      painter.placeInExonGroup(
-        labelExon.exonIdx,
-        <g
-          key={`ipr-${featureId}-label-wrap`}
-          className="vv-interpro-label-wrap"
-          style={{
-            transform:
-              `translateX(${localXMid}px) ` +
-              `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
-            transformOrigin: '0 0',
-          }}
+    pushTo(
+      labelsByExon,
+      labelExon.exonIdx,
+      <g
+        key={`ipr-${featureId}-label-wrap`}
+        className="vv-interpro-label-wrap"
+        style={{
+          transform:
+            `translateX(${localXMid}px) ` +
+            `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
+          transformOrigin: '0 0',
+        }}
+      >
+        <text
+          key={`ipr-${featureId}-label`}
+          x={0}
+          y={rectY - labelOffset}
+          textAnchor="middle"
+          dominantBaseline="auto"
+          fontSize={labelFont}
+          fill={painter.color('vv-color-pfam-label', '#475569')}
+          className="vv-interpro-label"
         >
-          <text
-            key={`ipr-${featureId}-label`}
-            x={0}
-            y={rectY - labelOffset}
-            textAnchor="middle"
-            dominantBaseline="auto"
-            fontSize={labelFont}
-            fill={painter.color('vv-color-pfam-label', '#475569')}
-            className="vv-interpro-label"
-          >
-            <title>{tooltip}</title>
-            {label}
-          </text>
-        </g>,
-      ),
+          <title>{tooltip}</title>
+          {label}
+        </text>
+      </g>,
     );
   }
 }

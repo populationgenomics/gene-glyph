@@ -126,9 +126,19 @@ export function pfamTrack(
 
       if (placed.length === 0) return null;
 
-      const segmentNodes: ReactNode[] = [];
-      const linkerNodes: ReactNode[] = [];
-      const labelNodes: ReactNode[] = [];
+      // Each exon owns ONE `<g class="vv-exon-group">` per track — that's the
+      // wrapper the painter publishes per-exon transforms onto. Multiple Pfam
+      // domains that overlap the same exon share that wrapper rather than each
+      // emitting their own; otherwise the painter auto-keys both with
+      // `exon-group-{N}`, React warns about duplicate keys, and we'd waste DOM
+      // re-applying the same transform. Same for inter-exon linkers sharing a
+      // gap.
+      const rectsByExon = new Map<number, ReactNode[]>();
+      const labelsByExon = new Map<number, ReactNode[]>();
+      const linkersByGap = new Map<
+        string,
+        { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
+      >();
 
       const trackLeft = 0;
       const trackRight = baseline.totalWidth;
@@ -154,17 +164,49 @@ export function pfamTrack(
           labelOffset,
           exonByIdx,
           painter,
-          segmentNodes,
-          linkerNodes,
-          labelNodes,
+          rectsByExon,
+          labelsByExon,
+          linkersByGap,
         });
+      }
+
+      const linkerGroups: ReactNode[] = [];
+      for (const { exonIdxA, exonIdxB, nodes } of linkersByGap.values()) {
+        linkerGroups.push(
+          painter.placeInInterExon(
+            exonIdxA,
+            exonIdxB,
+            <Fragment key={`pfam-linkers-${exonIdxA}-${exonIdxB}`}>
+              {nodes}
+            </Fragment>,
+          ),
+        );
+      }
+
+      const exonGroups: ReactNode[] = [];
+      const exonIdxs = new Set<number>([
+        ...rectsByExon.keys(),
+        ...labelsByExon.keys(),
+      ]);
+      for (const idx of exonIdxs) {
+        const rects = rectsByExon.get(idx) ?? [];
+        const labels = labelsByExon.get(idx) ?? [];
+        // Rects first so labels paint over them inside the per-exon wrapper.
+        exonGroups.push(
+          painter.placeInExonGroup(
+            idx,
+            <Fragment key={`pfam-exon-${idx}`}>
+              {rects}
+              {labels}
+            </Fragment>,
+          ),
+        );
       }
 
       return (
         <g className="vv-pfam-track" data-vv-track-id={id} key={id}>
-          {linkerNodes}
-          {segmentNodes}
-          {labelNodes}
+          {linkerGroups}
+          {exonGroups}
         </g>
       );
     },
@@ -223,9 +265,21 @@ interface EmitArgs {
   labelOffset: number;
   exonByIdx: Map<number, ExonBaseline>;
   painter: Painter;
-  segmentNodes: ReactNode[];
-  linkerNodes: ReactNode[];
-  labelNodes: ReactNode[];
+  rectsByExon: Map<number, ReactNode[]>;
+  labelsByExon: Map<number, ReactNode[]>;
+  linkersByGap: Map<
+    string,
+    { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
+  >;
+}
+
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  let arr = map.get(key);
+  if (!arr) {
+    arr = [];
+    map.set(key, arr);
+  }
+  arr.push(value);
 }
 
 function emitDomain(args: EmitArgs): void {
@@ -238,9 +292,9 @@ function emitDomain(args: EmitArgs): void {
     labelOffset,
     exonByIdx,
     painter,
-    segmentNodes,
-    linkerNodes,
-    labelNodes,
+    rectsByExon,
+    labelsByExon,
+    linkersByGap,
   } = args;
 
   const domain = placed.domain;
@@ -270,26 +324,25 @@ function emitDomain(args: EmitArgs): void {
     if (!exon) continue;
     const localX = seg.xStart - exon.xStart;
     const width = Math.max(1, seg.xEnd - seg.xStart);
-    segmentNodes.push(
-      painter.placeInExonGroup(
-        seg.exonIdx,
-        <Fragment key={`pfam-${featureId}-seg-${seg.exonIdx}`}>
-          {painter.drawRect({
-            key: `pfam-${featureId}-rect-${seg.exonIdx}`,
-            x: localX,
-            y: rectY,
-            width,
-            height: rectH,
-            rx: 2,
-            ry: 2,
-            fill,
-            stroke: painter.color('vv-color-pfam-stroke', '#475569'),
-            strokeWidth: 0.75,
-            vectorEffect: 'non-scaling-stroke',
-            className: 'vv-pfam-rect',
-          })}
-        </Fragment>,
-      ),
+    pushTo(
+      rectsByExon,
+      seg.exonIdx,
+      <Fragment key={`pfam-${featureId}-seg-${seg.exonIdx}`}>
+        {painter.drawRect({
+          key: `pfam-${featureId}-rect-${seg.exonIdx}`,
+          x: localX,
+          y: rectY,
+          width,
+          height: rectH,
+          rx: 2,
+          ry: 2,
+          fill,
+          stroke: painter.color('vv-color-pfam-stroke', '#475569'),
+          strokeWidth: 0.75,
+          vectorEffect: 'non-scaling-stroke',
+          className: 'vv-pfam-rect',
+        })}
+      </Fragment>,
     );
   }
 
@@ -300,25 +353,25 @@ function emitDomain(args: EmitArgs): void {
     const a = placed.segments[i]!;
     const b = placed.segments[i + 1]!;
     if (b.xStart <= a.xEnd) continue;
-    linkerNodes.push(
-      painter.placeInInterExon(
-        a.exonIdx,
-        b.exonIdx,
-        <Fragment key={`pfam-${featureId}-link-${a.exonIdx}-${b.exonIdx}`}>
-          <line
-            key={`pfam-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-            x1={0}
-            x2={b.xStart - a.xEnd}
-            y1={midY}
-            y2={midY}
-            stroke={fill}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            className="vv-pfam-linker"
-          />
-        </Fragment>,
-      ),
+    const gapKey = `${a.exonIdx}:${b.exonIdx}`;
+    let bucket = linkersByGap.get(gapKey);
+    if (!bucket) {
+      bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
+      linkersByGap.set(gapKey, bucket);
+    }
+    bucket.nodes.push(
+      <line
+        key={`pfam-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
+        x1={0}
+        x2={b.xStart - a.xEnd}
+        y1={midY}
+        y2={midY}
+        stroke={fill}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+        className="vv-pfam-linker"
+      />,
     );
   }
 
@@ -330,34 +383,33 @@ function emitDomain(args: EmitArgs): void {
   const label = fitText(fullName, labelMaxW, labelFont);
   if (label && labelExon) {
     const localXMid = placed.xMid - labelExon.xStart;
-    labelNodes.push(
-      painter.placeInExonGroup(
-        labelExon.exonIdx,
-        <g
-          key={`pfam-${featureId}-label-wrap`}
-          className="vv-pfam-label-wrap"
-          style={{
-            transform:
-              `translateX(${localXMid}px) ` +
-              `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
-            transformOrigin: '0 0',
-          }}
+    pushTo(
+      labelsByExon,
+      labelExon.exonIdx,
+      <g
+        key={`pfam-${featureId}-label-wrap`}
+        className="vv-pfam-label-wrap"
+        style={{
+          transform:
+            `translateX(${localXMid}px) ` +
+            `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
+          transformOrigin: '0 0',
+        }}
+      >
+        <text
+          key={`pfam-${featureId}-label`}
+          x={0}
+          y={rectY - labelOffset}
+          textAnchor="middle"
+          dominantBaseline="auto"
+          fontSize={labelFont}
+          fill={painter.color('vv-color-pfam-label', '#475569')}
+          className="vv-pfam-label"
         >
-          <text
-            key={`pfam-${featureId}-label`}
-            x={0}
-            y={rectY - labelOffset}
-            textAnchor="middle"
-            dominantBaseline="auto"
-            fontSize={labelFont}
-            fill={painter.color('vv-color-pfam-label', '#475569')}
-            className="vv-pfam-label"
-          >
-            <title>{tooltip}</title>
-            {label}
-          </text>
-        </g>,
-      ),
+          <title>{tooltip}</title>
+          {label}
+        </text>
+      </g>,
     );
   }
 }
