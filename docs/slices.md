@@ -421,24 +421,23 @@ Tooltips, "you are here" markers, transient UI floating above tracks.
 
 ---
 
-### Slice 18 — DataSource adapter pattern + async track loading
+### Slice 18 — DataSource adapter pattern + async track loading — **shipped**
 
 The infrastructure for pluggable backends.
 
-**In scope:**
-- `DataSource<TQuery, TResult>` interface
-- Viewer-level debouncing of viewport changes (~120ms)
-- Per-track `AbortController` and cancellation on viewport change
-- Track loading state via `onTrackStateChange?: (id, state) => void`
-- Default per-track loading affordance: subtle shimmer over track's y-range
-- Caching: tracks share data if they share a `DataSource` instance (adapter owns its own cache)
-- Stale data desaturation during debounce
-- Playground scenario with a mock async data source demonstrating loading states
+**Landed:**
+- `DataSource<TQuery, TResult>` interface (from Slice 2) is now the front door for async track data. `createCachedDataSource({id, cacheKey, query, freshness?, maxEntries?})` wraps a user `query` with an LRU cache keyed by `cacheKey` — two tracks given the same returned instance auto-share fetched data; the second call resolves from cache without re-running `query`. Failures evict so a subsequent caller can retry. Per-call `signal` aborts the *waiter*, not the shared underlying fetch, so one caller cancelling doesn't strand a peer
+- Viewer fans loads out per track instead of one shared `Promise.all`, so a slow async source doesn't block fast tracks from rendering. Each track owns its own `AbortController`; viewport-driven re-loads cancel only that track's in-flight request rather than bouncing the whole stack
+- Per-track lifecycle reported via `onTrackStateChange?: (trackId, state) => void` where `state` is `'loading' | 'ready' | 'error'`. `TrackLoadState` is exported from the package root
+- Viewport range/mode changes mark the viewer `data-vv-stale=""` immediately, then debounce `track.load()` by `loadDebounceMs` (default 120ms; design §6.2). CSS desaturates feature glyphs (`saturate(0.5)` + `opacity 0.75`) during the stale window so the user sees that the displayed data is about to change. The debounce timer cancels on every new viewport change
+- Default loading affordance: an SVG `<rect class="vv-loading-shimmer">` over each loading track's y-range with a 1200ms ease-in-out pulse. A 150ms `animation-delay` hides the shimmer for sub-frame loads (so synchronous tracks never flash), and the reduced-motion override snaps to a static muted fill. Shimmer rects carry `data-testid="gene-glyph-shimmer-${trackId}"` for spec-pinning
+- New playground scenario `AsyncDataSourceScenario` exposes a configurable network delay, a query counter, and `onTrackStateChange` readouts for two variant tracks sharing one `createCachedDataSource` instance. The query counter makes the cache hit visible at a glance — one query per unique `(mode, range)` tuple, regardless of how many tracks consume the source
+- Playwright spec `slice-18-async-loading.spec.ts` pins the contract (shimmer rect appears during load and clears once data resolves, two-track shared-source dedup, `data-vv-stale` toggling). Unit specs: `data-source.test.ts` covers cache sharing, no-cache-on-failure, abort-isolation, and LRU eviction; `viewer.test.tsx` adds Slice 18 cases for `onTrackStateChange` lifecycle, shimmer presence, stale-flag toggling, and shared-source single-call
 
 **Definition of done:**
-- Async track loads work without blocking the rest of the viewer
-- Cancellation works (no stale data races)
-- Two tracks with the same `DataSource` instance share fetched data
+- Async track loads work without blocking the rest of the viewer ✓
+- Cancellation works (no stale data races) ✓
+- Two tracks with the same `DataSource` instance share fetched data ✓
 
 ---
 
