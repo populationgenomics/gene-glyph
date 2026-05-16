@@ -3,6 +3,7 @@ export type {
   GeneGlyphProps,
   GeneGlyphRef,
   FitTarget,
+  ViewportCommandOptions,
   ViewportInfo,
   GutterItem,
   LeftGutterProps,
@@ -10,6 +11,11 @@ export type {
   HeaderProps,
   FooterProps,
 } from './viewer.js';
+
+export { DefaultTrackChevron } from './chrome/default-track-chevron.js';
+export type { DefaultTrackChevronProps } from './chrome/default-track-chevron.js';
+export { DefaultMinimap } from './chrome/default-minimap.js';
+export type { DefaultMinimapProps } from './chrome/default-minimap.js';
 
 export type {
   // Domain

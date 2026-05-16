@@ -148,6 +148,102 @@
   font-style: italic;
 }
 
+/* Slice 20: default-chrome convenience components. The chevron renders
+ * inside the LeftGutter and rotates 90° when the host marks the item as
+ * expanded; transitions are zeroed under prefers-reduced-motion via the
+ * sweeping rule lower down. The minimap renders inside the Footer slot
+ * and exposes a draggable window rect + edge handles. */
+.gene-glyph .vv-default-chevron {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+.gene-glyph .vv-default-chevron:hover {
+  background: var(--vv-color-chevron-hover, rgba(15, 23, 42, 0.06));
+}
+.gene-glyph .vv-default-chevron:focus-visible {
+  outline: 2px solid var(--vv-color-focus, #2563eb);
+  outline-offset: 2px;
+}
+.gene-glyph .vv-default-chevron-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  transition: transform 160ms ease-out;
+  color: var(--vv-color-text-secondary, #475569);
+}
+.gene-glyph .vv-default-chevron[aria-expanded='true'] .vv-default-chevron-icon {
+  transform: rotate(90deg);
+}
+.gene-glyph .vv-default-chevron-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gene-glyph .vv-default-chevron-label {
+  font-weight: 600;
+}
+
+.gene-glyph .vv-default-minimap {
+  position: relative;
+  display: inline-block;
+  user-select: none;
+  touch-action: none;
+}
+.gene-glyph .vv-default-minimap-svg {
+  display: block;
+  overflow: visible;
+}
+.gene-glyph .vv-default-minimap-bg {
+  fill: var(--vv-color-minimap-bg, #f8fafc);
+  stroke: var(--vv-color-minimap-border, #cbd5e1);
+  stroke-width: 1;
+  cursor: pointer;
+}
+.gene-glyph .vv-default-minimap-intron {
+  stroke: var(--vv-color-intron-line, #64748b);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.gene-glyph .vv-default-minimap-exon {
+  fill: var(--vv-color-exon-fill, #cbd5e1);
+  stroke: var(--vv-color-exon-stroke, #475569);
+  stroke-width: 0.75;
+  rx: 1.5;
+  ry: 1.5;
+  pointer-events: none;
+}
+.gene-glyph .vv-default-minimap-window {
+  fill: var(--vv-color-minimap-window-fill, rgba(37, 99, 235, 0.18));
+  stroke: var(--vv-color-minimap-window-stroke, #2563eb);
+  stroke-width: 1;
+  cursor: grab;
+}
+.gene-glyph.vv-dragging .vv-default-minimap-window,
+.gene-glyph .vv-default-minimap-window:active {
+  cursor: grabbing;
+}
+.gene-glyph .vv-default-minimap-handle {
+  fill: var(--vv-color-minimap-handle, #2563eb);
+  opacity: 0.5;
+  cursor: ew-resize;
+}
+.gene-glyph .vv-default-minimap-handle:hover {
+  opacity: 0.85;
+}
+
 /* Slice 17: figure wrap. Sits as a flex item inside .vv-figure-row and is the
  * positioning context for absolutely-placed overlays (tooltips, "you are
  * here" markers). The figure SVG and the overlay layer are DOM siblings
@@ -658,6 +754,9 @@
     animation: none;
     opacity: 0.6;
   }
+  .gene-glyph .vv-default-chevron-icon {
+    transition: none;
+  }
 }
 
 [data-vv-reduce-motion] .gene-glyph .vv-exon-group,
@@ -686,4 +785,8 @@
 [data-vv-reduce-motion] .gene-glyph .vv-loading-shimmer {
   animation: none;
   opacity: 0.6;
+}
+
+[data-vv-reduce-motion] .gene-glyph .vv-default-chevron-icon {
+  transition: none;
 }

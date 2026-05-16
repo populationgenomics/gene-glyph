@@ -214,19 +214,37 @@ export type FitTarget =
 
 /** Snapshot of viewport state returned by `getViewportInfo()`. `range` is
  *  interpolated through any in-flight programmatic transition; `zoom` is
- *  derived from it. */
+ *  derived from it. `naturalRange` and `transcript` are stable across
+ *  pan/zoom and are surfaced here so chrome built on top of the ref (e.g.,
+ *  `<DefaultMinimap>`) can render the full-gene context without the host
+ *  having to thread the transcript through a separate prop. Slice 20. */
 export interface ViewportInfo {
   mode: ViewMode;
   range: readonly [number, number];
   zoom: number;
   layout: ReadonlyArray<LayoutItem>;
+  /** Fit-gene range for the active mode (CDS bp in CDS modes, aa in
+   *  protein). Stable until the mode changes; chrome uses it as the
+   *  thumbnail's coordinate span. */
+  naturalRange: readonly [number, number];
+  /** The transcript currently rendered by the viewer. */
+  transcript: Transcript;
+}
+
+/** Options accepted by `fitTo` / `zoomBy`. `animate: false` skips the CSS
+ *  transition and snaps the new range into place — used by direct-
+ *  manipulation chrome (e.g., `<DefaultMinimap>` during a drag) where the
+ *  figure should track the cursor rather than ease in. Slice 20. */
+export interface ViewportCommandOptions {
+  animate?: boolean;
 }
 
 /** Imperative-ref API surface exposed by `<GeneGlyph>`. Slice 8 ships the
- *  first three methods; Slice 19 adds `exportSVG` / `exportPNG`. */
+ *  first three methods; Slice 19 adds `exportSVG` / `exportPNG`; Slice 20
+ *  adds the optional `options.animate` flag on `fitTo` / `zoomBy`. */
 export interface GeneGlyphRef {
-  fitTo(target: FitTarget): void;
-  zoomBy(factor: number): void;
+  fitTo(target: FitTarget, options?: ViewportCommandOptions): void;
+  zoomBy(factor: number, options?: ViewportCommandOptions): void;
   getViewportInfo(): ViewportInfo;
   /** Serialize the figure SVG to a stand-alone, theme-resolved string. The
    *  returned SVG opens cleanly in Inkscape with no external CSS attached.
@@ -641,17 +659,20 @@ function GeneGlyphInner(
   );
 
   const beginTransition = useCallback(
-    (target: TransitionTarget, options?: TransitionOptions) => {
-      const duration = options?.duration ?? DEFAULT_TRANSITION_MS;
-      setNoTransition(false);
-      viewport.transitionTo(target, options);
+    (target: TransitionTarget, options?: TransitionOptions & { animate?: boolean }) => {
+      const animate = options?.animate !== false;
+      const duration = animate ? options?.duration ?? DEFAULT_TRANSITION_MS : 0;
+      setNoTransition(!animate);
+      viewport.transitionTo(target, { duration });
       bumpTick();
-      setTransitioning(true);
+      setTransitioning(animate);
       if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
-      transitionTimerRef.current = setTimeout(() => {
-        setTransitioning(false);
-        transitionTimerRef.current = null;
-      }, duration + 16);
+      if (animate) {
+        transitionTimerRef.current = setTimeout(() => {
+          setTransitioning(false);
+          transitionTimerRef.current = null;
+        }, duration + 16);
+      }
       if (target.range) onViewportChange?.([target.range[0], target.range[1]], 'imperative');
     },
     [viewport, onViewportChange, bumpTick],
@@ -678,9 +699,9 @@ function GeneGlyphInner(
   });
 
   const fitTo = useCallback(
-    (target: FitTarget) => {
+    (target: FitTarget, options?: ViewportCommandOptions) => {
       if (target.kind === 'gene') {
-        beginTransition({ range: viewport.naturalRange() });
+        beginTransition({ range: viewport.naturalRange() }, options);
         return;
       }
       if (target.kind === 'range' || target.kind === 'selection') {
@@ -691,7 +712,7 @@ function GeneGlyphInner(
         const lo = Math.max(natural[0], Math.min(range[0], range[1]));
         const hi = Math.min(natural[1], Math.max(range[0], range[1]));
         if (hi <= lo) return;
-        beginTransition({ range: [lo, hi] });
+        beginTransition({ range: [lo, hi] }, options);
         return;
       }
       // kind === 'feature'
@@ -734,13 +755,13 @@ function GeneGlyphInner(
       lo = Math.max(natural[0], lo);
       hi = Math.min(natural[1], hi);
       if (hi <= lo) return;
-      beginTransition({ range: [lo, hi] });
+      beginTransition({ range: [lo, hi] }, options);
     },
     [beginTransition, viewport, flatTracks, trackData, mapper, brush],
   );
 
   const zoomBy = useCallback(
-    (factor: number) => {
+    (factor: number, options?: ViewportCommandOptions) => {
       if (factor <= 0 || !Number.isFinite(factor)) return;
       const [lo, hi] = viewport.range;
       const center = (lo + hi) / 2;
@@ -759,7 +780,7 @@ function GeneGlyphInner(
       nlo = Math.max(natural[0], nlo);
       nhi = Math.min(natural[1], nhi);
       if (nhi <= nlo) return;
-      beginTransition({ range: [nlo, nhi] });
+      beginTransition({ range: [nlo, nhi] }, options);
     },
     [beginTransition, viewport],
   );
@@ -775,8 +796,10 @@ function GeneGlyphInner(
       range,
       zoom,
       layout: layout.items,
+      naturalRange: natural,
+      transcript,
     };
-  }, [viewport, layout]);
+  }, [viewport, layout, transcript]);
 
   const aaLength = Math.floor(transcript.cdsLength / 3);
   const aria = `${transcript.geneSymbol} (${transcript.transcriptId}) — ${aaLength} aa`;
