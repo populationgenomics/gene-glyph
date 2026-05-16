@@ -488,20 +488,22 @@ Pre-built chrome components for hosts that don't want to write their own.
 
 These are independent of each other and can be grabbed in parallel after Slice 18.
 
-### Slice 21 — ClinVar track
+### Slice 21 — ClinVar track — **shipped**
 
-**In scope:**
-- `clinVarTrack({source})` factory
-- Density-clustering at low zoom: features within Npx of each other render as a cluster mark with count
-- Cluster expansion via overlay (popover) on click
-- `clinvar` data adapter: paginated NCBI fetch with caching by transcript+range
-- Colour scheme by clinical significance (pathogenic / VUS / benign / etc.)
-- Playground scenario with real ClinVar data for a fixture gene
+**Landed:**
+- `clinVarTrack({source, clusterPx?, height?, markRadius?})` in `packages/gene-glyph/src/tracks/clinvar-track.tsx`. `source` accepts either a static `ClinVarRecord[]` (curated fixtures, paper-report workflows) or a `DataSource<ViewportQuery, ClinVarRecord[]>` (live NCBI adapter or any host implementation). Records are projected through the host's `CoordinateMapper`; UTR / intergenic / intronic records fall to the unplaced bucket and never appear on the ribbon
+- Density clustering via `clusterClinVar(placed, clusterPx)`: project each placement to live screen-x, sort, greedy-merge runs whose neighbour distance is below the threshold (default 14px). Clustering uses *live* screen-x so the user-visible density changes with zoom — fit-gene produces broad clusters around the R175/R248/R273/R282 hotspots, zooming into the DNA-binding domain breaks them apart. Singleton clusters render as a circle + tick (variant-track style); multi-member clusters render as a diamond with a member-count badge. Counter-scaling inside the exon group keeps both shapes circular regardless of the parent exon's scaleX
+- Cluster fill colours by the strongest clinical significance present in the cluster (`pathogenic > likely_pathogenic > conflicting > VUS > likely_benign > benign > other`). Each bucket exposes a `--vv-clinvar-color-*` CSS variable so hosts can retheme without recompiling. `parseClinVarSignificance` normalises the multi-spelling upstream strings ("Pathogenic/Likely pathogenic", "Conflicting interpretations of pathogenicity", etc.) into the bucket on the way in
+- Click-to-expand popover: clicking a multi-member cluster opens an in-figure popover listing every member sorted by significance; clicking a row fires the host's `onFeatureClick(memberId, 'clinvar')` and dismisses; clicking the figure-wide backdrop dismisses without firing. The popover anchors *above* the cluster's track with `popY = max(0, rect.yTop - innerH - 6)` so it stays inside the figure SVG even when ClinVar is the bottommost track — overflow:hidden on the figure SVG would otherwise clip a below-track popover and silently break hit-testing. Singleton marks bypass the popover and fire `onFeatureClick` directly
+- `createClinVarDataSource({transcript, baseUrl?, pageSize?, fetchImpl?})` in `packages/gene-glyph/src/adapters/clinvar.ts`. Pages through NCBI eutils `esearch` (`{geneSymbol}[gene]`) and batches `esummary` calls at `pageSize` records each, parsing into `ClinVarRecord` with chromosome filtering against the transcript. The adapter wraps `createCachedDataSource` keyed by `transcript.transcriptId` — ClinVar data is gene-scoped, so mode and range changes never re-fetch. `fetchImpl` is injectable for tests and host-side proxying
+- Playground `ClinVarDemoScenario` uses a curated `TP53_CLINVAR` fixture (real R-codon hotspot accessions, GRCh38 coordinates) so the e2e tests stay offline; production hosts wire `createClinVarDataSource` directly. The scenario also exercises the existing tooltip path (`renderTooltip` reads `Track.resolveFeature` for ClinVar records — no special-casing needed)
+- Tooltip integration is automatic via `resolveAnchor` / `resolveFeature` / `featureLabel` (the contract foreshadowed in Slice 17). Hosts that don't supply a custom `renderTooltip` get the built-in label `"c.524G>A (Pathogenic) — Li-Fraumeni syndrome"`
+- Unit tests in `clinvar-track.test.tsx` cover placement, clustering threshold behaviour at two zoom levels, dominant-significance pick, popover open/close, member-click firing, backdrop dismissal, and the significance parser. Adapter tests in `adapters/clinvar.test.ts` mock `fetch` to verify esearch pagination, esummary parsing, transcript-chromosome filtering, and the cacheKey-based skip on repeat queries. Playwright spec `slice-21-clinvar.spec.ts`: cluster renders with pathogenic colour, click opens popover with multiple rows, row click fires host callback + closes popover + updates last-clicked readout, backdrop click dismisses, deep zoom breaks the cluster apart
 
 **Definition of done:**
-- ClinVar variants render correctly on the gene
-- Cluster behaviour smooth across zoom levels
-- Click on cluster shows expansion overlay
+- ClinVar variants render correctly on the gene ✓
+- Cluster behaviour smooth across zoom levels ✓ (density threshold is in live screen-x so zoom changes density without re-coding the clustering pass)
+- Click on cluster shows expansion overlay ✓ (popover anchored above the track, dismisses via member-click or backdrop)
 
 ---
 
