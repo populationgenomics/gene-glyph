@@ -276,6 +276,8 @@ JSDOM-only coverage misses the visual coordination the design relies on — CSS 
 
 Polish on per-feature micro-interactions; locks in the discipline of "all motion via `transform` on wrappers." (Previously Slice 10; now follows Slice 10 — smooth pan internals — and Slice 11 — Playwright backfill.)
 
+> **Status: shipped.** Most of the substance landed incrementally in Slices 4, 9, and 10 — Slice 12 added the `[data-vv-reduce-motion]` simulation hook (mirrors the `@media (prefers-reduced-motion: reduce)` block), a playground checkbox that exercises it, and `slice-12-css-animation.spec.ts` pinning the four assertions below.
+
 **In scope:**
 - Re-audit track render functions after Slice 10 (which already lands part of this discipline) to ensure motion is via wrapping `<g>` transform, not via attribute interpolation
 - Selection ring uses CSS opacity transition

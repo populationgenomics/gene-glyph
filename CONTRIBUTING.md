@@ -90,6 +90,15 @@ These rules are load-bearing and have been chosen deliberately. See [`docs/desig
 - Direct manipulation (drag, wheel) updates variables directly per pointer event, no transition class.
 - Programmatic transitions (fit-to-feature, mode change) toggle a `vv-transitioning` class, set the new values, and listen for `transitionend`.
 - The viewer never runs an `rAF` animation loop. If you find yourself reaching for one, reconsider whether the state can live in a CSS variable instead.
+- Hover lift, selection ring, and unplaced-chip lift are all CSS-only:
+  feature wrappers carry `is-hovered` / `is-selected` classes that the
+  stylesheet hooks into. No JS during the animation frame.
+- Reduced motion has two trigger paths and one selector list (`styles.css`,
+  Slice 12): the `@media (prefers-reduced-motion: reduce)` query for real
+  OS preferences, and a `[data-vv-reduce-motion]` attribute selector for
+  testing. The playground exposes a checkbox that sets the attribute on
+  `<main>`. Playwright uses `page.emulateMedia({ reducedMotion: 'reduce' })`
+  to exercise the @media path.
 
 ### Baseline geometry: tracks render in fit-gene coordinates (Slice 10)
 
