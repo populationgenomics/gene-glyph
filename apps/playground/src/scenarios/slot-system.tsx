@@ -27,6 +27,9 @@ export function SlotSystemScenario() {
   const [mode, setMode] = useState<ViewMode>('cds-with-introns');
   const ref = useRef<GeneGlyphRef | null>(null);
   const [info, setInfo] = useState<ViewportInfo | null>(null);
+  const [hiddenClick, setHiddenClick] = useState<{ trackId: string; featureId: string } | null>(
+    null,
+  );
 
   // The readout polls via rAF: `getViewportInfo()` returns the *interpolated*
   // range during a transition, so reading it immediately after each button
@@ -66,6 +69,11 @@ export function SlotSystemScenario() {
         ]}
         trackHeightBudget={240}
         mode={mode}
+        onFeatureClick={(featureId, trackId) => {
+          if (featureId.startsWith('__hidden_intron_')) {
+            setHiddenClick({ trackId, featureId });
+          }
+        }}
       >
         <GeneGlyph.Header height={36}>
           <label style={{ fontSize: '0.85rem', color: '#475569' }}>
@@ -182,6 +190,22 @@ export function SlotSystemScenario() {
             Placeholder footer — minimap lands in Slice 18; scale bar in a later
             slice.
           </span>
+          {hiddenClick && (
+            <span
+              data-testid="hidden-click-readout"
+              style={{
+                marginLeft: 12,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: '#fef3c7',
+                color: '#92400e',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+              }}
+            >
+              Clicked {hiddenClick.featureId} on {hiddenClick.trackId}
+            </span>
+          )}
         </GeneGlyph.Footer>
       </GeneGlyph>
     </section>
