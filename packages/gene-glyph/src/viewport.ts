@@ -378,28 +378,49 @@ export class ViewportController implements Viewport {
 
   private computeProteinBaseline(exons: readonly Exon[]): BaselineGeometry {
     // Protein mode is purely linear in aa: `aa = 1` sits at `x = 0` and the
-    // last residue lands at `x = width`. Exons share the boundary aa (codons
-    // span exon boundaries), so we treat baseline as a linear projection of
-    // aa → x rather than piecewise. Per-exon rects are derived from each
+    // last residue lands at `x = width`. Per-exon rects are derived from each
     // exon's aa endpoints so tracks still get baseline xStart/width per exon
     // for CSS-variable publication.
+    //
+    // Adjacent exons interact one of two ways biologically:
+    //   1. The codon spans the boundary — `cdsToProtein(exon_i.cdsEnd) ===
+    //      cdsToProtein(exon_{i+1}.cdsStart)` — they share an aa, so their
+    //      rects are naturally adjacent in the (aa - 1) * pxPerAa model.
+    //   2. The codon ends cleanly on the boundary — exon_i's last aa N, exon_
+    //      {i+1}'s first aa N+1. The (aa - 1) * pxPerAa model would place exon
+    //      i's rect ending at (N - 1) * pxPerAa and exon i+1's starting at
+    //      N * pxPerAa, leaving one residue's worth of empty space between
+    //      them. That gap has no exon assignment, no biological meaning, and
+    //      shows up on screen as inconsistent spacing across the gene.
+    //   To kill case 2, snap each exon's aaEnd up to the next exon's aaStart
+    //   so consecutive exons always meet at a single lattice point.
     const aaLen = Math.floor(this.mapper.transcript.cdsLength / 3);
     const intervals = Math.max(1, aaLen - 1);
     const pxPerAa = this._width / intervals;
 
+    const aaStarts: number[] = [];
+    const aaEnds: number[] = [];
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      aaStarts.push(this.mapper.cdsToProtein(e.cdsStart) ?? 1);
+      aaEnds.push(this.mapper.cdsToProtein(e.cdsEnd) ?? aaStarts[i]!);
+    }
+    for (let i = 0; i < exons.length - 1; i++) {
+      if (aaEnds[i]! < aaStarts[i + 1]!) {
+        aaEnds[i] = aaStarts[i + 1]!;
+      }
+    }
+
     const exonRects: ExonBaseline[] = [];
     const gapRects: GapBaseline[] = [];
     for (let i = 0; i < exons.length; i++) {
-      const e = exons[i]!;
-      const aaStart = this.mapper.cdsToProtein(e.cdsStart) ?? 1;
-      const aaEnd = this.mapper.cdsToProtein(e.cdsEnd) ?? aaStart;
-      const xStart = (aaStart - 1) * pxPerAa;
-      const xEnd = (aaEnd - 1) * pxPerAa;
+      const xStart = (aaStarts[i]! - 1) * pxPerAa;
+      const xEnd = (aaEnds[i]! - 1) * pxPerAa;
       exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
       if (i < exons.length - 1) {
-        // Zero-width "gap" in protein mode — the boundary aa is shared between
-        // adjacent exons. Tracks that draw gap decorations skip these zero
-        // entries (gapPx === 0).
+        // Zero-width "gap" in protein mode — the boundary aa is the lattice
+        // point shared between adjacent exons (post-snap). Tracks that draw
+        // gap decorations skip these zero entries (gapPx === 0).
         gapRects.push({ exonIdxA: i, exonIdxB: i + 1, xStart: xEnd, xEnd, width: 0 });
       }
     }
@@ -852,8 +873,20 @@ export class ViewportController implements Viewport {
     cdsHi: number,
     exonIdx: number,
   ): RangeSegment | null {
-    const xStart = this.cdsToBaselineX(cdsLo);
-    const xEnd = this.cdsToBaselineX(cdsHi);
+    // `projectExonic` matches ranges against exon boundaries in CDS bp space
+    // (because exon.cdsStart/cdsEnd are CDS bp). But baseline-x in protein
+    // mode is linear in aa, not CDS — `cdsToBaselineX` expects aa input there
+    // (see its doc comment "CDS bp in CDS modes, aa in protein mode"). Convert
+    // before lookup so a CDS-coord range projected in protein mode lands at
+    // the right aa positions instead of treating cPos as an aa index.
+    let lo = cdsLo;
+    let hi = cdsHi;
+    if (this._mode === 'protein') {
+      lo = this.mapper.cdsToProtein(cdsLo) ?? lo;
+      hi = this.mapper.cdsToProtein(cdsHi) ?? hi;
+    }
+    const xStart = this.cdsToBaselineX(lo);
+    const xEnd = this.cdsToBaselineX(hi);
     return { xStart, xEnd, exonIdx };
   }
 

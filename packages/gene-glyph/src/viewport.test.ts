@@ -138,6 +138,47 @@ describe('ViewportController — range projection', () => {
     expect(proj.droppedExonicCount).toBe(1);
   });
 
+  it('projectProteinRange in protein mode places domain segments at aa-linear baseline positions', () => {
+    // Regression: projectProteinRange used to pass CDS bp (the cdsLo/cdsHi
+    // it computed from aa endpoints) into cdsToBaselineX, which in protein
+    // mode treats input as aa. The last segment of a domain at aa 1..42 then
+    // rendered as if it ended at aa 126 — three times too wide.
+    //
+    // The transcript's exons are c.1-100, c.101-250, c.251-360 → aa 1..34,
+    // aa 34..84, aa 84..120 (codons span both boundaries). aa 1..42 fragments
+    // into exon 0 (aa 1..34) and exon 1 (aa 34..42).
+    const vp = fitGene('protein');
+    const proj = vp.projectProteinRange(1, 42);
+    expect(proj.segments.length).toBeGreaterThanOrEqual(2);
+    const last = proj.segments[proj.segments.length - 1]!;
+    expect(last.xEnd).toBeCloseTo(vp.cdsToBaselineX(42), 5);
+    // And the last segment's xEnd must be well below where aa 126 would land,
+    // which is the symptom of the old bug.
+    expect(last.xEnd).toBeLessThan(vp.cdsToBaselineX(60));
+  });
+
+  it('protein-mode baselineGeometry tiles adjacent exons with no gap when codons do not span the boundary', () => {
+    // Custom transcript: exon 0 ends on codon boundary (cdsEnd=3 = end of aa
+    // 1), exon 1 starts on the next codon (cdsStart=4 = start of aa 2). The
+    // unsnapped model puts exon 0 xEnd at (1-1)*pxPerAa = 0 and exon 1 xStart
+    // at (2-1)*pxPerAa = pxPerAa — a one-residue visible gap. After snapping
+    // they share aa 2 as the lattice point.
+    const t: Transcript = {
+      geneSymbol: 'X',
+      transcriptId: 'X.1',
+      cdsLength: 12,
+      strand: '+',
+      exons: [
+        { number: 1, cdsStart: 1, cdsEnd: 3, genomicStart: 1, genomicEnd: 3, chr: 'chr1' },
+        { number: 2, cdsStart: 4, cdsEnd: 12, genomicStart: 10, genomicEnd: 18, chr: 'chr1' },
+      ],
+    };
+    const mapper = createCoordinateMapper(t);
+    const vp = new ViewportController({ mapper, width: 100, mode: 'protein' });
+    const geom = vp.baselineGeometry();
+    expect(geom.exons[0]!.xEnd).toBeCloseTo(geom.exons[1]!.xStart, 5);
+  });
+
   it('projectProteinRange fragments at exon boundaries for cross-exon protein ranges', () => {
     const vp = fitGene('cds-spliced');
     // Exon 1 covers c.1-100 -> aa 1..33 (codon at 100 spans into c.102 == exon 2).
