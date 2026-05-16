@@ -79,6 +79,68 @@ describe('GeneGlyph', () => {
     expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('1');
   });
 
+  describe('mode transitions', () => {
+    it('controlled mode prop drives viewport mode + republishes CSS vars', async () => {
+      const { container, rerender } = render(
+        <GeneGlyph transcript={transcript} mode="cds-with-introns" width={720} />,
+      );
+      await flushTrackLoads();
+      const svg = container.querySelector<SVGSVGElement>('svg.vv-figure');
+      expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('1');
+      rerender(<GeneGlyph transcript={transcript} mode="cds-spliced" width={720} />);
+      await flushTrackLoads();
+      expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('0');
+    });
+
+    it('toggles .vv-mode-transitioning on the root for the duration of the curve', async () => {
+      const { container, rerender } = render(
+        <GeneGlyph transcript={transcript} mode="cds-with-introns" width={720} />,
+      );
+      await flushTrackLoads();
+      const root = container.querySelector('[data-testid="gene-glyph"]')!;
+      expect(root.classList.contains('vv-mode-transitioning')).toBe(false);
+      await act(async () => {
+        rerender(<GeneGlyph transcript={transcript} mode="protein" width={720} />);
+      });
+      expect(root.classList.contains('vv-mode-transitioning')).toBe(true);
+      expect(root.getAttribute('data-vv-mode')).toBe('protein');
+      // The class clears after the 450ms transition + 16ms slack.
+      await waitForTransition(500);
+      expect(root.classList.contains('vv-mode-transitioning')).toBe(false);
+    });
+
+    it('fires onModeChange after every committed mode change', async () => {
+      const onModeChange = vi.fn();
+      const { rerender } = render(
+        <GeneGlyph
+          transcript={transcript}
+          mode="cds-with-introns"
+          onModeChange={onModeChange}
+        />,
+      );
+      await flushTrackLoads();
+      await act(async () => {
+        rerender(
+          <GeneGlyph
+            transcript={transcript}
+            mode="cds-spliced"
+            onModeChange={onModeChange}
+          />,
+        );
+      });
+      expect(onModeChange).toHaveBeenCalledWith('cds-spliced');
+    });
+
+    it('uncontrolled mode falls back to defaultMode and stays stable across rerenders', async () => {
+      const { container } = render(
+        <GeneGlyph transcript={transcript} defaultMode="cds-spliced" />,
+      );
+      await flushTrackLoads();
+      const root = container.querySelector('[data-testid="gene-glyph"]')!;
+      expect(root.getAttribute('data-vv-mode')).toBe('cds-spliced');
+    });
+  });
+
   describe('variant interaction wiring', () => {
     const variants: ViewerVariant[] = [
       { id: 'v1', label: 'V1', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },

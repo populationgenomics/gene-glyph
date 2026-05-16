@@ -171,6 +171,46 @@ describe('ViewportController — programmatic transitions', () => {
   });
 });
 
+describe('ViewportController — mode transitions', () => {
+  it('setMode reprojects the visible range through the ruler conversion', () => {
+    const vp = fitGene('cds-spliced');
+    // Zoom into c.100..c.200 (a 100-bp window mid-gene).
+    vp.setRange([100, 200]);
+    vp.setMode('protein');
+    // CDS bp → aa: bp 100 → aa 34 (codon (100-1)/3 + 1), bp 200 → aa 67 ((200-1)/3 + 1).
+    expect(vp.mode).toBe('protein');
+    expect(vp.range[0]).toBe(34);
+    expect(vp.range[1]).toBe(67);
+  });
+
+  it('setMode is a no-op when the mode is unchanged', () => {
+    const vp = fitGene('cds-spliced');
+    vp.setRange([50, 150]);
+    vp.setMode('cds-spliced');
+    expect(vp.range[0]).toBe(50);
+    expect(vp.range[1]).toBe(150);
+  });
+
+  it('setMode flips intronScale to 1 when entering cds-with-introns', () => {
+    const vp = fitGene('cds-spliced');
+    expect(vp.intronScale).toBe(0);
+    vp.setMode('cds-with-introns');
+    expect(vp.intronScale).toBe(1);
+  });
+
+  it('setMode publishes new exon-x and intron-scale CSS vars to the attached element', () => {
+    const vp = fitGene('cds-with-introns');
+    const el = document.createElement('div');
+    vp.attach(el);
+    const intronsAtStart = el.style.getPropertyValue('--vv-intron-scale');
+    expect(intronsAtStart).toBe('1');
+    vp.setMode('protein');
+    expect(el.style.getPropertyValue('--vv-intron-scale')).toBe('0');
+    // Protein-mode baseline places aa=1 at x=0, the C-terminus at x=width.
+    expect(el.style.getPropertyValue('--vv-exon-x-0')).toBe('0px');
+  });
+});
+
 describe('ViewportController — CSS variable publication', () => {
   it('publishes --vv-* variables to an attached element on attach() and on state changes', () => {
     const vp = fitGene('cds-spliced');

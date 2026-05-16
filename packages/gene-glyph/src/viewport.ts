@@ -37,6 +37,13 @@ export interface TransitionOptions {
  *  Matches the CSS `transition` on `.vv-exon-group` (350ms). */
 export const DEFAULT_TRANSITION_MS = 350;
 
+/** Duration of the CDS ↔ spliced ↔ protein mode transition, in milliseconds.
+ *  Matches the `.vv-mode-transitioning` override applied to exon-group and
+ *  intron-decoration transitions. Per design §8, the mode-change curve is
+ *  slower and symmetrical (ease-in-out-quart) compared to the pan/zoom curve
+ *  (ease-out-quart). */
+export const MODE_TRANSITION_MS = 450;
+
 /** Fraction of the natural range used as soft padding for pan clamping
  *  (design §7: "pan clamps hard to gene bounds + ~5% padding"). The same
  *  padding governs the most zoomed-out state — `minZoom` defaults to the
@@ -136,10 +143,14 @@ export class ViewportController implements Viewport {
   // ---- Mutators ----------------------------------------------------------
 
   setMode(mode: ViewMode): void {
+    if (mode === this._mode) return;
+    const prevMode = this._mode;
     this._mode = mode;
     this._intronScale = defaultIntronScale(mode);
-    // Reproject the range onto the new mode's natural ruler.
-    this._range = defaultRangeFor(mode, this.mapper);
+    // Preserve the visible region across the mode switch by reprojecting the
+    // range endpoints through the mapper. Numeric range values differ between
+    // rulers (CDS bp vs aa); the biological window the user sees should not.
+    this._range = reprojectRange(this._range, prevMode, mode, this.mapper);
     this._transition = null;
     this.invalidateBaseline();
     this.publish();
@@ -922,4 +933,39 @@ function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd:
   return strand === '+'
     ? exon.cdsStart + (pos - exon.genomicStart)
     : exon.cdsStart + (exon.genomicEnd - pos);
+}
+
+/** Convert the viewport's range from one mode's ruler to another's, preserving
+ *  the visible region rather than the numeric scale. CDS ↔ CDS is identity;
+ *  CDS ↔ protein routes through the mapper's codon mapping. Clamped to the
+ *  destination mode's natural span so a stray cdsToProtein null doesn't leak
+ *  past `[1, aaLen]`. */
+function reprojectRange(
+  range: readonly [number, number],
+  from: ViewMode,
+  to: ViewMode,
+  mapper: CoordinateMapper,
+): [number, number] {
+  const naturalTo = defaultRangeFor(to, mapper);
+  if (from === to) return [range[0], range[1]];
+  const isCdsFrom = from !== 'protein';
+  const isCdsTo = to !== 'protein';
+  if (isCdsFrom && isCdsTo) return [range[0], range[1]];
+  let lo: number;
+  let hi: number;
+  if (isCdsFrom && !isCdsTo) {
+    // CDS bp → aa: codon containing bp b is aa = floor((b-1)/3) + 1. Use the
+    // codon that contains each endpoint so the visible window covers every
+    // residue overlapped by the original bp range.
+    lo = Math.max(1, Math.floor((range[0] - 1) / 3) + 1);
+    hi = Math.max(lo, Math.floor((range[1] - 1) / 3) + 1);
+  } else {
+    // aa → CDS bp: first base of codon (aa-1)*3 + 1.
+    lo = (range[0] - 1) * 3 + 1;
+    hi = (range[1] - 1) * 3 + 3;
+  }
+  lo = Math.max(naturalTo[0], Math.min(naturalTo[1], lo));
+  hi = Math.max(naturalTo[0], Math.min(naturalTo[1], hi));
+  if (hi <= lo) return [naturalTo[0], naturalTo[1]];
+  return [lo, hi];
 }

@@ -35,6 +35,7 @@ import {
 import {
   DEFAULT_MAX_ZOOM,
   DEFAULT_TRANSITION_MS,
+  MODE_TRANSITION_MS,
   ViewportController,
   type TransitionOptions,
   type TransitionTarget,
@@ -48,8 +49,17 @@ export interface GeneGlyphProps {
   tracks?: TrackOrGroup[];
   /** Logical width of the figure SVG in viewBox units. Default 1000. */
   width?: number;
-  /** Initial view mode. Default `cds-with-introns`. */
+  /** Controlled view mode. When supplied, the viewer renders against this
+   *  mode and fires `onModeChange` for chrome-driven mode requests without
+   *  mutating local state. */
   mode?: ViewMode;
+  /** Uncontrolled initial mode. Ignored when `mode` is supplied. Default
+   *  `cds-with-introns`. */
+  defaultMode?: ViewMode;
+  /** Fires after every committed mode change (controlled or uncontrolled).
+   *  Hosts use this to mirror the mode into URL state, telemetry, or the
+   *  current `<select>` element. */
+  onModeChange?: (mode: ViewMode) => void;
   /** Maximum vertical height budget for the track stack. Default 200. */
   trackHeightBudget?: number;
   /** Controlled-prop: feature id currently hovered by the host (e.g., from a
@@ -161,7 +171,7 @@ export function Footer(_props: FooterProps): null {
 Footer.displayName = 'GeneGlyph.Footer';
 
 /** Target for `GeneGlyphRef.fitTo`. Slice 8 lands `gene`, `feature`, and
- *  `range`; `selection` arrives with brush in Slice 14. */
+ *  `range`; `selection` arrives with brush in Slice 16. */
 export type FitTarget =
   | { kind: 'gene' }
   | { kind: 'feature'; trackId: string; featureId: string }
@@ -251,7 +261,9 @@ function GeneGlyphInner(
     protein,
     tracks,
     width = 1000,
-    mode = 'cds-with-introns',
+    mode: controlledMode,
+    defaultMode,
+    onModeChange,
     trackHeightBudget = 200,
     hoveredFeatureId = null,
     selectedFeatureIds,
@@ -269,6 +281,10 @@ function GeneGlyphInner(
   ref: Ref<GeneGlyphRef>,
 ) {
   const controlled = viewportRange !== undefined;
+  const [uncontrolledMode] = useState<ViewMode>(
+    () => defaultMode ?? 'cds-with-introns',
+  );
+  const mode = controlledMode ?? uncontrolledMode;
   const trackList = useMemo<TrackOrGroup[]>(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
     [tracks],
@@ -276,6 +292,11 @@ function GeneGlyphInner(
   const flatTracks = useMemo(() => flattenTracks(trackList), [trackList]);
   const mapper = useMemo(() => createCoordinateMapper(transcript), [transcript]);
   const initialRange = viewportRange ?? defaultViewportRange;
+  // Construct the viewport once per (mapper, width). Mode changes are applied
+  // via `setMode` on the existing instance so CSS transitions on the
+  // viewport-published variables can interpolate exon-x and intron-scale
+  // between modes — recreating the controller on every mode change would
+  // snap geometry, killing the animation.
   const viewport = useMemo(
     () =>
       new ViewportController({
@@ -284,10 +305,10 @@ function GeneGlyphInner(
         mode,
         range: initialRange,
       }),
-    // `initialRange` only seeds construction; later changes reach the viewport
-    // via the prop-sync effects below.
+    // `mode` and `initialRange` only seed construction; later changes reach
+    // the viewport via the prop-sync effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mapper, width, mode],
+    [mapper, width],
   );
   const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
 
@@ -306,8 +327,10 @@ function GeneGlyphInner(
   // and `.vv-intron-decoration` per design §8.
   const [tick, setTick] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
+  const [modeTransitioning, setModeTransitioning] = useState(false);
   const [noTransition, setNoTransition] = useState(false);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modeTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const bumpTick = useCallback(() => setTick((t) => t + 1), []);
@@ -324,6 +347,35 @@ function GeneGlyphInner(
     viewport.setRange(viewportRange);
   }, [controlled, viewportRange, viewport]);
 
+  // Mirror the active mode onto the viewport. Two coupled updates need to
+  // land in the same paint:
+  //   (a) the viewport publishes new exon-x / intron-scale CSS variables
+  //       (so transforms recompute), and
+  //   (b) `.vv-mode-transitioning` activates the 450ms ease-in-out-quart
+  //       curve override (so the transition uses the mode-change curve
+  //       instead of the always-on 350ms pan/zoom curve).
+  // Doing (a) in render and (b) in a `useEffect` splits them across two
+  // paints — the var change fires the transition with the old curve before
+  // the class lands. Defer the viewport update to the same `useLayoutEffect`
+  // that toggles the class so the browser sees both at once.
+  const previousModeRef = useRef<ViewMode>(mode);
+  useLayoutEffect(() => {
+    if (previousModeRef.current === mode && viewport.mode === mode) return;
+    const isFirstSync = previousModeRef.current === mode;
+    previousModeRef.current = mode;
+    if (viewport.mode !== mode) viewport.setMode(mode);
+    bumpTick();
+    if (isFirstSync) return;
+    setModeTransitioning(true);
+    if (modeTransitionTimerRef.current !== null)
+      clearTimeout(modeTransitionTimerRef.current);
+    modeTransitionTimerRef.current = setTimeout(() => {
+      setModeTransitioning(false);
+      modeTransitionTimerRef.current = null;
+    }, MODE_TRANSITION_MS + 16);
+    onModeChange?.(mode);
+  }, [mode, viewport, onModeChange, bumpTick]);
+
   const cancelTransition = useCallback(() => {
     if (transitionTimerRef.current !== null) {
       clearTimeout(transitionTimerRef.current);
@@ -335,9 +387,12 @@ function GeneGlyphInner(
   useEffect(
     () => () => {
       if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
+      if (modeTransitionTimerRef.current !== null)
+        clearTimeout(modeTransitionTimerRef.current);
     },
     [],
   );
+
 
   const [trackData, setTrackData] = useState<Map<string, unknown>>(() => new Map());
   useEffect(() => {
@@ -666,6 +721,7 @@ function GeneGlyphInner(
       className={[
         'gene-glyph',
         transitioning && 'vv-transitioning',
+        modeTransitioning && 'vv-mode-transitioning',
         noTransition && 'vv-no-transition',
         className,
       ]
@@ -673,6 +729,8 @@ function GeneGlyphInner(
         .join(' ')}
       data-testid="gene-glyph"
       data-vv-transitioning={transitioning ? '' : undefined}
+      data-vv-mode-transitioning={modeTransitioning ? '' : undefined}
+      data-vv-mode={mode}
       data-vv-interaction-mode={interactionMode}
       tabIndex={0}
       onKeyDown={interactions.onKeyDown}

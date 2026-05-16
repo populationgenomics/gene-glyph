@@ -231,11 +231,27 @@
   transition: none;
 }
 
-/* Programmatic viewport transitions (fitTo, zoomBy, mode change) toggle
- * .vv-transitioning on the root for the duration of the animation. Scope
- * hook for slot chrome (e.g., the minimap viewport rect) that wants to
- * cross-fade alongside the figure; the figure's own per-exon transforms
- * use the always-on transition above. */
+/* Programmatic viewport transitions (fitTo, zoomBy) toggle .vv-transitioning
+ * on the root for the duration of the animation. Scope hook for slot chrome
+ * (e.g., the minimap viewport rect) that wants to cross-fade alongside the
+ * figure; the figure's own per-exon transforms use the always-on transition
+ * above. */
+
+/* Mode transitions (CDS ↔ spliced ↔ protein) toggle .vv-mode-transitioning
+ * on the root for ~450ms. The intron-decoration opacity already uses a
+ * 400ms ease-in-out-quart curve so it lands naturally; the exon-group
+ * transform curve and the counter-scale wrappers swap from the 350ms pan/
+ * zoom curve to the slower symmetrical curve so geometry and opacity
+ * land together. */
+.gene-glyph.vv-mode-transitioning .vv-exon-group,
+.gene-glyph.vv-mode-transitioning .vv-intron-decoration,
+.gene-glyph.vv-mode-transitioning .vv-pfam-label-wrap,
+.gene-glyph.vv-mode-transitioning .vv-interpro-label-wrap,
+.gene-glyph.vv-mode-transitioning .vv-variant-shape {
+  transition:
+    transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 450ms cubic-bezier(0.77, 0, 0.175, 1);
+}
 
 /* Variant track. Each variant lives inside a per-exon group; the outer `g`
  * carries focus and hit-test, the inner `g` carries the hover-lift transform
@@ -406,7 +422,12 @@
   .gene-glyph .vv-variant-inner,
   .gene-glyph .vv-variant-ring,
   .gene-glyph .vv-variant-shape,
-  .gene-glyph .vv-unplaced-chip {
+  .gene-glyph .vv-unplaced-chip,
+  .gene-glyph.vv-mode-transitioning .vv-exon-group,
+  .gene-glyph.vv-mode-transitioning .vv-intron-decoration,
+  .gene-glyph.vv-mode-transitioning .vv-pfam-label-wrap,
+  .gene-glyph.vv-mode-transitioning .vv-interpro-label-wrap,
+  .gene-glyph.vv-mode-transitioning .vv-variant-shape {
     transition: none;
   }
 }
@@ -418,6 +439,11 @@
 [data-vv-reduce-motion] .gene-glyph .vv-variant-inner,
 [data-vv-reduce-motion] .gene-glyph .vv-variant-ring,
 [data-vv-reduce-motion] .gene-glyph .vv-variant-shape,
-[data-vv-reduce-motion] .gene-glyph .vv-unplaced-chip {
+[data-vv-reduce-motion] .gene-glyph .vv-unplaced-chip,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-exon-group,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-intron-decoration,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-pfam-label-wrap,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-interpro-label-wrap,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-variant-shape {
   transition: none;
 }
