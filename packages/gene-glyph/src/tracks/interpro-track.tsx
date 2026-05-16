@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { packLanes, type LaneInput, type PackedItem } from '../pack-lanes.js';
 import type {
-  CoordinateMapper,
+  ExonBaseline,
   Painter,
   ProteinAnnotations,
   ProteinDomain,
@@ -154,8 +154,12 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
     },
 
     render(args: TrackRenderArgs<InterProSubTrackData>): ReactNode {
-      const { data, rect, viewport, mapper, painter } = args;
+      const { data, rect, viewport, painter } = args;
       if (data.placements.length === 0) return null;
+
+      const baseline = viewport.baselineGeometry();
+      const exonByIdx = new Map<number, ExonBaseline>();
+      for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
 
       const sorted = data.placements
         .slice()
@@ -166,7 +170,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       const labelNodes: ReactNode[] = [];
 
       const trackLeft = 0;
-      const trackRight = viewport.width;
+      const trackRight = baseline.totalWidth;
 
       // Lane-aware label budget: cap each label to the half-distance against
       // the nearest neighbour *on the same lane*. Domains on a different lane
@@ -197,8 +201,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
             labelFont,
             labelOffset,
             labelMaxW: 2 * maxHalf,
-            mapper,
-            viewport,
+            exonByIdx,
             painter,
             segmentNodes,
             linkerNodes,
@@ -247,8 +250,7 @@ interface EmitArgs {
   labelFont: number;
   labelOffset: number;
   labelMaxW: number;
-  mapper: CoordinateMapper;
-  viewport: Viewport;
+  exonByIdx: Map<number, ExonBaseline>;
   painter: Painter;
   segmentNodes: ReactNode[];
   linkerNodes: ReactNode[];
@@ -265,8 +267,7 @@ function emitDomain(args: EmitArgs): void {
     labelFont,
     labelOffset,
     labelMaxW,
-    mapper,
-    viewport,
+    exonByIdx,
     painter,
     segmentNodes,
     linkerNodes,
@@ -286,14 +287,14 @@ function emitDomain(args: EmitArgs): void {
   const laneBottom = laneTop + laneHeight;
   const rectH = rectHalf * 2;
   const rectY = laneBottom - rectH - 1;
-  const exons = mapper.transcript.exons;
+
+  const labelSeg = pickLabelSegment(placed);
+  const labelExon = labelSeg ? exonByIdx.get(labelSeg.exonIdx) : undefined;
 
   for (const seg of placed.segments) {
-    const exon = exons[seg.exonIdx];
+    const exon = exonByIdx.get(seg.exonIdx);
     if (!exon) continue;
-    const exonScreenStart = viewport.cdsToScreen(exon.cdsStart, 0);
-    if (exonScreenStart === null) continue;
-    const localX = seg.xStart - exonScreenStart;
+    const localX = seg.xStart - exon.xStart;
     const width = Math.max(1, seg.xEnd - seg.xStart);
     segmentNodes.push(
       painter.placeInExonGroup(
@@ -310,6 +311,7 @@ function emitDomain(args: EmitArgs): void {
             fill,
             stroke: painter.color('vv-color-pfam-stroke', '#475569'),
             strokeWidth: 0.5,
+            vectorEffect: 'non-scaling-stroke',
             className: 'vv-interpro-rect',
           })}
         </Fragment>,
@@ -336,6 +338,7 @@ function emitDomain(args: EmitArgs): void {
             stroke={fill}
             strokeWidth={1.25}
             strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
             className="vv-interpro-linker"
           />
         </Fragment>,
@@ -344,23 +347,50 @@ function emitDomain(args: EmitArgs): void {
   }
 
   const label = fitText(fullName, labelMaxW, labelFont);
-  if (label) {
+  if (label && labelExon) {
+    const localXMid = placed.xMid - labelExon.xStart;
     labelNodes.push(
-      <text
-        key={`ipr-${featureId}-label`}
-        x={placed.xMid}
-        y={rectY - labelOffset}
-        textAnchor="middle"
-        dominantBaseline="auto"
-        fontSize={labelFont}
-        fill={painter.color('vv-color-pfam-label', '#475569')}
-        className="vv-interpro-label"
-      >
-        <title>{tooltip}</title>
-        {label}
-      </text>,
+      painter.placeInExonGroup(
+        labelExon.exonIdx,
+        <g
+          key={`ipr-${featureId}-label-wrap`}
+          className="vv-interpro-label-wrap"
+          style={{
+            transform:
+              `translateX(${localXMid}px) ` +
+              `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
+            transformOrigin: '0 0',
+          }}
+        >
+          <text
+            key={`ipr-${featureId}-label`}
+            x={0}
+            y={rectY - labelOffset}
+            textAnchor="middle"
+            dominantBaseline="auto"
+            fontSize={labelFont}
+            fill={painter.color('vv-color-pfam-label', '#475569')}
+            className="vv-interpro-label"
+          >
+            <title>{tooltip}</title>
+            {label}
+          </text>
+        </g>,
+      ),
     );
   }
+}
+
+function pickLabelSegment(placed: PlacedDomain): RangeSegment | null {
+  if (placed.segments.length === 0) return null;
+  const xMid = placed.xMid;
+  let best: { seg: RangeSegment; dist: number } | null = null;
+  for (const seg of placed.segments) {
+    if (xMid >= seg.xStart && xMid <= seg.xEnd) return seg;
+    const dist = xMid < seg.xStart ? seg.xStart - xMid : xMid - seg.xEnd;
+    if (!best || dist < best.dist) best = { seg, dist };
+  }
+  return best?.seg ?? null;
 }
 
 /**

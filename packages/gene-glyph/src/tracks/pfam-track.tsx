@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import type {
-  CoordinateMapper,
+  ExonBaseline,
   Painter,
   ProteinDomain,
   RangeSegment,
@@ -38,12 +38,13 @@ export interface PfamTrackData {
 
 interface PlacedDomain {
   domain: ProteinDomain;
+  /** Baseline-frame segments — one per exon the domain intersects. */
   segments: RangeSegment[];
-  /** Leftmost xStart across all segments. */
+  /** Leftmost baseline xStart across all segments. */
   xStart: number;
-  /** Rightmost xEnd across all segments. */
+  /** Rightmost baseline xEnd across all segments. */
   xEnd: number;
-  /** Midpoint of [xStart, xEnd] in screen-x. */
+  /** Baseline midpoint of [xStart, xEnd]. */
   xMid: number;
 }
 
@@ -111,8 +112,12 @@ export function pfamTrack(
     },
 
     render(args: TrackRenderArgs<PfamTrackData>): ReactNode {
-      const { data, rect, viewport, mapper, painter } = args;
+      const { data, rect, viewport, painter } = args;
       if (data.domains.length === 0) return null;
+
+      const baseline = viewport.baselineGeometry();
+      const exonByIdx = new Map<number, ExonBaseline>();
+      for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
 
       const placed = data.domains
         .map((d) => placeDomain(d, viewport))
@@ -126,7 +131,7 @@ export function pfamTrack(
       const labelNodes: ReactNode[] = [];
 
       const trackLeft = 0;
-      const trackRight = viewport.width;
+      const trackRight = baseline.totalWidth;
 
       for (let i = 0; i < placed.length; i++) {
         const p = placed[i]!;
@@ -147,8 +152,7 @@ export function pfamTrack(
           labelMaxW,
           labelFont,
           labelOffset,
-          mapper,
-          viewport,
+          exonByIdx,
           painter,
           segmentNodes,
           linkerNodes,
@@ -190,6 +194,9 @@ function idOfDomain(d: ProteinDomain): string {
 }
 
 function placeDomain(domain: ProteinDomain, viewport: Viewport): PlacedDomain | null {
+  // projectProteinRange returns segments in **baseline** screen-x — the
+  // viewport-independent frame at fit-gene. xMid here is a baseline-x value;
+  // the wrapping exon `<g>` applies the live translate + scale.
   const proj = viewport.projectProteinRange(domain.aaStart, domain.aaEnd);
   if (proj.segments.length === 0) return null;
   let xStart = Infinity;
@@ -214,8 +221,7 @@ interface EmitArgs {
   labelMaxW: number;
   labelFont: number;
   labelOffset: number;
-  mapper: CoordinateMapper;
-  viewport: Viewport;
+  exonByIdx: Map<number, ExonBaseline>;
   painter: Painter;
   segmentNodes: ReactNode[];
   linkerNodes: ReactNode[];
@@ -230,8 +236,7 @@ function emitDomain(args: EmitArgs): void {
     labelMaxW,
     labelFont,
     labelOffset,
-    mapper,
-    viewport,
+    exonByIdx,
     painter,
     segmentNodes,
     linkerNodes,
@@ -252,14 +257,18 @@ function emitDomain(args: EmitArgs): void {
   const rectH = rectHalf * 2;
   const rectY = rect.yBottom - DEFAULT_BOTTOM_PAD - rectH;
   const midY = rectY + rectHalf;
-  const exons = mapper.transcript.exons;
+
+  // Pick the segment that contains the domain's midpoint (or the nearest
+  // one if the midpoint falls in a collapsed-intron gap). That segment's
+  // exon owns the label so it animates with the surrounding exon group;
+  // the label applies a counter-scale to undo the parent exon's scaleX.
+  const labelSeg = pickLabelSegment(placed);
+  const labelExon = labelSeg ? exonByIdx.get(labelSeg.exonIdx) : undefined;
 
   for (const seg of placed.segments) {
-    const exon = exons[seg.exonIdx];
+    const exon = exonByIdx.get(seg.exonIdx);
     if (!exon) continue;
-    const exonScreenStart = viewport.cdsToScreen(exon.cdsStart, 0);
-    if (exonScreenStart === null) continue;
-    const localX = seg.xStart - exonScreenStart;
+    const localX = seg.xStart - exon.xStart;
     const width = Math.max(1, seg.xEnd - seg.xStart);
     segmentNodes.push(
       painter.placeInExonGroup(
@@ -276,6 +285,7 @@ function emitDomain(args: EmitArgs): void {
             fill,
             stroke: painter.color('vv-color-pfam-stroke', '#475569'),
             strokeWidth: 0.75,
+            vectorEffect: 'non-scaling-stroke',
             className: 'vv-pfam-rect',
           })}
         </Fragment>,
@@ -304,6 +314,7 @@ function emitDomain(args: EmitArgs): void {
             stroke={fill}
             strokeWidth={1.5}
             strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
             className="vv-pfam-linker"
           />
         </Fragment>,
@@ -311,26 +322,54 @@ function emitDomain(args: EmitArgs): void {
     );
   }
 
-  // Label: centred on the domain's visual midpoint, drawn in absolute screen
-  // space. Width is bounded by half-distance to either neighbour's midpoint
-  // (or a symmetric reflection of the lone-domain edge), then truncated with
-  // fitText so wide labels never bleed into adjacent domains' labels.
+  // Label inside the chosen exon group: positioned at baseline mid-x relative
+  // to that exon's baseline xStart, then wrapped in a counter-scale so the
+  // parent exon's scaleX(zoom) doesn't horizontally stretch the glyphs. With
+  // uniform per-exon zoom (Slice 10 model) the label lands at the correct
+  // current screen midpoint regardless of which exon group hosts it.
   const label = fitText(fullName, labelMaxW, labelFont);
-  if (label) {
+  if (label && labelExon) {
+    const localXMid = placed.xMid - labelExon.xStart;
     labelNodes.push(
-      <text
-        key={`pfam-${featureId}-label`}
-        x={placed.xMid}
-        y={rectY - labelOffset}
-        textAnchor="middle"
-        dominantBaseline="auto"
-        fontSize={labelFont}
-        fill={painter.color('vv-color-pfam-label', '#475569')}
-        className="vv-pfam-label"
-      >
-        <title>{tooltip}</title>
-        {label}
-      </text>,
+      painter.placeInExonGroup(
+        labelExon.exonIdx,
+        <g
+          key={`pfam-${featureId}-label-wrap`}
+          className="vv-pfam-label-wrap"
+          style={{
+            transform:
+              `translateX(${localXMid}px) ` +
+              `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
+            transformOrigin: '0 0',
+          }}
+        >
+          <text
+            key={`pfam-${featureId}-label`}
+            x={0}
+            y={rectY - labelOffset}
+            textAnchor="middle"
+            dominantBaseline="auto"
+            fontSize={labelFont}
+            fill={painter.color('vv-color-pfam-label', '#475569')}
+            className="vv-pfam-label"
+          >
+            <title>{tooltip}</title>
+            {label}
+          </text>
+        </g>,
+      ),
     );
   }
+}
+
+function pickLabelSegment(placed: PlacedDomain): RangeSegment | null {
+  if (placed.segments.length === 0) return null;
+  const xMid = placed.xMid;
+  let best: { seg: RangeSegment; dist: number } | null = null;
+  for (const seg of placed.segments) {
+    if (xMid >= seg.xStart && xMid <= seg.xEnd) return seg;
+    const dist = xMid < seg.xStart ? seg.xStart - xMid : xMid - seg.xEnd;
+    if (!best || dist < best.dist) best = { seg, dist };
+  }
+  return best?.seg ?? null;
 }

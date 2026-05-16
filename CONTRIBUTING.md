@@ -91,6 +91,42 @@ These rules are load-bearing and have been chosen deliberately. See [`docs/desig
 - Programmatic transitions (fit-to-feature, mode change) toggle a `vv-transitioning` class, set the new values, and listen for `transitionend`.
 - The viewer never runs an `rAF` animation loop. If you find yourself reaching for one, reconsider whether the state can live in a CSS variable instead.
 
+### Baseline geometry: tracks render in fit-gene coordinates (Slice 10)
+
+Each exon owns a stable `(xStart, width)` in **baseline screen-x** — the pixel
+positions it would occupy at fit-gene zoom (`range = naturalRange`). Read this
+from `viewport.baselineGeometry()`. Tracks place features in that frame; the
+exon's wrapping `<g>` carries the live translate + scale.
+
+The contract for a well-behaved track:
+
+- **Rect widths and `x` attributes are computed from baseline geometry once
+  and don't change on pan or zoom.** The wrapping `<g>` element's CSS
+  variables (`--vv-exon-x-{N}`, `--vv-exon-scale-x-{N}`) carry the motion.
+- **Use `placeInExonGroup(exonIdx, …)` for any feature that belongs to an
+  exon.** The painter wraps it in a `<g>` that applies the live transform.
+- **Use `placeInInterExon(a, b, …)` for any feature that lives in the gap
+  between two exons.** Same idea, with `--vv-intron-x-{N}` and
+  `--vv-intron-scale-x-{N}` driving the transform.
+- **The figure SVG clips off-figure content via `overflow: hidden`.** Don't
+  filter exons by visibility — every exon stays in the DOM and slides cleanly
+  past the edge during pan / zoom.
+- **Strokes inside scaled groups get `vector-effect="non-scaling-stroke"`** so
+  the visual width doesn't change with zoom.
+- **Circles (variant dots, selection rings) need a counter-scale** — wrap
+  them in a `<g>` with `transform: scaleX(calc(1 / var(--vv-exon-scale-x-{N},
+  1)))` so the horizontal scale of the parent exon group doesn't turn them
+  into ellipses.
+- **Labels inside an exon group also need counter-scale** so the parent
+  scaleX doesn't horizontally stretch the glyphs. The Pfam / InterPro tracks
+  pick the segment containing the domain's midpoint to host the label and
+  apply the counter-scale there.
+
+The smoke check: drag-pan the interaction-demo back and forth. The edge
+exons should slide off-figure as solid rectangles — no continuous reshape,
+no `width` recompute mid-gesture. The `slice-10-smooth-pan` Playwright spec
+pins this contract.
+
 ### Tracks are plain objects, not React components
 
 - Implement the `Track<TConfig, TData>` interface; construct via factory functions.

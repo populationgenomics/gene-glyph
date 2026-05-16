@@ -184,6 +184,33 @@ export interface CoordinateMapper {
   findExonByGenomic(chr: string, pos: number): { exonIdx: number } | null;
 }
 
+/** Per-exon rectangle in baseline screen-x. Exposed to tracks via
+ *  {@link Viewport.baselineGeometry}; tracks render features against this
+ *  frame so React never reissues SVG attribute widths on pan or zoom — only
+ *  the wrapping `<g>` transforms change, and CSS transitions those. */
+export interface ExonBaseline {
+  exonIdx: number;
+  xStart: number;
+  xEnd: number;
+  width: number;
+}
+
+export interface GapBaseline {
+  exonIdxA: number;
+  exonIdxB: number;
+  xStart: number;
+  xEnd: number;
+  width: number;
+}
+
+export interface BaselineGeometry {
+  exons: ExonBaseline[];
+  gaps: GapBaseline[];
+  pxPerBp: number;
+  gapPx: number;
+  totalWidth: number;
+}
+
 export interface Viewport {
   readonly mode: ViewMode;
   readonly intronScale: number;
@@ -197,6 +224,14 @@ export interface Viewport {
   screenToCds(x: number): CdsPosition | null;
   screenToProtein(x: number): number | null;
   screenToGenomic(x: number): GenomicPosition | null;
+
+  /** Ruler → baseline screen-x. CDS bp in CDS modes, aa in protein mode.
+   *  Always returns a finite value (extrapolates past the gene's edges). */
+  cdsToBaselineX(rulerPos: number): number;
+  /** Viewport-independent geometry at fit-gene zoom. Tracks render against
+   *  this frame; the wrapping exon/intron `<g>` elements carry the live
+   *  translate + scale derived from the current range. */
+  baselineGeometry(): BaselineGeometry;
 
   projectCdsRange(start: number, end: number): RangeProjection;
   projectProteinRange(aaStart: number, aaEnd: number): RangeProjection;

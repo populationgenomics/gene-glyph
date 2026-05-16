@@ -1,8 +1,12 @@
 import type {
   AnchorTarget,
+  BaselineGeometry,
   CdsPosition,
   CoordinateMapper,
   DroppedRange,
+  Exon,
+  ExonBaseline,
+  GapBaseline,
   GenomicPosition,
   RangeProjection,
   RangeSegment,
@@ -10,6 +14,8 @@ import type {
   ViewMode,
   Viewport,
 } from './types.js';
+
+export type { BaselineGeometry, ExonBaseline, GapBaseline } from './types.js';
 
 export interface ViewportControllerInit {
   mapper: CoordinateMapper;
@@ -97,6 +103,8 @@ export class ViewportController implements Viewport {
   private _intronScale: number;
   private _attached: CssTarget | null = null;
   private _transition: TransitionSchedule | null = null;
+  private _baseline: BaselineGeometry | null = null;
+  private _baselineKey: string | null = null;
   readonly mapper: CoordinateMapper;
 
   constructor(init: ViewportControllerInit) {
@@ -133,6 +141,7 @@ export class ViewportController implements Viewport {
     // Reproject the range onto the new mode's natural ruler.
     this._range = defaultRangeFor(mode, this.mapper);
     this._transition = null;
+    this.invalidateBaseline();
     this.publish();
   }
 
@@ -252,13 +261,226 @@ export class ViewportController implements Viewport {
   }
 
   setWidth(width: number): void {
+    if (this._width === width) return;
     this._width = width;
+    this.invalidateBaseline();
     this.publish();
   }
 
   setIntronScale(scale: number): void {
     this._intronScale = scale;
     this.publish();
+  }
+
+  // ---- Baseline geometry -------------------------------------------------
+
+  /**
+   * Viewport-independent geometry computed at fit-gene zoom. Each exon owns
+   * a stable `(xStart, width)` here; the current viewport maps this baseline
+   * onto screen-x via a uniform translate + scale. Tracks render their
+   * features in this frame so React never re-issues new rect widths on pan
+   * or zoom — only the wrapping `<g>` transforms change, and CSS transitions
+   * those.
+   *
+   * Cached per (mode, width, transcript-identity).
+   */
+  baselineGeometry(): BaselineGeometry {
+    const key = this.baselineKey();
+    if (this._baseline && this._baselineKey === key) return this._baseline;
+    this._baseline = this.computeBaseline();
+    this._baselineKey = key;
+    return this._baseline;
+  }
+
+  private baselineKey(): string {
+    return `${this._mode}|${this._width}|${this.mapper.transcript.transcriptId}|${this.mapper.transcript.cdsLength}|${this.mapper.transcript.exons.length}`;
+  }
+
+  private invalidateBaseline(): void {
+    this._baseline = null;
+    this._baselineKey = null;
+  }
+
+  private computeBaseline(): BaselineGeometry {
+    const exons = this.mapper.transcript.exons;
+    const nGaps = Math.max(0, exons.length - 1);
+    const gapBudget = this._width * GAP_BUDGET_FRACTION;
+    const naturalGapPx = nGaps > 0
+      ? Math.max(MIN_GAP_PX, Math.min(PREF_GAP_PX, gapBudget / nGaps))
+      : 0;
+
+    if (this._mode === 'protein') {
+      return this.computeProteinBaseline(exons);
+    }
+
+    // CDS modes: piecewise per-exon with a visible gap (cds-with-introns) or
+    // a single-bp transition interval that gets absorbed into the linear
+    // pxPerBp (cds-spliced). Counting `cdsEnd - cdsStart` as the bp-within
+    // each exon makes the inter-exon transition explicit; modelling it as
+    // either `naturalGapPx` or `1 × pxPerBp` keeps the total = `width`.
+    let sumBpWithin = 0;
+    for (const e of exons) sumBpWithin += e.cdsEnd - e.cdsStart;
+
+    let pxPerBp: number;
+    let transitionPx: number;
+    if (this._mode === 'cds-with-introns') {
+      transitionPx = naturalGapPx;
+      const exonPx = Math.max(0, this._width - nGaps * transitionPx);
+      pxPerBp = sumBpWithin > 0 ? exonPx / sumBpWithin : 0;
+    } else {
+      const intervalBp = sumBpWithin + nGaps;
+      pxPerBp = intervalBp > 0 ? this._width / intervalBp : 0;
+      transitionPx = pxPerBp;
+    }
+
+    const exonRects: ExonBaseline[] = [];
+    const gapRects: GapBaseline[] = [];
+    let x = 0;
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      const bp = e.cdsEnd - e.cdsStart;
+      const xStart = x;
+      const xEnd = xStart + bp * pxPerBp;
+      exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
+      x = xEnd;
+      if (i < exons.length - 1) {
+        gapRects.push({
+          exonIdxA: i,
+          exonIdxB: i + 1,
+          xStart: x,
+          xEnd: x + transitionPx,
+          width: transitionPx,
+        });
+        x += transitionPx;
+      }
+    }
+    snapRightEdge(exonRects, this._width);
+
+    return {
+      exons: exonRects,
+      gaps: gapRects,
+      pxPerBp,
+      gapPx: this._mode === 'cds-with-introns' ? naturalGapPx : 0,
+      totalWidth: this._width,
+    };
+  }
+
+  private computeProteinBaseline(exons: readonly Exon[]): BaselineGeometry {
+    // Protein mode is purely linear in aa: `aa = 1` sits at `x = 0` and the
+    // last residue lands at `x = width`. Exons share the boundary aa (codons
+    // span exon boundaries), so we treat baseline as a linear projection of
+    // aa → x rather than piecewise. Per-exon rects are derived from each
+    // exon's aa endpoints so tracks still get baseline xStart/width per exon
+    // for CSS-variable publication.
+    const aaLen = Math.floor(this.mapper.transcript.cdsLength / 3);
+    const intervals = Math.max(1, aaLen - 1);
+    const pxPerAa = this._width / intervals;
+
+    const exonRects: ExonBaseline[] = [];
+    const gapRects: GapBaseline[] = [];
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      const aaStart = this.mapper.cdsToProtein(e.cdsStart) ?? 1;
+      const aaEnd = this.mapper.cdsToProtein(e.cdsEnd) ?? aaStart;
+      const xStart = (aaStart - 1) * pxPerAa;
+      const xEnd = (aaEnd - 1) * pxPerAa;
+      exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
+      if (i < exons.length - 1) {
+        // Zero-width "gap" in protein mode — the boundary aa is shared between
+        // adjacent exons. Tracks that draw gap decorations skip these zero
+        // entries (gapPx === 0).
+        gapRects.push({ exonIdxA: i, exonIdxB: i + 1, xStart: xEnd, xEnd, width: 0 });
+      }
+    }
+    snapRightEdge(exonRects, this._width);
+
+    return {
+      exons: exonRects,
+      gaps: gapRects,
+      pxPerBp: pxPerAa,
+      gapPx: 0,
+      totalWidth: this._width,
+    };
+  }
+
+  /**
+   * Ruler position (CDS bp in CDS modes, aa in protein mode) → baseline
+   * screen-x in fit-gene coordinates. For positions outside every exon —
+   * including the padding range and intronic CDS coords that don't belong
+   * to any exon — extrapolates linearly using the first / last exon's
+   * baseline `pxPerBp`. Never returns null; tracks rely on this so their
+   * geometry never disappears at the edges.
+   */
+  cdsToBaselineX(rulerPos: number): number {
+    const geom = this.baselineGeometry();
+    const exons = this.mapper.transcript.exons;
+    if (exons.length === 0) return 0;
+    if (this._mode === 'protein') {
+      // Linear in aa: aa=1 at x=0, aa=aaLen at x=width. Single closed-form
+      // mapping. Avoids the per-exon walk's floating-point drift.
+      return (rulerPos - 1) * geom.pxPerBp;
+    }
+    const first = exons[0]!;
+    if (rulerPos < first.cdsStart) {
+      return geom.exons[0]!.xStart - (first.cdsStart - rulerPos) * geom.pxPerBp;
+    }
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      const eb = geom.exons[i]!;
+      if (rulerPos <= e.cdsEnd) {
+        return eb.xStart + (rulerPos - e.cdsStart) * geom.pxPerBp;
+      }
+    }
+    const lastIdx = exons.length - 1;
+    const last = exons[lastIdx]!;
+    const lastBaseline = geom.exons[lastIdx]!;
+    return lastBaseline.xEnd + (rulerPos - last.cdsEnd) * geom.pxPerBp;
+  }
+
+  /** Inverse of {@link cdsToBaselineX}. Maps a baseline screen-x back to a
+   *  ruler position by locating the containing exon (or extrapolating off
+   *  the ends). The return is fractional; callers round if they want a
+   *  discrete CDS bp / aa value. */
+  baselineXToRuler(S: number): number {
+    const geom = this.baselineGeometry();
+    const exons = this.mapper.transcript.exons;
+    if (exons.length === 0 || geom.pxPerBp === 0) return 0;
+    if (this._mode === 'protein') {
+      return S / geom.pxPerBp + 1;
+    }
+    if (S < geom.exons[0]!.xStart) {
+      return exons[0]!.cdsStart - (geom.exons[0]!.xStart - S) / geom.pxPerBp;
+    }
+    for (let i = 0; i < exons.length; i++) {
+      const eb = geom.exons[i]!;
+      const e = exons[i]!;
+      if (S >= eb.xStart && S <= eb.xEnd) {
+        return e.cdsStart + (S - eb.xStart) / geom.pxPerBp;
+      }
+      if (i < exons.length - 1) {
+        const gap = geom.gaps[i]!;
+        if (S > eb.xEnd && S < gap.xEnd) {
+          const midpoint = (eb.xEnd + gap.xEnd) / 2;
+          if (S <= midpoint) return e.cdsEnd;
+          return exons[i + 1]!.cdsStart;
+        }
+      }
+    }
+    const lastIdx = exons.length - 1;
+    const last = exons[lastIdx]!;
+    const lastBaseline = geom.exons[lastIdx]!;
+    return last.cdsEnd + (S - lastBaseline.xEnd) / geom.pxPerBp;
+  }
+
+  /** Live zoom factor from baseline → current screen. Uniform across exons.
+   *  `currentX = (baselineX - S_lo) × zoomFactor`. */
+  zoomFactor(): number {
+    const [lo, hi] = this._range;
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    const span = S_hi - S_lo;
+    if (span <= 0) return 1;
+    return this._width / span;
   }
 
   // ---- CSS variable publication -----------------------------------------
@@ -278,42 +500,34 @@ export class ViewportController implements Viewport {
     s.setProperty('--vv-zoom', this.zoom().toString());
     s.setProperty('--vv-pan-x', '0px');
     s.setProperty('--vv-intron-scale', this._intronScale.toString());
-    const exons = this.mapper.transcript.exons;
-    const segByIdx = new Map<number, ExonScreenSegment>();
-    if (this.usesPiecewiseGeometry()) {
-      const geom = this.cdsGeometry();
-      for (const seg of geom.segments) segByIdx.set(seg.exonIdx, seg);
-    }
-    const xEndByIdx = new Array<number>(exons.length);
-    for (let i = 0; i < exons.length; i++) {
-      const seg = segByIdx.get(i);
-      const e = exons[i]!;
-      let xStart: number;
-      let xEnd: number;
-      if (seg) {
-        xStart = seg.xStart;
-        xEnd = seg.xEnd;
-      } else {
-        const a = this.cdsToScreen(e.cdsStart, 0);
-        const b = this.cdsToScreen(e.cdsEnd, 0);
-        xStart = a ?? 0;
-        xEnd = b ?? xStart;
-      }
-      xEndByIdx[i] = xEnd;
-      s.setProperty(`--vv-exon-x-${i}`, `${xStart}px`);
-      s.setProperty(`--vv-exon-w-${i}`, `${Math.max(0, xEnd - xStart)}px`);
-    }
-    // Per-gap inter-exon translate. Drives `transform: translateX(...)` on
-    // each `.vv-intron-decoration` `<g>` (published by the SVG painter) so
-    // intron polylines / linkers share the same CSS transition path as the
-    // exon groups and don't jump when the range changes.
-    for (let i = 0; i < exons.length - 1; i++) {
-      s.setProperty(`--vv-intron-x-${i}`, `${xEndByIdx[i] ?? 0}px`);
-    }
-  }
 
-  private usesPiecewiseGeometry(): boolean {
-    return this._mode === 'cds-with-introns';
+    const geom = this.baselineGeometry();
+    const [lo, hi] = this._range;
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    const span = Math.max(1e-6, S_hi - S_lo);
+    const zoom = this._width / span;
+
+    // Per-exon current-x + scale-x. Off-figure exons get true negative or
+    // beyond-width positions; the figure SVG clips them via `overflow: hidden`.
+    for (const eb of geom.exons) {
+      const currentX = (eb.xStart - S_lo) * zoom;
+      s.setProperty(`--vv-exon-x-${eb.exonIdx}`, `${currentX}px`);
+      s.setProperty(`--vv-exon-scale-x-${eb.exonIdx}`, zoom.toString());
+      s.setProperty(`--vv-exon-w-${eb.exonIdx}`, `${eb.width}px`);
+    }
+
+    // Per-gap current-x + scale. Gap scale-x folds in intronScale so collapsed
+    // modes (cds-spliced, protein) shrink the gap-content to zero width.
+    for (const gap of geom.gaps) {
+      const currentX = (gap.xStart - S_lo) * zoom;
+      s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${currentX}px`);
+      s.setProperty(
+        `--vv-intron-scale-x-${gap.exonIdxA}`,
+        (zoom * this._intronScale).toString(),
+      );
+      s.setProperty(`--vv-intron-w-${gap.exonIdxA}`, `${gap.width}px`);
+    }
   }
 
   /** Zoom scalar relative to fit-gene. >1 = zoomed in. */
@@ -326,39 +540,16 @@ export class ViewportController implements Viewport {
 
   // ---- Point projection --------------------------------------------------
 
-  private rulerOf(cPos: number): number | null {
-    // Convert a CDS position to the active ruler coordinate (protein mode only;
-    // CDS modes go through the piecewise geometry instead).
-    if (this._mode === 'protein') {
-      const aa = this.mapper.cdsToProtein(cPos);
-      return aa;
-    }
-    return cPos;
-  }
-
-  private mapToScreen(rulerPos: number): number | null {
-    const [lo, hi] = this._range;
-    if (rulerPos < lo || rulerPos > hi) return null;
-    if (hi === lo) return 0;
-    return ((rulerPos - lo) / (hi - lo)) * this._width;
-  }
-
   cdsToScreen(cPos: number, offset: number): number | null {
-    if (this._mode === 'cds-spliced' && offset !== 0) return null;
-    if (this._mode === 'protein' && offset !== 0) return null;
     if (offset !== 0) return null;
-    if (this.usesPiecewiseGeometry()) {
-      const geom = this.cdsGeometry();
-      return cdsToScreenViaGeometry(geom, cPos);
-    }
-    const ruler = this.rulerOf(cPos);
-    if (ruler === null) return null;
-    return this.mapToScreen(ruler);
+    if (this._mode === 'protein') return null;
+    const baselineX = this.cdsToBaselineX(cPos);
+    return this.applyZoomClamped(baselineX);
   }
 
   proteinToScreen(aa: number): number | null {
     if (this._mode === 'protein') {
-      return this.mapToScreen(aa);
+      return this.applyZoomClamped(this.cdsToBaselineX(aa));
     }
     const cPos = this.mapper.proteinToCds(aa);
     return this.cdsToScreen(cPos, 0);
@@ -370,22 +561,33 @@ export class ViewportController implements Viewport {
     return this.cdsToScreen(cds.cPos, cds.offset);
   }
 
+  /** Project a baseline screen-x onto the current screen, returning null if
+   *  it falls outside [0, width] — preserves the "out of view → null"
+   *  contract that older callers (cursor anchoring, hit testing) rely on. */
+  private applyZoomClamped(baselineX: number): number | null {
+    const [lo, hi] = this._range;
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    const span = S_hi - S_lo;
+    if (span <= 0) return null;
+    const zoom = this._width / span;
+    const x = (baselineX - S_lo) * zoom;
+    if (x < -1e-6 || x > this._width + 1e-6) return null;
+    return x;
+  }
+
   screenToCds(x: number): CdsPosition | null {
-    if (this.usesPiecewiseGeometry()) {
-      if (x < 0 || x > this._width) return null;
-      const geom = this.cdsGeometry();
-      return screenToCdsViaGeometry(geom, x);
-    }
-    const ruler = this.screenToRuler(x);
-    if (ruler === null) return null;
-    if (this._mode === 'protein') {
-      const aa = Math.round(ruler);
-      return { cPos: this.mapper.proteinToCds(aa), offset: 0 };
-    }
+    if (x < 0 || x > this._width) return null;
+    if (this._mode === 'protein') return null;
+    const ruler = this.screenToRulerBaseline(x);
     return { cPos: Math.round(ruler), offset: 0 };
   }
 
   screenToProtein(x: number): number | null {
+    if (this._mode === 'protein') {
+      if (x < 0 || x > this._width) return null;
+      return Math.round(this.screenToRulerBaseline(x));
+    }
     const cds = this.screenToCds(x);
     if (!cds) return null;
     return this.mapper.cdsToProtein(cds.cPos);
@@ -398,26 +600,30 @@ export class ViewportController implements Viewport {
   }
 
   /** Ruler coordinate (CDS bp in CDS modes, aa in protein mode) at the given
-   *  screen x. Used as the anchor for cursor-anchored zoom. In
-   *  `cds-with-introns` mode we go through `screenToCds` (which understands
-   *  the piecewise geometry); in linear modes we use the simple ratio. */
+   *  screen x. Used as the anchor for cursor-anchored zoom. */
   rulerAtScreen(x: number): number | null {
-    if (this.usesPiecewiseGeometry()) {
-      const cds = this.screenToCds(x);
-      return cds ? cds.cPos : null;
-    }
-    return this.screenToRuler(x);
+    if (x < 0 || x > this._width) return null;
+    return this.screenToRulerBaseline(x);
   }
 
-  private screenToRuler(x: number): number | null {
-    if (x < 0 || x > this._width) return null;
+  private screenToRulerBaseline(x: number): number {
     const [lo, hi] = this._range;
-    if (this._width === 0) return lo;
-    return lo + (x / this._width) * (hi - lo);
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    if (S_hi === S_lo) return lo;
+    const zoom = this._width / (S_hi - S_lo);
+    const S = S_lo + x / zoom;
+    return this.baselineXToRuler(S);
   }
 
   // ---- Range projection --------------------------------------------------
 
+  /**
+   * Project a CDS range onto the **baseline** (fit-gene) frame, fragmenting
+   * at exon boundaries. Tracks render their feature rects against this frame
+   * — widths and x attributes don't change on pan or zoom. The wrapping
+   * exon-group `<g>` carries the live translate + scale.
+   */
   projectCdsRange(start: number, end: number): RangeProjection {
     const [lo, hi] = clampOrdered(start, end);
     return this.projectExonic(lo, hi);
@@ -454,12 +660,9 @@ export class ViewportController implements Viewport {
       exonHits.push({ idx: i, cdsLo, cdsHi });
     }
 
-    // Always fragment by exon: each visible exon contributes a segment with
-    // its own piecewise screen-x bounds. Tracks that want a joined visual
-    // (Pfam, IPR) draw a linker across the inter-exon gap themselves.
     for (let k = 0; k < exonHits.length; k++) {
       const hit = exonHits[k]!;
-      const seg = this.cdsRangeToSegment(hit.cdsLo, hit.cdsHi, hit.idx);
+      const seg = this.cdsRangeToBaselineSegment(hit.cdsLo, hit.cdsHi, hit.idx);
       if (seg) segments.push(seg);
       if (k > 0) {
         droppedIntronicCount += 1;
@@ -499,12 +702,8 @@ export class ViewportController implements Viewport {
       };
     }
 
-    // Always fragment by exon: one segment per visible exon, each with its
-    // own piecewise screen-x bounds. In cds-with-introns mode the segments'
-    // x-bounds sit either side of a collapsed-intron gap; tracks that want
-    // a joined visual draw a linker themselves.
     for (const h of hits) {
-      const seg = this.cdsRangeToSegment(h.lo, h.hi, h.idx);
+      const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
       if (seg) segments.push(seg);
     }
 
@@ -516,66 +715,46 @@ export class ViewportController implements Viewport {
     };
   }
 
-  private cdsRangeToSegment(cdsLo: number, cdsHi: number, exonIdx: number): RangeSegment | null {
-    const xStart = this.cdsToScreen(cdsLo, 0);
-    const xEnd = this.cdsToScreen(cdsHi, 0);
-    if (xStart === null && xEnd === null) return null;
-    if (xStart === null || xEnd === null) {
-      const clampedStart = xStart ?? 0;
-      const clampedEnd = xEnd ?? this._width;
-      return { xStart: clampedStart, xEnd: clampedEnd, exonIdx };
-    }
+  private cdsRangeToBaselineSegment(
+    cdsLo: number,
+    cdsHi: number,
+    exonIdx: number,
+  ): RangeSegment | null {
+    const xStart = this.cdsToBaselineX(cdsLo);
+    const xEnd = this.cdsToBaselineX(cdsHi);
     return { xStart, xEnd, exonIdx };
   }
 
   // ---- Geometry ----------------------------------------------------------
 
   /**
-   * Piecewise screen layout in CDS modes. Exons get pixel space proportional
-   * to their visible CDS bp; consecutive visible exons are separated by a
-   * collapsed-intron gap whose width scales with `intronScale` and a
-   * preferred-width-capped budget.
-   *
-   * Recomputed on demand each call. Tracks may call multiple times per
-   * render; the work is O(exons) and fine for the current scale.
+   * Live piecewise geometry derived from baseline + current range. Returns
+   * the visible portion of each exon clipped to `[0, width]` for tracks that
+   * still want explicit visible-segment information. New code should prefer
+   * {@link baselineGeometry} + the published CSS variables.
    */
   cdsGeometry(): CdsGeometry {
+    const geom = this.baselineGeometry();
     const [lo, hi] = this._range;
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    const span = Math.max(1e-6, S_hi - S_lo);
+    const zoom = this._width / span;
     const exons = this.mapper.transcript.exons;
 
-    const visible: Array<{ idx: number; cdsLo: number; cdsHi: number; bp: number }> = [];
-    for (let i = 0; i < exons.length; i++) {
-      const e = exons[i]!;
-      const cdsLo = Math.max(lo, e.cdsStart);
-      const cdsHi = Math.min(hi, e.cdsEnd);
-      if (cdsHi < cdsLo) continue;
-      // Use interval count (not point count) so a contiguous CDS still maps
-      // edge-to-edge in screen space when gapPx === 0.
-      visible.push({ idx: i, cdsLo, cdsHi, bp: cdsHi - cdsLo });
-    }
-
-    const nGaps = Math.max(0, visible.length - 1);
-    const gapBudget = this._width * GAP_BUDGET_FRACTION;
-    const naturalGapPx = nGaps > 0
-      ? Math.max(MIN_GAP_PX, Math.min(PREF_GAP_PX, gapBudget / nGaps))
-      : 0;
-    const gapPx = naturalGapPx * this._intronScale;
-
-    const totalBp = visible.reduce((s, v) => s + v.bp, 0);
-    const exonPx = Math.max(0, this._width - nGaps * gapPx);
-    const pxPerBp = totalBp > 0 ? exonPx / totalBp : 0;
-
     const segments: ExonScreenSegment[] = [];
-    let x = 0;
-    for (let k = 0; k < visible.length; k++) {
-      const v = visible[k]!;
-      const xStart = x;
-      const xEnd = xStart + v.bp * pxPerBp;
-      segments.push({ exonIdx: v.idx, cdsLo: v.cdsLo, cdsHi: v.cdsHi, xStart, xEnd });
-      x = xEnd;
-      if (k < visible.length - 1) x += gapPx;
+    for (const eb of geom.exons) {
+      const xStart = (eb.xStart - S_lo) * zoom;
+      const xEnd = (eb.xEnd - S_lo) * zoom;
+      const visibleStart = Math.max(0, xStart);
+      const visibleEnd = Math.min(this._width, xEnd);
+      if (visibleEnd <= visibleStart) continue;
+      const e = exons[eb.exonIdx]!;
+      const cdsLo = Math.max(e.cdsStart, lo);
+      const cdsHi = Math.min(e.cdsEnd, hi);
+      segments.push({ exonIdx: eb.exonIdx, cdsLo, cdsHi, xStart, xEnd });
     }
-    return { segments, pxPerBp, gapPx };
+    return { segments, pxPerBp: zoom * geom.pxPerBp, gapPx: zoom * geom.gapPx };
   }
 
   // ---- Anchors -----------------------------------------------------------
@@ -626,39 +805,21 @@ function easeOutQuart(t: number): number {
   return 1 - u * u * u * u;
 }
 
+/** Snap the last exon's right edge to the figure width to eliminate the
+ *  trailing floating-point drift from accumulated `xStart += bp * pxPerBp`
+ *  steps. Without this the C-terminus / 3'-end can land at e.g.
+ *  720.0000000000001 and trip the "x > width" guard in `screenToCds`. */
+function snapRightEdge(exonRects: ExonBaseline[], width: number): void {
+  const last = exonRects[exonRects.length - 1];
+  if (!last) return;
+  if (Math.abs(last.xEnd - width) < 1e-6) {
+    last.xEnd = width;
+    last.width = last.xEnd - last.xStart;
+  }
+}
+
 function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd: number }, pos: number, strand: '+' | '-'): number {
   return strand === '+'
     ? exon.cdsStart + (pos - exon.genomicStart)
     : exon.cdsStart + (exon.genomicEnd - pos);
-}
-
-function cdsToScreenViaGeometry(geom: CdsGeometry, cPos: number): number | null {
-  for (const seg of geom.segments) {
-    if (cPos >= seg.cdsLo && cPos <= seg.cdsHi) {
-      return seg.xStart + (cPos - seg.cdsLo) * geom.pxPerBp;
-    }
-  }
-  return null;
-}
-
-function screenToCdsViaGeometry(geom: CdsGeometry, x: number): CdsPosition | null {
-  if (geom.segments.length === 0) return null;
-  for (let i = 0; i < geom.segments.length; i++) {
-    const seg = geom.segments[i]!;
-    if (x >= seg.xStart && x <= seg.xEnd) {
-      const bp = (x - seg.xStart) / Math.max(geom.pxPerBp, Number.EPSILON);
-      const cPos = Math.round(seg.cdsLo + bp);
-      return { cPos, offset: 0 };
-    }
-    // Snap onto the nearest exon edge when the point lands in an intron gap.
-    const next = geom.segments[i + 1];
-    if (next && x > seg.xEnd && x < next.xStart) {
-      // Round to whichever edge is closer (mirrors lit-manager's deep-intron
-      // centre-pin: between flanks, the user clicked nothing in particular).
-      return x - seg.xEnd <= next.xStart - x
-        ? { cPos: seg.cdsHi, offset: 0 }
-        : { cPos: next.cdsLo, offset: 0 };
-    }
-  }
-  return null;
 }

@@ -18,11 +18,22 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
   const mode: PainterMode = options.mode ?? 'screen';
 
   function placeInExonGroup(exonIdx: number, content: ReactNode): ReactNode {
+    // Children render against the exon's baseline frame (x=0..baseline_width).
+    // The wrapping `<g>` translates by the live screen-x and scales by the
+    // live zoom factor; both vars are published per-exon by ViewportController.
+    // CSS transitions on transform let pan / zoom interpolate without React
+    // ever reissuing the children's SVG attributes — that's the whole point
+    // of moving geometry into baseline coords.
     return (
       <g
         key={`exon-group-${exonIdx}`}
         className="vv-exon-group"
-        style={{ transform: `translateX(var(--vv-exon-x-${exonIdx}))` }}
+        style={{
+          transform:
+            `translateX(var(--vv-exon-x-${exonIdx}))` +
+            ` scaleX(var(--vv-exon-scale-x-${exonIdx}, 1))`,
+          transformOrigin: '0 0',
+        }}
         data-vv-exon-idx={exonIdx}
       >
         {content}
@@ -31,17 +42,20 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
   }
 
   function placeInInterExon(exonIdxA: number, exonIdxB: number, content: ReactNode): ReactNode {
+    // Children render against the gap's baseline frame (x=0..baseline_gap_w).
+    // Translate puts the `<g>` at the gap's current left edge; scaleX folds
+    // the live zoom factor with `intronScale` so collapsed modes (spliced /
+    // protein, intronScale=0) shrink the gap content to zero width — the
+    // opacity transition then fades it out in lock-step.
     return (
       <g
         key={`inter-exon-${exonIdxA}-${exonIdxB}`}
         className="vv-intron-decoration"
         style={{
-          // `--vv-intron-x-N` is the right edge of exon A in screen-x; the
-          // translate keeps the inter-exon `<g>` in lock-step with the exon
-          // groups (which use `--vv-exon-x-N`) so its CSS-transitioned
-          // transform animates alongside them instead of snapping. Children
-          // render in local-x relative to the right edge of exon A.
-          transform: `translateX(var(--vv-intron-x-${exonIdxA}, 0px))`,
+          transform:
+            `translateX(var(--vv-intron-x-${exonIdxA}, 0px))` +
+            ` scaleX(var(--vv-intron-scale-x-${exonIdxA}, 1))`,
+          transformOrigin: '0 0',
           opacity: 'var(--vv-intron-scale)',
         }}
         data-vv-intron-from={exonIdxA}

@@ -133,14 +133,21 @@ function placeVariant(
       break;
     }
   }
-  const variantX = viewport.cdsToScreen(cPos, offset);
-  if (variantX === null) return null;
+  // Intronic offsets land in the unplaced bucket; Slice 10 keeps the same
+  // contract (intronic features bubble into the bottom track) until Slice 15
+  // teaches the exon track to draw hidden-feature indicators in the gap.
+  if (offset !== 0) return null;
   const exonHit = mapper.findExonByCds(cPos);
   if (!exonHit) return null;
-  const exon = mapper.transcript.exons[exonHit.exonIdx]!;
-  const exonStartX = viewport.cdsToScreen(exon.cdsStart, 0);
-  if (exonStartX === null) return null;
-  return { variant: v, exonIdx: exonHit.exonIdx, localX: variantX - exonStartX };
+  const baseline = viewport.baselineGeometry();
+  const eb = baseline.exons[exonHit.exonIdx];
+  if (!eb) return null;
+  // Baseline localX: the variant's position within its exon's fit-gene frame.
+  // The exon `<g>` carries the live translate + scale; the figure SVG clips
+  // off-figure renderings so the variant stays in the DOM even when its
+  // current screen position is outside [0, width].
+  const variantBaselineX = viewport.cdsToBaselineX(cPos);
+  return { variant: v, exonIdx: exonHit.exonIdx, localX: variantBaselineX - eb.xStart };
 }
 
 export function variantTrack(
@@ -314,6 +321,13 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     .filter(Boolean)
     .join(' ');
   const color = categoryColor(v.category);
+  // The parent exon group applies scaleX(--vv-exon-scale-x-{N}). The tick is
+  // a vertical line so horizontal scale doesn't visually stretch it (only
+  // stroke-width would, and `vector-effect: non-scaling-stroke` keeps that
+  // constant). The dot and ring are circles though, and would render as
+  // ellipses under horizontal scale, so we wrap them in a counter-scale
+  // group that undoes the parent zoom.
+  const counterScale = `scaleX(calc(1 / var(--vv-exon-scale-x-${placement.exonIdx}, 1)))`;
   return (
     <g
       key={v.id}
@@ -330,15 +344,6 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       aria-label={v.label}
     >
       <g className="vv-variant-inner">
-        <circle
-          className="vv-variant-ring"
-          cx={0}
-          cy={dotCy}
-          r={dotRadius + 3}
-          fill="none"
-          stroke={color}
-          strokeWidth={1.5}
-        />
         <line
           className="vv-variant-tick"
           x1={0}
@@ -347,16 +352,33 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
           y2={tickBottom}
           stroke={color}
           strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
         />
-        <circle
-          className="vv-variant-dot"
-          cx={0}
-          cy={dotCy}
-          r={dotRadius}
-          fill={color}
-          stroke="var(--vv-variant-dot-stroke, #ffffff)"
-          strokeWidth={1}
-        />
+        <g
+          className="vv-variant-shape"
+          style={{ transform: counterScale, transformOrigin: '0 0' }}
+        >
+          <circle
+            className="vv-variant-ring"
+            cx={0}
+            cy={dotCy}
+            r={dotRadius + 3}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            className="vv-variant-dot"
+            cx={0}
+            cy={dotCy}
+            r={dotRadius}
+            fill={color}
+            stroke="var(--vv-variant-dot-stroke, #ffffff)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
       </g>
     </g>
   );

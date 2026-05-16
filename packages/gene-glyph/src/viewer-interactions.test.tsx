@@ -197,7 +197,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(ref.current!.getViewportInfo().range).toEqual([1, transcript.cdsLength]);
     });
 
-    it('keyboard pan/zoom snaps (vv-no-transition) so per-feature local coords stay in sync', async () => {
+    it('keyboard pan/zoom animates (no vv-no-transition) — Slice 10 baseline geometry keeps children stable across the animation', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
         <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
@@ -205,10 +205,11 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       await flushTrackLoads();
       const root = container.querySelector<HTMLElement>('[data-testid="gene-glyph"]')!;
       fireEvent.keyDown(root, { key: 'ArrowRight' });
-      // No-transition is the gesture-level "skip CSS easing" flag; if we
-      // ever go back to animating keyboard moves we'll need to teach the
-      // exon-group children to animate their local coords too.
-      expect(root.classList.contains('vv-no-transition')).toBe(true);
+      // With baseline geometry the children's SVG attributes don't change on
+      // pan / zoom — only the wrapping `<g>`'s `transform` CSS variable. That
+      // means keyboard pan can ride the same CSS transition as `fitTo`; we
+      // assert the gesture-level "skip CSS easing" flag is *not* set.
+      expect(root.classList.contains('vv-no-transition')).toBe(false);
     });
   });
 

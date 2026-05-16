@@ -316,38 +316,37 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const key = e.key;
       const [lo, hi] = viewport.range;
       const len = hi - lo;
-      // Keyboard is direct manipulation (one keypress = one discrete change),
-      // not an animated transition. Setting no-transition mirrors how drag
-      // and wheel behave — content snaps to the new range in lock-step. With
-      // CSS transitions enabled, exon `<g>` groups would animate while their
-      // children re-render at new local coords mid-flight, which reads as a
-      // janky pan rather than a clean step.
+      // Slice 10: with baseline geometry, exon `<g>` children no longer
+      // re-render at new local coords mid-animation — only the wrapping
+      // group's translate + scale change. That means keyboard pan / zoom can
+      // ride the same CSS transition as `fitTo`, no `vv-no-transition`
+      // override needed.
       switch (key) {
         case '+':
         case '=':
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           zoomAtX(2, viewport.width / 2, 'keyboard');
           return;
         case '-':
         case '_':
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           zoomAtX(0.5, viewport.width / 2, 'keyboard');
           return;
         case 'ArrowLeft':
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           applyRange([lo - len * KEYBOARD_PAN_STEP, hi - len * KEYBOARD_PAN_STEP], 'keyboard');
           return;
         case 'ArrowRight':
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           applyRange([lo + len * KEYBOARD_PAN_STEP, hi + len * KEYBOARD_PAN_STEP], 'keyboard');
           return;
         case '1':
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           applyRange(viewport.naturalRange(), 'keyboard');
           return;
         case 'f':
@@ -356,7 +355,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
           // tracker here in Slice 9; fall back to fit-gene rather than crash,
           // and let hosts wire a richer binding via their own keyboard.
           e.preventDefault();
-          setNoTransition(true);
+          setNoTransition(false);
           applyRange(viewport.naturalRange(), 'keyboard');
           return;
         }
