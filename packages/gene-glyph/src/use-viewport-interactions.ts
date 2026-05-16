@@ -114,10 +114,19 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     (deltaViewboxPx: number, reason: ViewportChangeReason) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       const [lo, hi] = viewport.range;
-      const len = hi - lo;
-      if (len <= 0 || viewport.width <= 0) return;
-      const deltaRuler = (deltaViewboxPx / viewport.width) * len;
-      applyRange([lo + deltaRuler, hi + deltaRuler], reason);
+      if (viewport.width <= 0) return;
+      // Pan in baseline screen-x space, not CDS-bp space. The baseline
+      // mapping is non-uniform: inter-exon gaps occupy ~24 px each (per
+      // Slice 10's fixed-gap layout), so a uniform CDS-bp shift would move
+      // the visible content faster when an endpoint sits inside a gap than
+      // when it sits inside an exon, producing a "sticky" pan feel. Shifting
+      // both endpoints by the same baseline-x delta keeps visual motion
+      // uniform regardless of where lo / hi land in the gene.
+      const sLo = viewport.cdsToBaselineX(lo);
+      const sHi = viewport.cdsToBaselineX(hi);
+      const newLo = viewport.baselineXToRuler(sLo + deltaViewboxPx);
+      const newHi = viewport.baselineXToRuler(sHi + deltaViewboxPx);
+      applyRange([newLo, newHi], reason);
     },
     [viewport, applyRange],
   );

@@ -430,6 +430,22 @@ export class ViewportController implements Viewport {
       if (rulerPos <= e.cdsEnd) {
         return eb.xStart + (rulerPos - e.cdsStart) * geom.pxPerBp;
       }
+      // Fractional cPos between this exon's end and the next exon's start
+      // (e.g., `cPos = 140.5` between TP53 exons 0 and 1). These don't
+      // correspond to real bp positions, but they DO appear during pan /
+      // animation interpolation — and if the function jumps discretely
+      // from `eb.xEnd` to `next_eb.xStart` (a 24px gap leap), the
+      // published CSS variables jump too, producing visible exon "popping"
+      // at the right edge during right-pan. Interpolate linearly through
+      // the gap instead so baseline-x is continuous in `rulerPos`.
+      if (i < exons.length - 1) {
+        const nextE = exons[i + 1]!;
+        const denom = nextE.cdsStart - e.cdsEnd;
+        if (rulerPos < nextE.cdsStart && denom > 0) {
+          const t = (rulerPos - e.cdsEnd) / denom;
+          return eb.xEnd + t * geom.gapPx;
+        }
+      }
     }
     const lastIdx = exons.length - 1;
     const last = exons[lastIdx]!;
@@ -460,9 +476,14 @@ export class ViewportController implements Viewport {
       if (i < exons.length - 1) {
         const gap = geom.gaps[i]!;
         if (S > eb.xEnd && S < gap.xEnd) {
-          const midpoint = (eb.xEnd + gap.xEnd) / 2;
-          if (S <= midpoint) return e.cdsEnd;
-          return exons[i + 1]!.cdsStart;
+          // Smoothly interpolate ruler position through the inter-exon gap
+          // so the inverse of `cdsToBaselineX` is also continuous. cPos
+          // walks linearly from `e.cdsEnd` to `exons[i+1].cdsStart` across
+          // the gap.
+          const nextStart = exons[i + 1]!.cdsStart;
+          const denom = geom.gapPx > 0 ? geom.gapPx : 1;
+          const t = (S - eb.xEnd) / denom;
+          return e.cdsEnd + t * (nextStart - e.cdsEnd);
         }
       }
     }
@@ -508,23 +529,35 @@ export class ViewportController implements Viewport {
     const span = Math.max(1e-6, S_hi - S_lo);
     const zoom = this._width / span;
 
-    // Per-exon current-x + scale-x. Off-figure exons get true negative or
-    // beyond-width positions; the figure SVG clips them via `overflow: hidden`.
+    // Exon content scales uniformly with zoom; inter-exon gaps DO NOT — they
+    // stay at their baseline pixel width regardless of zoom level so Pfam /
+    // InterPro segments in adjacent exons stay visually close at high zoom
+    // (otherwise the gap visually overpowers the segment widths). Each exon
+    // gets a leftward correction equal to the number of preceding gaps times
+    // `gapPx × (zoom − 1)` to absorb the "missing" gap stretch.
+    const gapPx = geom.gapPx;
     for (const eb of geom.exons) {
-      const currentX = (eb.xStart - S_lo) * zoom;
+      const correction = eb.exonIdx * gapPx * (zoom - 1);
+      const currentX = (eb.xStart - S_lo) * zoom - correction;
       s.setProperty(`--vv-exon-x-${eb.exonIdx}`, `${currentX}px`);
       s.setProperty(`--vv-exon-scale-x-${eb.exonIdx}`, zoom.toString());
       s.setProperty(`--vv-exon-w-${eb.exonIdx}`, `${eb.width}px`);
     }
 
-    // Per-gap current-x + scale. Gap scale-x folds in intronScale so collapsed
-    // modes (cds-spliced, protein) shrink the gap-content to zero width.
+    // Per-gap current-x sits at the upstream exon's `currentXEnd`; scale-x
+    // folds in `intronScale` so collapsed modes (cds-spliced, protein) shrink
+    // the gap-content to zero width without affecting the gap's screen
+    // width — that's controlled by the absence of scaleX-zoom above.
     for (const gap of geom.gaps) {
-      const currentX = (gap.xStart - S_lo) * zoom;
-      s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${currentX}px`);
+      const correction = gap.exonIdxA * gapPx * (zoom - 1);
+      const aXEnd = (geom.exons[gap.exonIdxA]!.xEnd - S_lo) * zoom - correction;
+      s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${aXEnd}px`);
+      // intron scale-x = intronScale (not multiplied by zoom): the inter-exon
+      // `<g>` carries the polyline at baseline gap width; in cds-spliced or
+      // protein modes intronScale = 0 collapses it to zero.
       s.setProperty(
         `--vv-intron-scale-x-${gap.exonIdxA}`,
-        (zoom * this._intronScale).toString(),
+        this._intronScale.toString(),
       );
       s.setProperty(`--vv-intron-w-${gap.exonIdxA}`, `${gap.width}px`);
     }
@@ -563,17 +596,88 @@ export class ViewportController implements Viewport {
 
   /** Project a baseline screen-x onto the current screen, returning null if
    *  it falls outside [0, width] — preserves the "out of view → null"
-   *  contract that older callers (cursor anchoring, hit testing) rely on. */
+   *  contract that older callers (cursor anchoring, hit testing) rely on.
+   *  Uses the same fixed-gap layout as `publish()` so cursor positions /
+   *  hit-tests line up with rendered pixels. */
   private applyZoomClamped(baselineX: number): number | null {
+    const x = this.baselineToCurrentX(baselineX);
+    if (x === null) return null;
+    if (x < -1e-6 || x > this._width + 1e-6) return null;
+    return x;
+  }
+
+  /**
+   * Map a baseline screen-x to the live screen-x. Exon content scales with
+   * the live zoom factor; inter-exon gaps stay frozen at their baseline
+   * pixel width regardless of zoom — see `publish()` for the rationale.
+   * The same mapping powers cursor anchoring (`rulerAtScreen`) and hit
+   * testing (`screenToCds`); inverse is {@link currentToBaselineX}.
+   */
+  private baselineToCurrentX(baselineX: number): number | null {
+    const geom = this.baselineGeometry();
+    if (geom.exons.length === 0) return null;
     const [lo, hi] = this._range;
     const S_lo = this.cdsToBaselineX(lo);
     const S_hi = this.cdsToBaselineX(hi);
     const span = S_hi - S_lo;
     if (span <= 0) return null;
     const zoom = this._width / span;
-    const x = (baselineX - S_lo) * zoom;
-    if (x < -1e-6 || x > this._width + 1e-6) return null;
-    return x;
+    const gapPx = geom.gapPx;
+    for (let i = 0; i < geom.exons.length; i++) {
+      const eb = geom.exons[i]!;
+      if (baselineX <= eb.xEnd) {
+        if (baselineX >= eb.xStart) {
+          const exonCurrentX = (eb.xStart - S_lo) * zoom - i * gapPx * (zoom - 1);
+          return exonCurrentX + (baselineX - eb.xStart) * zoom;
+        }
+        if (i === 0) {
+          // Padding zone before exon 0 — linear extrapolation.
+          return (baselineX - S_lo) * zoom;
+        }
+        const prevExon = geom.exons[i - 1]!;
+        const prevExonCurrentXEnd =
+          (prevExon.xEnd - S_lo) * zoom - (i - 1) * gapPx * (zoom - 1);
+        return prevExonCurrentXEnd + (baselineX - prevExon.xEnd);
+      }
+    }
+    const lastIdx = geom.exons.length - 1;
+    const lastEb = geom.exons[lastIdx]!;
+    const lastCurrentXEnd = (lastEb.xEnd - S_lo) * zoom - lastIdx * gapPx * (zoom - 1);
+    return lastCurrentXEnd + (baselineX - lastEb.xEnd);
+  }
+
+  /** Inverse of {@link baselineToCurrentX}: live screen-x → baseline-x. */
+  private currentToBaselineX(currentX: number): number | null {
+    const geom = this.baselineGeometry();
+    if (geom.exons.length === 0) return null;
+    const [lo, hi] = this._range;
+    const S_lo = this.cdsToBaselineX(lo);
+    const S_hi = this.cdsToBaselineX(hi);
+    const span = S_hi - S_lo;
+    if (span <= 0) return null;
+    const zoom = this._width / span;
+    const gapPx = geom.gapPx;
+    for (let i = 0; i < geom.exons.length; i++) {
+      const eb = geom.exons[i]!;
+      const exonCurrentX = (eb.xStart - S_lo) * zoom - i * gapPx * (zoom - 1);
+      const exonCurrentXEnd = exonCurrentX + (eb.xEnd - eb.xStart) * zoom;
+      if (currentX <= exonCurrentXEnd) {
+        if (currentX >= exonCurrentX) {
+          return eb.xStart + (currentX - exonCurrentX) / zoom;
+        }
+        if (i === 0) {
+          return S_lo + currentX / zoom;
+        }
+        const prevExon = geom.exons[i - 1]!;
+        const prevExonCurrentXEnd =
+          (prevExon.xEnd - S_lo) * zoom - (i - 1) * gapPx * (zoom - 1);
+        return prevExon.xEnd + (currentX - prevExonCurrentXEnd);
+      }
+    }
+    const lastIdx = geom.exons.length - 1;
+    const lastEb = geom.exons[lastIdx]!;
+    const lastCurrentXEnd = (lastEb.xEnd - S_lo) * zoom - lastIdx * gapPx * (zoom - 1);
+    return lastEb.xEnd + (currentX - lastCurrentXEnd);
   }
 
   screenToCds(x: number): CdsPosition | null {
@@ -607,13 +711,9 @@ export class ViewportController implements Viewport {
   }
 
   private screenToRulerBaseline(x: number): number {
-    const [lo, hi] = this._range;
-    const S_lo = this.cdsToBaselineX(lo);
-    const S_hi = this.cdsToBaselineX(hi);
-    if (S_hi === S_lo) return lo;
-    const zoom = this._width / (S_hi - S_lo);
-    const S = S_lo + x / zoom;
-    return this.baselineXToRuler(S);
+    const baselineX = this.currentToBaselineX(x);
+    if (baselineX === null) return this._range[0];
+    return this.baselineXToRuler(baselineX);
   }
 
   // ---- Range projection --------------------------------------------------

@@ -121,7 +121,7 @@ describe('exonTrack', () => {
       mapper,
       width: 720,
       mode: 'cds-with-introns',
-      range: [150, 200], // zoomed into the middle of exon 1; exons 0 + 2 sit off-figure
+      range: [130, 170], // tight zoom into mid exon 1; exons 0 + 2 sit off-figure
     });
     const el = document.createElement('div');
     viewport.attach(el);

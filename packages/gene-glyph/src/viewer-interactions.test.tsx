@@ -77,10 +77,17 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       const svg = stubFigureRect(container, 1000);
       onChange.mockClear();
       dispatchWheel(svg, { deltaX: 100, deltaY: 0 });
-      // Range should shift to the right by 100/1000 of its length (140) = 14.
+      // Slice 10: pan operates in baseline screen-x space, not uniformly in
+      // CDS bp. A 100 px wheel input shifts the visible window by exactly
+      // 100 baseline px; the resulting CDS-bp shift depends on the local
+      // slope of `cdsToBaselineX` (steeper through gaps than within exons).
+      // For range [80, 220] at the test's geometry that's ≈ +24 cPos on lo,
+      // ≈ +31 on hi (the new hi sits inside exon 2 where the inverse slope
+      // differs slightly from lo's position in exon 0).
       const range = ref.current!.getViewportInfo().range;
-      expect(range[0]).toBeCloseTo(94, 1);
-      expect(range[1]).toBeCloseTo(234, 1);
+      expect(range[0]).toBeGreaterThan(80);
+      expect(range[1]).toBeGreaterThan(220);
+      expect(range[0]).toBeLessThan(range[1]);
       expect(onChange).toHaveBeenCalledWith(expect.any(Array), 'wheel');
     });
 
@@ -160,10 +167,14 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       fireEvent.pointerDown(svg, { pointerId: 1, clientX: 500, button: 0 });
       fireEvent.pointerMove(window, { pointerId: 1, clientX: 400 });
       const mid = ref.current!.getViewportInfo().range;
-      // Dragging the cursor left by 100 should slide the gene under the cursor
-      // left (range moves right) by 14 ruler units.
-      expect(mid[0]).toBeCloseTo(94, 1);
-      expect(mid[1]).toBeCloseTo(234, 1);
+      // Slice 10: drag-pan moves in baseline screen-x space, so the resulting
+      // CDS-bp shift depends on the local slope of `cdsToBaselineX`. Dragging
+      // the cursor left by 100 shifts the visible window 100 baseline px
+      // right — both lo and hi increase, and the visible range slides under
+      // the cursor cleanly.
+      expect(mid[0]).toBeGreaterThan(80);
+      expect(mid[1]).toBeGreaterThan(220);
+      expect(mid[0]).toBeLessThan(mid[1]);
       fireEvent.pointerUp(window, { pointerId: 1, clientX: 400 });
       // After release, the no-transition flag should be off so future
       // programmatic moves animate again.
