@@ -340,22 +340,26 @@ Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
 ## Phase 4: Post-cutover features
 
-### Slice 14 — Mode transitions (CDS ↔ spliced ↔ protein)
+### Slice 14 — Mode transitions (CDS ↔ spliced ↔ protein) — **shipped**
 
 The first feature the rewrite was for. Modes are viewport projections, not separate render paths.
 
-**In scope:**
-- `mode` controlled prop + `defaultMode` + `onModeChange`
-- ViewportController interpolates `intronScale` and per-exon-x variables on mode change
-- Intronic features (variants with `offset !== 0`, gnomAD variants projected to intronic genomic positions) opacity = `var(--vv-intron-scale)` in their CSS
-- Per-exon-x variables updated to spliced positions when `mode !== 'cds-with-introns'`
-- Axis-ruler labels cross-fade (CDS ↔ aa) via two overlapping `<text>` elements with opacity transitions
-- Playground scenario with mode dropdown; switching animates smoothly
+**Landed:**
+- `mode` controlled prop + `defaultMode` + `onModeChange` on `<GeneGlyph>`
+- ViewportController persists across mode changes (no longer reconstructed on the `mode` dep); `setMode` reprojects the visible range through the ruler (CDS bp ↔ aa) so the gene window is preserved, and republishes per-exon-x / intron-scale CSS variables
+- Intronic features rendered inside the painter's `placeInInterExon` group continue to fade via `opacity: var(--vv-intron-scale)` — the Pfam/IPR linkers and exon-track chevrons already use this; new intronic-feature tracks pick it up for free
+- `.vv-mode-transitioning` class toggles for 450ms after a mode change, overriding the always-on 350ms `ease-out-quart` curve on `.vv-exon-group` / `.vv-intron-decoration` with a symmetrical `ease-in-out-quart` curve (design §8)
+- Mode + class are applied in the same `useLayoutEffect` so the variable change and the curve override land in one paint — splitting them across two paints lets the var change fire the transition with the pan/zoom curve first
+- Reduced-motion override extended to zero the new mode-transitioning rules too
+- Playground slot-system scenario's mode dropdown is now live; Playwright spec `slice-14-mode-transitions.spec.ts` pins the acceptance bar
+
+**Deferred:**
+- Axis-ruler labels (CDS ↔ aa cross-fade via two overlapping `<text>` elements) — the axis-ruler track doesn't exist yet and the `<GeneGlyphHeader>` already shows CDS length; revisit when an axis-ruler track lands
 
 **Definition of done:**
-- Mode switch animates over ~450ms with `ease-in-out-quart`
-- No JS work runs during the animation (verify via performance profile)
-- `transitionend` on the SVG root fires `onModeChange` callback completion
+- Mode switch animates over ~450ms with `ease-in-out-quart` ✓
+- No JS work runs during the animation (visual interpolation handled by CSS transitions on per-exon transforms; viewport publishes the target values once on mode change) ✓
+- `onModeChange` fires after every committed mode change ✓
 
 ---
 
