@@ -506,6 +506,43 @@
   to { opacity: 1; }
 }
 
+/* Slice 18: per-track loading shimmer + stale-data desaturation.
+ *   • Shimmer sits inside the figure SVG over the loading track's y-range. A
+ *     150ms animation-delay hides the rect for sub-frame loads — only loads
+ *     that actually stall long enough to be perceptible draw the shimmer.
+ *   • `[data-vv-stale]` on the viewer root marks the brief debounce window
+ *     between a pan/zoom landing and the next `track.load()` firing. The
+ *     existing feature glyphs desaturate (saturate-50%) and fade slightly so
+ *     the user knows the displayed data is about to change. */
+.gene-glyph {
+  --vv-loading-tint: rgba(99, 102, 241, 0.12);
+  --vv-loading-band: rgba(99, 102, 241, 0.28);
+}
+
+.gene-glyph .vv-loading-shimmer {
+  fill: var(--vv-loading-tint);
+  opacity: 0;
+  pointer-events: none;
+  animation: vv-loading-shimmer 1200ms ease-in-out 150ms infinite;
+}
+
+@keyframes vv-loading-shimmer {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  50%  { opacity: 0.35; }
+  90%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.gene-glyph[data-vv-stale] .vv-variant,
+.gene-glyph[data-vv-stale] .vv-pfam-rect,
+.gene-glyph[data-vv-stale] .vv-interpro-rect,
+.gene-glyph[data-vv-stale] .vv-unplaced-chip {
+  filter: saturate(0.5);
+  opacity: 0.75;
+  transition: filter 120ms ease-out, opacity 120ms ease-out;
+}
+
 /* Print theme — applied via <GeneGlyph theme="print"> in later slices. */
 [data-vv-print] .gene-glyph {
   --vv-color-text-primary: #1f2937;
@@ -561,6 +598,10 @@
     animation: none;
     opacity: 1;
   }
+  .gene-glyph .vv-loading-shimmer {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 [data-vv-reduce-motion] .gene-glyph .vv-exon-group,
@@ -584,4 +625,9 @@
 [data-vv-reduce-motion] .gene-glyph .vv-tooltip {
   animation: none;
   opacity: 1;
+}
+
+[data-vv-reduce-motion] .gene-glyph .vv-loading-shimmer {
+  animation: none;
+  opacity: 0.6;
 }

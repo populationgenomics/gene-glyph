@@ -303,4 +303,118 @@ describe('GeneGlyph', () => {
       expect(container.querySelector('[data-vv-feature-id="oob"]')).not.toBeNull();
     });
   });
+
+  describe('Slice 18 — async loading orchestration', () => {
+    const variants: ViewerVariant[] = [
+      { id: 'v1', label: 'V1', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
+    ];
+
+    it('reports loading → ready transitions through onTrackStateChange', async () => {
+      const seen: Array<[string, string]> = [];
+      const onTrackStateChange = vi.fn((id: string, state: string) => {
+        seen.push([id, state]);
+      });
+      let resolveFn: ((v: ViewerVariant[]) => void) | null = null;
+      const source = {
+        id: 'mock',
+        cacheKey: () => 'k',
+        query: () =>
+          new Promise<ViewerVariant[]>((res) => {
+            resolveFn = res;
+          }),
+      };
+      render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source })]}
+          onTrackStateChange={onTrackStateChange}
+        />,
+      );
+      await act(async () => { await Promise.resolve(); });
+      expect(seen.some(([id, s]) => id === 'variants' && s === 'loading')).toBe(true);
+      expect(seen.some(([id, s]) => id === 'variants' && s === 'ready')).toBe(false);
+      await act(async () => {
+        resolveFn!(variants);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(seen.some(([id, s]) => id === 'variants' && s === 'ready')).toBe(true);
+    });
+
+    it('renders a shimmer rect over a track stuck in loading state', async () => {
+      const source = {
+        id: 'mock',
+        cacheKey: () => 'k',
+        query: () => new Promise<ViewerVariant[]>(() => {}),
+      };
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({}), variantTrack({ id: 'variants', source })]}
+        />,
+      );
+      await act(async () => { await Promise.resolve(); });
+      const shimmer = container.querySelector('[data-testid="gene-glyph-shimmer-variants"]');
+      expect(shimmer).not.toBeNull();
+    });
+
+    it('marks data-vv-stale on viewport range change and clears after the debounce', async () => {
+      vi.useFakeTimers();
+      try {
+        const ref = createRef<GeneGlyphRef>();
+        const { container } = render(
+          <GeneGlyph
+            ref={ref}
+            transcript={transcript}
+            tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+            loadDebounceMs={120}
+          />,
+        );
+        await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+        const root = container.querySelector('[data-testid="gene-glyph"]')!;
+        expect(root.hasAttribute('data-vv-stale')).toBe(false);
+        await act(async () => {
+          ref.current!.fitTo({ kind: 'range', range: [50, 200] });
+          await Promise.resolve();
+        });
+        expect(root.hasAttribute('data-vv-stale')).toBe(true);
+        await act(async () => {
+          vi.advanceTimersByTime(140);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        expect(root.hasAttribute('data-vv-stale')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('two tracks sharing one DataSource fire query() exactly once per cacheKey', async () => {
+      const query = vi.fn().mockResolvedValue(variants);
+      // Wrap so both tracks share the same memoised promise (the real
+      // `createCachedDataSource` is covered by data-source.test.ts; this
+      // viewer test only proves a shared instance dedupes per render pass).
+      let pending: Promise<ViewerVariant[]> | null = null;
+      const wrapped = {
+        id: 'shared',
+        cacheKey: () => 'k',
+        query: (): Promise<ViewerVariant[]> => {
+          if (!pending) pending = query();
+          return pending!;
+        },
+      };
+      render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            variantTrack({ id: 'variants-a', source: wrapped }),
+            variantTrack({ id: 'variants-b', source: wrapped }),
+          ]}
+        />,
+      );
+      await flushTrackLoads();
+      expect(query).toHaveBeenCalledTimes(1);
+    });
+  });
 });

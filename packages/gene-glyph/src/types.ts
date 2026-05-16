@@ -108,6 +108,13 @@ export function isDataSource<TQuery, TResult>(
   );
 }
 
+/** Per-track load lifecycle reported via `onTrackStateChange`. Hosts use this
+ *  to drive their own loading UI or telemetry. The viewer renders a default
+ *  shimmer affordance over the track's y-range while `state === 'loading'`,
+ *  and desaturates feature fills via `[data-vv-stale]` during the
+ *  pre-`track.load` debounce window. Slice 18. */
+export type TrackLoadState = 'loading' | 'ready' | 'error';
+
 // ---------------------------------------------------------------------------
 // Viewport types
 // ---------------------------------------------------------------------------

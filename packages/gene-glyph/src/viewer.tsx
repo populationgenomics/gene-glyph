@@ -28,6 +28,7 @@ import {
   type ProteinAnnotations,
   type Track,
   type TooltipRenderArgs,
+  type TrackLoadState,
   type TrackOrGroup,
   type TrackRect,
   type Transcript,
@@ -94,6 +95,15 @@ export interface GeneGlyphProps {
    *  {@link Track.featureLabel}). Return `null` to suppress the tooltip for a
    *  given feature without disabling the system. Slice 17. */
   renderTooltip?: (args: TooltipRenderArgs) => ReactNode | null;
+  /** Fires when a track transitions between load states. Hosts can mirror
+   *  this into their own loading UI / telemetry; the viewer renders its own
+   *  default shimmer regardless. Slice 18. */
+  onTrackStateChange?: (trackId: string, state: TrackLoadState) => void;
+  /** Debounce for viewport-driven re-loads, in ms. The viewer marks tracks
+   *  stale immediately on viewport change, then fires `track.load()` after
+   *  this delay so rapid pan/zoom doesn't thrash the upstream adapter.
+   *  Default 120ms (design §6.2). Slice 18. */
+  loadDebounceMs?: number;
   /** Default-binding profile. `'standard'` enables drag/wheel/pinch/keyboard;
    *  `'embed'` skips Cmd/Ctrl + wheel-zoom so the viewer doesn't fight a
    *  scrolling host page; `'fullscreen'` is reserved for later expansion.
@@ -293,6 +303,8 @@ function GeneGlyphInner(
     onHover,
     onFeatureClick,
     renderTooltip,
+    onTrackStateChange,
+    loadDebounceMs = 120,
     interactionMode = 'standard',
     viewportRange,
     defaultViewportRange,
@@ -426,30 +438,131 @@ function GeneGlyphInner(
   );
 
 
+  // Per-track data + state. The viewer fans loads out per track (rather than
+  // one shared Promise.all) so a slow async source doesn't block fast tracks
+  // from rendering. Each track owns its own AbortController so viewport-
+  // driven re-loads cancel just that track's in-flight request rather than
+  // bouncing the whole stack. Slice 18.
   const [trackData, setTrackData] = useState<Map<string, unknown>>(() => new Map());
+  const [trackStates, setTrackStates] = useState<Map<string, TrackLoadState>>(
+    () => new Map(),
+  );
+  const [stale, setStale] = useState(false);
+  const trackControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const onTrackStateChangeRef = useRef(onTrackStateChange);
   useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-    const proteinArg = protein ?? null;
-    void Promise.all(
-      flatTracks.map(async (t) => {
-        const data = await t.load({
-          viewport,
-          mapper,
-          signal: controller.signal,
-          protein: proteinArg,
-        });
-        return [t.id, data] as const;
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setTrackData(new Map(entries));
+    onTrackStateChangeRef.current = onTrackStateChange;
+  }, [onTrackStateChange]);
+
+  const setTrackState = useCallback((id: string, next: TrackLoadState) => {
+    setTrackStates((prev) => {
+      if (prev.get(id) === next) return prev;
+      const m = new Map(prev);
+      m.set(id, next);
+      return m;
     });
+    onTrackStateChangeRef.current?.(id, next);
+  }, []);
+
+  // Drop state for tracks that were removed from the stack so stale entries
+  // don't linger across track-list edits. setState calls are gated by an
+  // actual diff so the effect is a no-op when the track list is unchanged
+  // (which is the common case and what the lint rule is concerned about).
+  useEffect(() => {
+    const live = new Set(flatTracks.map((t) => t.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTrackData((prev) => {
+      let changed = false;
+      const m = new Map(prev);
+      for (const k of m.keys()) if (!live.has(k)) { m.delete(k); changed = true; }
+      return changed ? m : prev;
+    });
+    setTrackStates((prev) => {
+      let changed = false;
+      const m = new Map(prev);
+      for (const k of m.keys()) if (!live.has(k)) { m.delete(k); changed = true; }
+      return changed ? m : prev;
+    });
+    const controllers = trackControllersRef.current;
+    for (const [id, ac] of controllers) {
+      if (!live.has(id)) { ac.abort(); controllers.delete(id); }
+    }
+  }, [flatTracks]);
+
+  const loadTrack = useCallback(
+    (t: Track) => {
+      const controllers = trackControllersRef.current;
+      controllers.get(t.id)?.abort();
+      const controller = new AbortController();
+      controllers.set(t.id, controller);
+      setTrackState(t.id, 'loading');
+      const proteinArg = protein ?? null;
+      Promise.resolve()
+        .then(() =>
+          t.load({
+            viewport,
+            mapper,
+            signal: controller.signal,
+            protein: proteinArg,
+          }),
+        )
+        .then(
+          (data) => {
+            if (controller.signal.aborted) return;
+            if (controllers.get(t.id) !== controller) return;
+            setTrackData((prev) => {
+              const m = new Map(prev);
+              m.set(t.id, data);
+              return m;
+            });
+            setTrackState(t.id, 'ready');
+          },
+          (err) => {
+            if (controller.signal.aborted) return;
+            if ((err as { name?: string })?.name === 'AbortError') return;
+            if (controllers.get(t.id) !== controller) return;
+            setTrackState(t.id, 'error');
+          },
+        );
+    },
+    [mapper, protein, setTrackState, viewport],
+  );
+
+  // Identity-change loads: when the track list / viewport instance / mapper /
+  // protein changes, kick every track immediately (no debounce). This is the
+  // "first paint" path and the path used by hosts swapping the transcript.
+  // `loadTrack` sets state synchronously to flag the track as loading; the
+  // alternative (queueing the kick onto a microtask) would briefly paint
+  // an empty-data frame, which we don't want.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    for (const t of flatTracks) loadTrack(t);
+    const controllers = trackControllersRef.current;
     return () => {
-      cancelled = true;
-      controller.abort();
+      for (const ac of controllers.values()) ac.abort();
+      controllers.clear();
     };
-  }, [flatTracks, viewport, mapper, protein]);
+  }, [flatTracks, loadTrack]);
+
+  // Range/mode-change debounce. Marks the figure stale (CSS desaturates
+  // feature fills) on every change, then once the viewport has been quiet for
+  // `loadDebounceMs` re-fires `track.load()` for each track. DataSources whose
+  // cacheKey hasn't moved short-circuit through the cache; sources keyed on
+  // the visible window genuinely refetch.
+  const rangeKey = controlled && viewportRange
+    ? `${mode}|${viewportRange[0]}|${viewportRange[1]}`
+    : `${mode}|${tick}`;
+  const rangeKeyRef = useRef(rangeKey);
+  useEffect(() => {
+    if (rangeKeyRef.current === rangeKey) return;
+    rangeKeyRef.current = rangeKey;
+    setStale(true);
+    const timer = setTimeout(() => {
+      setStale(false);
+      for (const t of flatTracks) loadTrack(t);
+    }, Math.max(0, loadDebounceMs));
+    return () => clearTimeout(timer);
+  }, [rangeKey, flatTracks, loadDebounceMs, loadTrack]);
 
   const layout = useMemo(
     () =>
@@ -787,6 +900,40 @@ function GeneGlyphInner(
     );
   }, [brush, viewport, painter, totalHeight, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // One shimmer rect per loading track. Lives inside the figure SVG (so it's
+  // included in exportSVG snapshots only when the user explicitly chooses to
+  // export mid-load) and sits above feature glyphs to read as an overlay. The
+  // animation is gated by CSS — `animation-delay` hides flashes from sub-frame
+  // loads, and the reduced-motion override snaps to a static muted fill.
+  const loadingShimmer = useMemo<ReactNode>(() => {
+    const rects: ReactNode[] = [];
+    for (const t of flatTracks) {
+      if (trackStates.get(t.id) !== 'loading') continue;
+      const rect = layout.trackRects.get(t.id);
+      if (!rect) continue;
+      const h = Math.max(0, rect.yBottom - rect.yTop);
+      if (h <= 0) continue;
+      rects.push(
+        <rect
+          key={t.id}
+          className="vv-loading-shimmer"
+          data-vv-track-id={t.id}
+          data-testid={`gene-glyph-shimmer-${t.id}`}
+          x={0}
+          y={rect.yTop}
+          width={width}
+          height={h}
+        />,
+      );
+    }
+    if (rects.length === 0) return null;
+    return (
+      <g className="vv-loading-overlay" aria-hidden>
+        {rects}
+      </g>
+    );
+  }, [flatTracks, trackStates, layout.trackRects, width]);
+
   useEffect(() => {
     if (!tooltipTarget) return undefined;
     let raf = 0;
@@ -922,6 +1069,7 @@ function GeneGlyphInner(
             );
           })}
           {brushOverlay}
+          {loadingShimmer}
         </svg>
         <div
           className="vv-overlay-layer"
@@ -974,6 +1122,7 @@ function GeneGlyphInner(
       data-vv-mode-transitioning={modeTransitioning ? '' : undefined}
       data-vv-mode={mode}
       data-vv-interaction-mode={interactionMode}
+      data-vv-stale={stale ? '' : undefined}
       tabIndex={0}
       onKeyDown={interactions.onKeyDown}
     >
