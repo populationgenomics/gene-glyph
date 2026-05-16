@@ -89,7 +89,7 @@ These rules are load-bearing and have been chosen deliberately. See [`docs/desig
 - Continuous state (zoom, pan, intronScale, per-exon offsets) lives as CSS custom properties on the SVG root, set by the `ViewportController`.
 - Direct manipulation (drag, wheel) updates variables directly per pointer event, no transition class.
 - Programmatic transitions (fit-to-feature, mode change) toggle a `vv-transitioning` class, set the new values, and listen for `transitionend`.
-- The viewer never runs an `rAF` animation loop. If you find yourself reaching for one, reconsider whether the state can live in a CSS variable instead.
+- The viewer never runs an `rAF` animation loop **for figure-internal motion** — pan, zoom, intronScale, per-exon offsets all flow through CSS variables. The one exception is the overlay layer (Slice 17, see below): screen-space tooltips live in HTML siblings of the SVG and need a brief rAF tick to track their anchor through pan/zoom. The loop runs only while a tooltip is mounted.
 - Hover lift, selection ring, and unplaced-chip lift are all CSS-only:
   feature wrappers carry `is-hovered` / `is-selected` classes that the
   stylesheet hooks into. No JS during the animation frame.
@@ -135,6 +135,31 @@ The smoke check: drag-pan the interaction-demo back and forth. The edge
 exons should slide off-figure as solid rectangles — no continuous reshape,
 no `width` recompute mid-gesture. The `slice-10-smooth-pan` Playwright spec
 pins this contract.
+
+### Overlays live outside the figure SVG (Slice 17)
+
+The figure SVG is the export boundary, so anything that's screen-space chrome
+(tooltips, "you are here" markers, transient UI) renders into the
+`<div class="vv-overlay-layer">` that sits as a DOM sibling of the SVG inside
+`.vv-figure-wrap`. This is the one carve-out from the "no rAF in the viewer"
+rule above: the overlay layer is HTML, so it can't ride the SVG's CSS-variable
+transforms. The viewer instead runs a short rAF loop **only while a tooltip is
+visible** to convert the track's `resolveAnchor` (viewBox-x) into client px via
+`SVGSVGElement.getScreenCTM()`. The loop pauses the moment the cursor leaves.
+
+The contract for a well-behaved overlay-aware track:
+
+- Implement `resolveAnchor(data, anchorId, viewport)` so the viewer can place
+  the overlay. Slice 17's three exemplars (variant / Pfam / InterPro) all
+  route through `viewport.resolveAnchor({kind: ...})`.
+- Implement `resolveFeature(data, featureId)` to hand the host's
+  `renderTooltip` a typed feature payload — saves the host re-resolving from
+  its own data.
+- Implement `featureLabel(data, featureId)` to opt into the viewer's built-in
+  label tooltip. Omit it to suppress the default tooltip for a track (the
+  host can still drive overlays via `renderTooltip`).
+- Tooltip styling lives in `styles.css` under `.vv-tooltip`. Fade-in is a 100ms
+  `ease-out` keyframe per design §8; reduced-motion snaps to `opacity: 1`.
 
 ### Tracks are plain objects, not React components
 

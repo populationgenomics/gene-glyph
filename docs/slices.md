@@ -401,22 +401,23 @@ Users can drag-select a range; tracks reflect the selection.
 
 ---
 
-### Slice 17 — Overlay layer
+### Slice 17 — Overlay layer — **shipped**
 
 Tooltips, "you are here" markers, transient UI floating above tracks.
 
-**In scope:**
-- Overlay infrastructure: positioned absolutely in screen-space, layered above the figure SVG
-- Anchored to `{kind, ...target}` — viewport resolves to `{x, y}`
-- Default hover-tooltip implementation: pops up on hover of any focusable feature
-- Tooltip content via `renderTooltip?: (feature) => ReactNode` prop
-- Overlays are stripped at export (structurally — they live outside the figure SVG)
-- Playground scenario shows hover tooltips on variants and ClinVar entries
+**Landed:**
+- `.vv-figure-wrap` wraps the figure SVG inside the existing `.vv-figure-row`; the overlay layer (`<div class="vv-overlay-layer" data-testid="gene-glyph-overlay-layer">`) is a DOM sibling of the SVG inside the wrap so `exportSVG()` (Slice 19) can serialise the figure cleanly. `pointer-events: none` on the layer keeps overlays hit-test-transparent unless an individual overlay opts in
+- Tooltip target tracked in `<GeneGlyph>` from the existing `onFeatureHover` channel — independent of the controlled `hoveredFeatureId` prop so a host that drives hover state from a table row still gets working tooltips. An rAF loop converts the track's `resolveAnchor` (viewBox-x) into client px via `SVGSVGElement.getScreenCTM()` so the tooltip rides smoothly through pan/zoom transitions
+- `renderTooltip?: (args: TooltipRenderArgs) => ReactNode | null` prop on `<GeneGlyph>`. `args.feature` is the track-resolved object via the new `Track.resolveFeature?` hook (variant/Pfam/InterPro each implement it); returning `null` suppresses the tooltip for a specific feature without disabling the system. ClinVar (Slice 21) inherits tooltip support automatically once it implements `resolveAnchor` / `resolveFeature` / `featureLabel`
+- Default tooltip — when `renderTooltip` is omitted — renders the string returned by `Track.featureLabel?(data, featureId)`. Variant track returns `v.label`; Pfam/InterPro return `${shortName} (aaStart–aaEnd)`. Tracks that omit the hook simply suppress the default tooltip
+- Tooltip CSS lives at the root of `styles.css`: 100ms `ease-out` fade-in keyframes per design §8. `[data-vv-reduce-motion]` and `@media (prefers-reduced-motion: reduce)` both snap to `opacity: 1` with `animation: none`
+- Playground `TooltipDemoScenario` exercises variants + Pfam + InterPro on TP53; a checkbox swaps between the default label tooltip and a custom renderer that pulls richer detail off the resolved feature
+- Playwright spec `slice-17-overlay.spec.ts` pins the contract (overlay is a sibling of the SVG, host renderer surfaces category, default renderer falls back to label, reduced-motion snaps fade). Unit spec `viewer-overlay.test.tsx` covers the same surface in JSDOM (with stubbed `getScreenCTM`)
 
 **Definition of done:**
-- Hover tooltips render at correct anchor points
-- Overlays don't appear in exported SVG
-- Reduced-motion respected for overlay fade
+- Hover tooltips render at correct anchor points ✓
+- Overlays don't appear in exported SVG (structurally outside the figure SVG) ✓
+- Reduced-motion respected for overlay fade ✓
 
 ---
 
