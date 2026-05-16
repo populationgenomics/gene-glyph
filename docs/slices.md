@@ -441,26 +441,27 @@ The infrastructure for pluggable backends.
 
 ---
 
-### Slice 19 — Camera-ready export (SVG + PNG)
+### Slice 19 — Camera-ready export (SVG + PNG) — **shipped**
 
 The "camera-ready vector graphics" goal lands.
 
-**In scope:**
-- `exportSVG(args?)` imperative method
-- `exportPNG({widthPx, ...})` imperative method
-- Print theme implementation: concrete hex values for all `--vv-*` vars; white bg; dark text; stronger strokes
-- Theme override application
-- Truncation `as-shown` vs `expand`
-- Animation snap-to-target before serialise
-- Painter export-mode: strip cursors, data-attrs, hover styles; add `<title>`, `<desc>`, XML namespace
-- Self-rendering Google Fonts `@import` injected into `<defs><style>`
-- Playground "Download SVG" + "Download PNG" buttons producing clean files
-- Output validates: SVG opens correctly in Inkscape; PNG renders at exact `widthPx`
+**Landed:**
+- `exportSVG(args?)` / `exportPNG({widthPx, ...})` on `GeneGlyphRef`. Both produce a self-contained file with no dependency on `@populationgenomics/gene-glyph/styles.css` — opens cleanly in Inkscape or Illustrator
+- Implementation in `packages/gene-glyph/src/export.ts`: clones the live figure SVG into a hidden wrapper styled with the host's `gene-glyph` class so the CSS cascade resolves, then walks the tree to bake `getComputedStyle()` values back into SVG presentation attributes. Two-pass walk preserves the root's inline CSS variables (`--vv-exon-x-{N}` etc.) while children's transforms are read, then strips them
+- Print theme on `[data-vv-print] .gene-glyph` (and the `[data-vv-print] .gene-glyph .vv-exon-rect` / `.vv-pfam-rect` / `.vv-interpro-rect` / `.vv-intron-polyline` stroke-uplift rules): white background, deeper category colours, heavier strokes, transitions zeroed so computed values land on the target frame. `theme: 'print'` (default) or `'current'`
+- CSS-variable transforms (`translateX(var(--vv-exon-x-0)) scaleX(var(--vv-exon-scale-x-0, 1))`) collapse to concrete `transform="matrix(a b c d e f)"` SVG attributes. `var()` references survive nowhere in the output
+- Painter export-mode discipline applied at serialise time, not draw time — `data-*` hooks, `class` hooks, `tabindex` / `role` on interior nodes, `onclick` handlers, `vv-loading-shimmer` rects, and the inline `style` (including the cursor: pointer hooks variant track sets) all stripped. Root keeps `role="img"` / `aria-label` / `viewBox` / `preserveAspectRatio`
+- `<title>` + `<desc>` injected at the front of the SVG; default text is `${geneSymbol} (${transcriptId}) — ${aaLength} aa` and `gene-glyph figure of ${geneSymbol} (${transcriptId}); view mode ${mode}.`. Hosts override via `args.ariaLabel` / `args.description`
+- `<defs><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');</style></defs>` injected by default so the SVG self-renders Inter when opened in a browser. `fontImport: 'none'` disables for hosts shipping their own font story
+- Background rect painted as the first non-meta child when the figure's computed `background-color` resolves to a real colour (the print theme white). Without it the standalone SVG would carry the print colours but lose the white background once stripped of `vv-color-bg-surface`
+- `exportPNG` rasterises the SVG via a hidden `<img>` + canvas. `widthPx` is the only resolution control (height derives from viewBox aspect); a white fillRect under `drawImage` avoids the journal-layout grey-on-transparent quirk
+- Truncation arg (`'as-shown'` / `'expand'`) accepted on the surface API for forward compatibility — every currently-shipped track reports `didTruncate: false` so the two paths produce identical output today; the branch lights up when a truncating track lands (Slice 24 MAVE-heatmap is the likely first)
+- Playground `ExportDemoScenario` exposes Download SVG / Download PNG buttons, theme picker, and a PNG-width input; the hidden Preview button stashes the latest SVG into the DOM so the Playwright spec can read it without intercepting downloads. Playwright spec `slice-19-export.spec.ts` pins (a) well-formedness + XML preamble + namespace + title/desc + Google Fonts + no `var()` leak + no `data-*` leak, (b) print vs current theme differ and print paints white, (c) per-exon transforms serialise as concrete `matrix(...)` attributes, (d) `exportPNG` produces a non-empty Blob at the requested width. Unit spec `export.test.ts` covers the structural surface JSDOM can verify (namespace, title/desc injection, data-* / class stripping, width derivation, font-import toggle, root-aria preservation)
 
 **Definition of done:**
-- SVG export passes well-formedness check and opens in Inkscape with no visual drift
-- PNG export at 2400px produces a high-quality figure suitable for a paper
-- Print theme is visibly different from screen (white bg, deeper colours, heavier strokes)
+- SVG export passes well-formedness check and opens in Inkscape with no visual drift ✓
+- PNG export at 2400px produces a high-quality figure suitable for a paper ✓ (widthPx routes through canvas at user-specified resolution; white background painted in)
+- Print theme is visibly different from screen (white bg, deeper colours, heavier strokes) ✓
 
 ---
 
