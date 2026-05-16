@@ -157,6 +157,29 @@ describe('ViewportController — range projection', () => {
     expect(last.xEnd).toBeLessThan(vp.cdsToBaselineX(60));
   });
 
+  it('protein-mode projection segments tile contiguously at exon boundaries (no visible gap between domain fragments)', () => {
+    // Without the snap, cdsToProtein(440)=147 (exon 1 end, with cdsEnd=440)
+    // and cdsToProtein(441)=147 (exon 2 start) round to the same aa only when
+    // the codon happens to span. In a transcript where codons end cleanly,
+    // adjacent fragments would have a 1-aa gap; the snap keeps consecutive
+    // segments meeting at the exon-rect boundary.
+    const t: Transcript = {
+      geneSymbol: 'X',
+      transcriptId: 'X.1',
+      cdsLength: 12,
+      strand: '+',
+      exons: [
+        { number: 1, cdsStart: 1, cdsEnd: 3, genomicStart: 1, genomicEnd: 3, chr: 'chr1' },
+        { number: 2, cdsStart: 4, cdsEnd: 12, genomicStart: 10, genomicEnd: 18, chr: 'chr1' },
+      ],
+    };
+    const mapper = createCoordinateMapper(t);
+    const vp = new ViewportController({ mapper, width: 100, mode: 'protein' });
+    const proj = vp.projectProteinRange(1, 4);
+    expect(proj.segments).toHaveLength(2);
+    expect(proj.segments[0]!.xEnd).toBeCloseTo(proj.segments[1]!.xStart, 5);
+  });
+
   it('protein-mode baselineGeometry tiles adjacent exons with no gap when codons do not span the boundary', () => {
     // Custom transcript: exon 0 ends on codon boundary (cdsEnd=3 = end of aa
     // 1), exon 1 starts on the next codon (cdsStart=4 = start of aa 2). The

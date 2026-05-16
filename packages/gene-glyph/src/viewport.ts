@@ -845,10 +845,34 @@ export class ViewportController implements Viewport {
     // Reporting one intronic drop per crossed gap mirrors projectGenomicRange so
     // tracks can aggregate hidden-feature counts uniformly regardless of coord
     // system.
+    const proteinMode = this._mode === 'protein';
+    const proteinGeom = proteinMode ? this.baselineGeometry() : null;
     for (let k = 0; k < hits.length; k++) {
       const h = hits[k]!;
       const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
-      if (seg) segments.push(seg);
+      if (seg) {
+        if (proteinMode && proteinGeom) {
+          // The baseline snaps each exon's right edge up to the next exon's
+          // aaStart so the exon ribbons tile without gaps; segments that
+          // reach the right edge of their exon must follow the same snap or
+          // they leave a one-residue hole between adjacent fragments of the
+          // same domain (cdsToProtein rounds down to the last whole codon).
+          // Same applies on the left edge: a segment that starts at the
+          // exon's cdsStart should anchor to the previous exon's snapped
+          // right edge (== this exon's xStart) so the boundary is shared.
+          const exon = exons[h.idx]!;
+          const eb = proteinGeom.exons[h.idx];
+          if (eb) {
+            if (h.hi === exon.cdsEnd && h.idx < exons.length - 1) {
+              seg.xEnd = eb.xEnd;
+            }
+            if (h.lo === exon.cdsStart) {
+              seg.xStart = eb.xStart;
+            }
+          }
+        }
+        segments.push(seg);
+      }
       if (k > 0) {
         const prev = hits[k - 1]!;
         droppedIntronicCount += 1;
