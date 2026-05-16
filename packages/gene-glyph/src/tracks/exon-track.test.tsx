@@ -145,6 +145,65 @@ describe('exonTrack', () => {
     }
   });
 
+  it('renders a hidden-feature mark for each bucket in hiddenByIntron with the documented anchor id', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const t = exonTrack();
+    const hiddenByIntron = new Map([
+      ['0:1', { exonIdxA: 0, exonIdxB: 1, count: 3, featureIds: ['v1', 'v2', 'v3'] }],
+    ]);
+    const clicks: string[] = [];
+
+    function Probe() {
+      return (
+        <svg>
+          {t.render({
+            data: { ready: true },
+            rect: { yTop: 0, yBottom: 24 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+            hiddenByIntron,
+            onFeatureClick: (id: string) => clicks.push(id),
+          })}
+        </svg>
+      );
+    }
+
+    const { container } = render(<Probe />);
+    const marks = container.querySelectorAll<SVGGElement>('.vv-hidden-feature-mark');
+    expect(marks).toHaveLength(1);
+    const mark = marks[0]!;
+    expect(mark.getAttribute('data-vv-feature-id')).toBe('__hidden_intron_0_1');
+    expect(mark.getAttribute('data-vv-hidden-count')).toBe('3');
+    expect(mark.querySelector('.vv-hidden-feature-count')?.textContent).toBe('3');
+    mark.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(clicks).toEqual(['__hidden_intron_0_1']);
+  });
+
+  it('omits hidden-feature marks when no track contributed counts', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const t = exonTrack();
+    function Probe() {
+      return (
+        <svg>
+          {t.render({
+            data: { ready: true },
+            rect: { yTop: 0, yBottom: 24 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+            hiddenByIntron: new Map(),
+          })}
+        </svg>
+      );
+    }
+    const { container } = render(<Probe />);
+    expect(container.querySelector('.vv-hidden-feature-mark')).toBeNull();
+    expect(container.querySelector('.vv-hidden-feature-marks')).toBeNull();
+  });
+
   it('places exon-group transforms via per-exon CSS variables', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = exonTrack();

@@ -10,7 +10,7 @@ import type {
   ViewportQuery,
 } from '../types.js';
 import { ViewportController } from '../viewport.js';
-import { partitionVariants, variantTrack } from './variant-track.js';
+import { partitionVariants, variantIntronGap, variantTrack } from './variant-track.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -64,6 +64,84 @@ describe('partitionVariants', () => {
     const x50 = viewport.cdsToScreen(50, 0)!;
     const x1 = viewport.cdsToScreen(1, 0)!;
     expect(v1!.localX).toBeCloseTo(x50 - x1, 5);
+  });
+});
+
+describe('variantIntronGap', () => {
+  it('returns the bracketing exon pair for a negative-offset variant anchored at a downstream exon', () => {
+    const mapper = createCoordinateMapper(transcript);
+    // c.101-3 — cPos lies in exon 1 (idx 1), offset < 0 → intron between
+    // idx 0 and idx 1.
+    const v: ViewerVariant = {
+      id: 'x',
+      label: 'x',
+      coord: { kind: 'cds', cPos: 101, offset: -3 },
+      category: 'splice',
+    };
+    expect(variantIntronGap(v, mapper)).toEqual({ exonIdxA: 0, exonIdxB: 1 });
+  });
+
+  it('returns the bracketing exon pair for a positive-offset variant anchored at an upstream exon', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const v: ViewerVariant = {
+      id: 'x',
+      label: 'x',
+      coord: { kind: 'cds', cPos: 100, offset: 5 },
+      category: 'splice',
+    };
+    expect(variantIntronGap(v, mapper)).toEqual({ exonIdxA: 0, exonIdxB: 1 });
+  });
+
+  it('returns null for an exonic variant (offset 0)', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const v: ViewerVariant = {
+      id: 'x',
+      label: 'x',
+      coord: { kind: 'cds', cPos: 50, offset: 0 },
+      category: 'missense',
+    };
+    expect(variantIntronGap(v, mapper)).toBeNull();
+  });
+
+  it('returns null for a protein-coord variant (always exonic)', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const v: ViewerVariant = {
+      id: 'x',
+      label: 'x',
+      coord: { kind: 'protein', aa: 50 },
+      category: 'missense',
+    };
+    expect(variantIntronGap(v, mapper)).toBeNull();
+  });
+
+  it('returns null when offset would point outside the transcript', () => {
+    const mapper = createCoordinateMapper(transcript);
+    // Last exon (idx 2) + positive offset → no downstream intron exists.
+    const v: ViewerVariant = {
+      id: 'x',
+      label: 'x',
+      coord: { kind: 'cds', cPos: 300, offset: 5 },
+      category: 'splice',
+    };
+    expect(variantIntronGap(v, mapper)).toBeNull();
+  });
+});
+
+describe('variantTrack', () => {
+  it('hiddenFeaturesByIntron aggregates intronic variants by gap', () => {
+    const t = variantTrack({ source: variants });
+    const mapper = createCoordinateMapper(transcript);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-spliced' });
+    const buckets = t.hiddenFeaturesByIntron!({
+      data: { variants },
+      viewport,
+      mapper,
+    });
+    // The fixture variants include `v4-intronic` (cPos 100, offset 5) in
+    // intron 0→1; no other intronic variants are defined.
+    expect(buckets).toEqual([
+      { exonIdxA: 0, exonIdxB: 1, count: 1, featureIds: ['v4-intronic'] },
+    ]);
   });
 });
 

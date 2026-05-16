@@ -253,6 +253,49 @@
     opacity 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 
+/* Slice 15: hidden-feature indicator badges sit on top of the dashed-gap
+ * polyline. They share the gap's translate (via --vv-intron-x-{N}) but stay at
+ * a constant pixel size — the inter-exon `<g>` collapses to width 0 in
+ * spliced/protein modes, so the indicator can't ride inside it.
+ *
+ * Opacity is the inverse of --vv-intron-scale (1 when intronScale=0, 0 when
+ * intronScale=1), so the mark fades in exactly as the polyline fades out and
+ * vice versa. Transition curve mirrors the intron decoration so visual
+ * cross-fade is symmetrical. */
+.gene-glyph .vv-hidden-feature-mark {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition:
+    transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 400ms cubic-bezier(0.77, 0, 0.175, 1);
+  cursor: pointer;
+}
+
+.gene-glyph .vv-hidden-feature-mark:focus {
+  outline: none;
+}
+
+.gene-glyph .vv-hidden-feature-mark:focus-visible .vv-hidden-feature-bg {
+  stroke-width: 2;
+}
+
+.gene-glyph .vv-hidden-feature-count {
+  font-family: inherit;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.gene-glyph.vv-no-transition .vv-hidden-feature-mark {
+  transition: none;
+}
+
+.gene-glyph.vv-mode-transitioning .vv-hidden-feature-mark {
+  transition:
+    transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
+    opacity 450ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+
 /* Variant track. Each variant lives inside a per-exon group; the outer `g`
  * carries focus and hit-test, the inner `g` carries the hover-lift transform
  * so the lift is a CSS-only animation. */
@@ -423,6 +466,8 @@
   .gene-glyph .vv-variant-ring,
   .gene-glyph .vv-variant-shape,
   .gene-glyph .vv-unplaced-chip,
+  .gene-glyph .vv-hidden-feature-mark,
+  .gene-glyph.vv-mode-transitioning .vv-hidden-feature-mark,
   .gene-glyph.vv-mode-transitioning .vv-exon-group,
   .gene-glyph.vv-mode-transitioning .vv-intron-decoration,
   .gene-glyph.vv-mode-transitioning .vv-pfam-label-wrap,
@@ -440,6 +485,8 @@
 [data-vv-reduce-motion] .gene-glyph .vv-variant-ring,
 [data-vv-reduce-motion] .gene-glyph .vv-variant-shape,
 [data-vv-reduce-motion] .gene-glyph .vv-unplaced-chip,
+[data-vv-reduce-motion] .gene-glyph .vv-hidden-feature-mark,
+[data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-hidden-feature-mark,
 [data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-exon-group,
 [data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-intron-decoration,
 [data-vv-reduce-motion] .gene-glyph.vv-mode-transitioning .vv-pfam-label-wrap,

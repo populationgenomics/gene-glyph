@@ -77,6 +77,14 @@ describe('ViewportController — range projection', () => {
     expect(proj.segments.map((s) => s.exonIdx)).toEqual([0, 1, 2]);
     expect(proj.segments[0]!.xEnd).toBeCloseTo(vp.cdsToScreen(100, 0)!);
     expect(proj.segments[1]!.xStart).toBeCloseTo(vp.cdsToScreen(101, 0)!);
+    // Slice 15: cross-exon CDS ranges report one intronic drop per crossed gap
+    // so tracks aggregating hidden-feature counts can index uniformly across
+    // coord systems.
+    expect(proj.droppedIntronicCount).toBe(2);
+    expect(proj.droppedRanges).toEqual([
+      { kind: 'intronic', exonIdxA: 0, exonIdxB: 1 },
+      { kind: 'intronic', exonIdxA: 1, exonIdxB: 2 },
+    ]);
   });
 
   it('fragments at exon boundaries in cds-with-introns mode too (per-exon segments)', () => {
@@ -102,7 +110,25 @@ describe('ViewportController — range projection', () => {
     expect(proj.segments[0]!.exonIdx).toBe(0);
     expect(proj.segments[1]!.exonIdx).toBe(1);
     expect(proj.droppedIntronicCount).toBe(1);
-    expect(proj.droppedRanges[0]).toMatchObject({ kind: 'intronic' });
+    expect(proj.droppedRanges[0]).toEqual({
+      kind: 'intronic',
+      exonIdxA: 0,
+      exonIdxB: 1,
+    });
+  });
+
+  it('projectProteinRange reports intronic drops between the exons the range crosses', () => {
+    // aa 30..40 spans the exon-1/exon-2 boundary (codon at c.100 ends in exon
+    // 1, codon at c.103 starts in exon 2). Slice 15: protein ranges should
+    // surface intronic drops the same way CDS and genomic ranges do.
+    const vp = fitGene('cds-spliced');
+    const proj = vp.projectProteinRange(30, 40);
+    expect(proj.droppedIntronicCount).toBeGreaterThanOrEqual(1);
+    expect(proj.droppedRanges[0]).toMatchObject({
+      kind: 'intronic',
+      exonIdxA: 0,
+      exonIdxB: 1,
+    });
   });
 
   it('projectGenomicRange returns no segments for a range fully outside any exon', () => {

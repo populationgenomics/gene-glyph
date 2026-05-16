@@ -3,6 +3,8 @@ import {
   isDataSource,
   type CoordinateMapper,
   type DataSource,
+  type HiddenFeatureBucket,
+  type HiddenFeaturesArgs,
   type Track,
   type TrackHeightArgs,
   type TrackHeightResult,
@@ -89,6 +91,48 @@ function categoryColor(category: VariantCategory): string {
   return `var(--${CATEGORY_VAR[category]}, ${CATEGORY_FALLBACK[category]})`;
 }
 
+/** Locate the intron a non-exonic variant falls in (Slice 15). Returns the
+ *  exon-pair `{exonIdxA, exonIdxB}` that brackets the variant, or `null` when
+ *  the variant projects onto an exon (no intron) or its anchor can't be
+ *  resolved against the transcript. Used by `hiddenFeaturesByIntron` to feed
+ *  per-gap counts to the exon track. */
+export function variantIntronGap(
+  v: ViewerVariant,
+  mapper: CoordinateMapper,
+): { exonIdxA: number; exonIdxB: number } | null {
+  let cPos: number;
+  let offset: number;
+  switch (v.coord.kind) {
+    case 'protein':
+      return null;
+    case 'cds':
+      cPos = v.coord.cPos;
+      offset = v.coord.offset;
+      break;
+    case 'genomic': {
+      const g = mapper.genomicToCds(v.coord.chr, v.coord.pos);
+      if (!g) return null;
+      cPos = g.cPos;
+      offset = g.offset;
+      break;
+    }
+  }
+  if (offset === 0) return null;
+  const exonHit = mapper.findExonByCds(cPos);
+  if (!exonHit) return null;
+  const lastIdx = mapper.transcript.exons.length - 1;
+  // Convention from cdsToGenomic: positive offset is anchored on the upstream
+  // exon (intron after); negative offset on the downstream exon (intron
+  // before). Mid-exon malformed cPos still picks the neighbouring intron
+  // matching the offset's sign.
+  if (offset > 0) {
+    if (exonHit.exonIdx >= lastIdx) return null;
+    return { exonIdxA: exonHit.exonIdx, exonIdxB: exonHit.exonIdx + 1 };
+  }
+  if (exonHit.exonIdx <= 0) return null;
+  return { exonIdxA: exonHit.exonIdx - 1, exonIdxB: exonHit.exonIdx };
+}
+
 /** Partition the variant list into features that project to a visible exon at
  *  the current viewport (placed) and those that don't (unplaced). A CDS
  *  coord-system track skips variants whose `cdsToScreen` returns null, which
@@ -173,6 +217,28 @@ export function variantTrack(
 
     height(_args: TrackHeightArgs<VariantTrackData>): TrackHeightResult {
       return { px: trackHeight, didTruncate: false };
+    },
+
+    hiddenFeaturesByIntron({ data, mapper }: HiddenFeaturesArgs<VariantTrackData>): HiddenFeatureBucket[] {
+      // Intronic variants — those whose CDS offset is non-zero, or whose
+      // genomic position lies between exons — are never placed on an exon
+      // ribbon, regardless of mode. The exon track folds these counts onto
+      // dashed-gap polylines (visible in spliced / protein modes) so users
+      // see where data is hidden by the collapse.
+      const byKey = new Map<string, HiddenFeatureBucket>();
+      for (const v of data.variants) {
+        const gap = variantIntronGap(v, mapper);
+        if (!gap) continue;
+        const key = `${gap.exonIdxA}:${gap.exonIdxB}`;
+        const prev = byKey.get(key);
+        if (prev) {
+          prev.count += 1;
+          prev.featureIds!.push(v.id);
+        } else {
+          byKey.set(key, { ...gap, count: 1, featureIds: [v.id] });
+        }
+      }
+      return [...byKey.values()];
     },
 
     render(args: TrackRenderArgs<VariantTrackData>): ReactNode {

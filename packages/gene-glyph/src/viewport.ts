@@ -776,8 +776,13 @@ export class ViewportController implements Viewport {
       const seg = this.cdsRangeToBaselineSegment(hit.cdsLo, hit.cdsHi, hit.idx);
       if (seg) segments.push(seg);
       if (k > 0) {
+        const prev = exonHits[k - 1]!;
         droppedIntronicCount += 1;
-        droppedRanges.push({ kind: 'intronic', near: { exonIdx: hit.idx } });
+        droppedRanges.push({
+          kind: 'intronic',
+          exonIdxA: prev.idx,
+          exonIdxB: hit.idx,
+        });
       }
     }
 
@@ -794,6 +799,7 @@ export class ViewportController implements Viewport {
 
     const segments: RangeSegment[] = [];
     const droppedRanges: DroppedRange[] = [];
+    let droppedIntronicCount = 0;
 
     const hits: Array<{ idx: number; lo: number; hi: number }> = [];
     for (let i = 0; i < exons.length; i++) {
@@ -813,14 +819,29 @@ export class ViewportController implements Viewport {
       };
     }
 
-    for (const h of hits) {
+    // CDS / protein ranges are contiguous in their own ruler, but each consecutive
+    // exon pair the range touches is separated on screen by an intron decoration.
+    // Reporting one intronic drop per crossed gap mirrors projectGenomicRange so
+    // tracks can aggregate hidden-feature counts uniformly regardless of coord
+    // system.
+    for (let k = 0; k < hits.length; k++) {
+      const h = hits[k]!;
       const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
       if (seg) segments.push(seg);
+      if (k > 0) {
+        const prev = hits[k - 1]!;
+        droppedIntronicCount += 1;
+        droppedRanges.push({
+          kind: 'intronic',
+          exonIdxA: prev.idx,
+          exonIdxB: h.idx,
+        });
+      }
     }
 
     return {
       segments,
-      droppedIntronicCount: 0,
+      droppedIntronicCount,
       droppedExonicCount: 0,
       droppedRanges,
     };

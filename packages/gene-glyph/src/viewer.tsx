@@ -22,6 +22,7 @@ import { createSvgPainter } from './painter/svg-painter.js';
 import { exonTrack } from './tracks/exon-track.js';
 import {
   isTrackGroup,
+  type HiddenFeatureBucket,
   type InteractionMode,
   type InteractionState,
   type ProteinAnnotations,
@@ -603,6 +604,39 @@ function GeneGlyphInner(
   const aaLength = Math.floor(transcript.cdsLength / 3);
   const aria = `${transcript.geneSymbol} (${transcript.transcriptId}) — ${aaLength} aa`;
 
+  // Aggregate hidden-feature counts across tracks once per render so the exon
+  // track (and any host-supplied indicator track) sees a single per-gap total
+  // rather than each track stacking its own marks. Slice 15 surfaces the
+  // totals via `TrackRenderArgs.hiddenByIntron`.
+  const hiddenByIntron = useMemo<ReadonlyMap<string, HiddenFeatureBucket>>(() => {
+    const merged = new Map<string, HiddenFeatureBucket>();
+    for (const t of flatTracks) {
+      if (!t.hiddenFeaturesByIntron) continue;
+      const data = trackData.get(t.id);
+      if (data === undefined) continue;
+      const buckets = t.hiddenFeaturesByIntron({ data, viewport, mapper });
+      for (const b of buckets) {
+        if (b.count <= 0) continue;
+        const key = `${b.exonIdxA}:${b.exonIdxB}`;
+        const prev = merged.get(key);
+        if (prev) {
+          const mergedIds = prev.featureIds ?? b.featureIds
+            ? [...(prev.featureIds ?? []), ...(b.featureIds ?? [])]
+            : undefined;
+          merged.set(key, {
+            exonIdxA: b.exonIdxA,
+            exonIdxB: b.exonIdxB,
+            count: prev.count + b.count,
+            featureIds: mergedIds,
+          });
+        } else {
+          merged.set(key, { ...b });
+        }
+      }
+    }
+    return merged;
+  }, [flatTracks, trackData, viewport, mapper, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const trackRenderArgsFor = (t: Track) => {
     const rect = layout.trackRects.get(t.id);
     if (!rect) return null;
@@ -615,6 +649,7 @@ function GeneGlyphInner(
       mapper,
       interaction,
       painter,
+      hiddenByIntron,
       onFeatureHover: (featureId: string | null) => handleHover(t.id, featureId),
       onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
     };

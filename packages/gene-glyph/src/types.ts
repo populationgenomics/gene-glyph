@@ -150,16 +150,31 @@ export interface RangeSegment {
   exonIdx: number;
 }
 
-export interface DroppedRange {
-  kind: 'intronic' | 'out-of-bounds';
-  near?: { exonIdx: number };
-}
+/** Description of one range fragment that the projection couldn't render in
+ *  the visible-exon frame. `intronic` carries the bracketing exon pair so a
+ *  track that aggregates hidden-feature counts (Slice 15) can index by intron
+ *  gap; `out-of-bounds` carries no extra detail. */
+export type DroppedRange =
+  | { kind: 'intronic'; exonIdxA: number; exonIdxB: number }
+  | { kind: 'out-of-bounds' };
 
 export interface RangeProjection {
   segments: RangeSegment[];
   droppedIntronicCount: number;
   droppedExonicCount: number;
   droppedRanges: DroppedRange[];
+}
+
+/** Hidden-feature count contributed by one track for one intron gap (Slice
+ *  15). The viewer sums these across tracks and surfaces the totals to the
+ *  exon track as `TrackRenderArgs.hiddenByIntron` so the exon track can render
+ *  a single count badge per gap. `featureIds` is optional metadata for hosts
+ *  that want to drive a popover from the click callback. */
+export interface HiddenFeatureBucket {
+  exonIdxA: number;
+  exonIdxB: number;
+  count: number;
+  featureIds?: string[];
 }
 
 export type AnchorTarget =
@@ -293,6 +308,14 @@ export interface TrackRenderArgs<TData> {
   mapper: CoordinateMapper;
   interaction: InteractionState;
   painter: Painter;
+  /** Per-intron-gap counts of features hidden by the current viewport. The
+   *  viewer aggregates {@link Track.hiddenFeaturesByIntron} across every track
+   *  and passes the totals here so a single track (the exon track by default)
+   *  can render one indicator per gap rather than each track stacking its own.
+   *  Keys are `${exonIdxA}:${exonIdxB}`. Optional so tests can construct
+   *  render-args without a viewer; production renders always receive a map
+   *  (empty when no track contributes). */
+  hiddenByIntron?: ReadonlyMap<string, HiddenFeatureBucket>;
   /** Fires when the cursor enters or leaves a feature in this track; pass
    *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
    *  render. The viewer maps it onto the host's `onHover` prop. */
@@ -302,12 +325,23 @@ export interface TrackRenderArgs<TData> {
   onFeatureClick?: (featureId: string) => void;
 }
 
+export interface HiddenFeaturesArgs<TData> {
+  data: TData;
+  viewport: Viewport;
+  mapper: CoordinateMapper;
+}
+
 export interface Track<TConfig = unknown, TData = unknown> {
   readonly id: string;
   readonly coordSystem: CoordSystem;
   readonly heightPolicy: HeightPolicy;
   load(args: TrackLoadArgs): Promise<TData>;
   height(args: TrackHeightArgs<TData>): TrackHeightResult;
+  /** Per-intron-gap hidden-feature counts contributed by this track. The
+   *  viewer aggregates these across tracks and exposes the totals via
+   *  {@link TrackRenderArgs.hiddenByIntron}; tracks that don't drop features
+   *  in collapsed introns can omit this. */
+  hiddenFeaturesByIntron?(args: HiddenFeaturesArgs<TData>): HiddenFeatureBucket[];
   render(args: TrackRenderArgs<TData>): ReactNode;
   /** Optional DOM rendered below the figure SVG (e.g., unplaced-feature
    *  lists). Lives in a sibling `<div class="vv-below">` outside the figure

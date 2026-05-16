@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type {
   Track,
   TrackHeightArgs,
@@ -21,6 +21,9 @@ export interface ExonTrackConfig {
   flankPx?: number;
   /** Vertical lift of the chevron peak above the intron baseline. */
   chevronLift?: number;
+  /** Half-width (in px) of the hidden-feature indicator badge rendered over
+   *  each intron gap in spliced / protein modes (Slice 15). */
+  hiddenMarkHalfWidth?: number;
 }
 
 interface ExonTrackData {
@@ -32,6 +35,7 @@ const DEFAULT_HEIGHT = 24;
 const DEFAULT_HALF = 8;
 const DEFAULT_FLANK_PX = 12;
 const DEFAULT_CHEVRON_LIFT = 6;
+const DEFAULT_HIDDEN_HALF_W = 9;
 
 export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, ExonTrackData> {
   const id = config.id ?? 'exon-track';
@@ -39,6 +43,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
   const exonHalf = config.exonHalfHeight ?? DEFAULT_HALF;
   const flankPx = config.flankPx ?? DEFAULT_FLANK_PX;
   const chevronLift = config.chevronLift ?? DEFAULT_CHEVRON_LIFT;
+  const hiddenHalfW = config.hiddenMarkHalfWidth ?? DEFAULT_HIDDEN_HALF_W;
 
   return {
     id,
@@ -54,7 +59,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
     },
 
     render(args: TrackRenderArgs<ExonTrackData>): ReactNode {
-      const { rect, viewport, painter } = args;
+      const { rect, viewport, painter, hiddenByIntron, onFeatureClick } = args;
       const geom = viewport.baselineGeometry();
       const midY = (rect.yTop + rect.yBottom) / 2;
       const exonY = midY - exonHalf;
@@ -63,6 +68,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
 
       const exonRects: ReactNode[] = [];
       const intronDecorations: ReactNode[] = [];
+      const hiddenMarks: ReactNode[] = [];
 
       // Every exon renders at its baseline width — never recomputed against
       // the active range. The wrapping `<g>` applies the live translate +
@@ -122,12 +128,77 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
             </Fragment>,
           ),
         );
+
+        // Slice 15: hidden-feature indicator sits at the gap's *current* screen
+        // position (centre, accounting for the gap's collapsed width in
+        // spliced / protein modes) and fades opposite to --vv-intron-scale so
+        // it only shows when the intron's own decorations have collapsed.
+        const bucket = hiddenByIntron?.get(`${gap.exonIdxA}:${gap.exonIdxB}`);
+        if (!bucket) continue;
+        const featureId = `__hidden_intron_${gap.exonIdxA}_${gap.exonIdxB}`;
+        const w = hiddenHalfW * 2;
+        const y0 = intronY - hiddenHalfW;
+        const handler = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
+        const wrapperStyle: CSSProperties = {
+          transform:
+            `translateX(calc(var(--vv-intron-x-${gap.exonIdxA}, 0px)` +
+            ` + var(--vv-intron-w-${gap.exonIdxA}, 0px)` +
+            ` * var(--vv-intron-scale-x-${gap.exonIdxA}, 1) / 2))`,
+          transformOrigin: '0 0',
+          opacity: `calc(1 - var(--vv-intron-scale))`,
+          pointerEvents: 'var(--vv-hidden-mark-pointer, auto)' as CSSProperties['pointerEvents'],
+        };
+        hiddenMarks.push(
+          <g
+            key={`hidden-${gap.exonIdxA}-${gap.exonIdxB}`}
+            className="vv-hidden-feature-mark"
+            data-vv-feature-id={featureId}
+            data-vv-hidden-count={bucket.count}
+            data-vv-intron-from={gap.exonIdxA}
+            data-vv-intron-to={gap.exonIdxB}
+            style={wrapperStyle}
+            onClick={handler}
+            role={handler ? 'button' : undefined}
+            tabIndex={handler ? 0 : undefined}
+            aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${gap.exonIdxA + 1} and exon ${gap.exonIdxB + 1}`}
+          >
+            <rect
+              className="vv-hidden-feature-bg"
+              x={-hiddenHalfW}
+              y={y0}
+              width={w}
+              height={hiddenHalfW * 2}
+              rx={hiddenHalfW}
+              ry={hiddenHalfW}
+              fill={painter.color('vv-color-hidden-mark-bg', '#fef3c7')}
+              stroke={painter.color('vv-color-hidden-mark-stroke', '#92400e')}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+            <text
+              className="vv-hidden-feature-count"
+              x={0}
+              y={intronY}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={10}
+              fill={painter.color('vv-color-hidden-mark-text', '#92400e')}
+            >
+              {bucket.count}
+            </text>
+          </g>,
+        );
       }
 
       return (
         <g className="vv-exon-track" data-vv-track-id={id} key={id}>
           {intronDecorations}
           {exonRects}
+          {hiddenMarks.length > 0 && (
+            <g className="vv-hidden-feature-marks" key="hidden-marks">
+              {hiddenMarks}
+            </g>
+          )}
         </g>
       );
     },

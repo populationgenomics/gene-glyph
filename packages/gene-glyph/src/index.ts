@@ -35,6 +35,8 @@ export type {
   RangeProjection,
   RangeSegment,
   DroppedRange,
+  HiddenFeatureBucket,
+  HiddenFeaturesArgs,
   AnchorTarget,
   ScreenPoint,
   CoordinateMapper,
@@ -82,7 +84,11 @@ export { createSvgPainter } from './painter/svg-painter.js';
 export type { SvgPainterOptions } from './painter/svg-painter.js';
 export { exonTrack } from './tracks/exon-track.js';
 export type { ExonTrackConfig } from './tracks/exon-track.js';
-export { variantTrack, partitionVariants } from './tracks/variant-track.js';
+export {
+  variantTrack,
+  partitionVariants,
+  variantIntronGap,
+} from './tracks/variant-track.js';
 export type {
   VariantTrackConfig,
   VariantTrackData,
