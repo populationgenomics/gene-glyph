@@ -48,8 +48,36 @@ We use [Changesets](https://github.com/changesets/changesets).
 
 Versioning:
 - **0.x** while the API is shaking out — break freely.
-- **1.0.0** at lit-manager cutover (Slice 11).
+- **1.0.0** at lit-manager cutover (Slice 13).
 - Strict semver from 1.0.
+
+## Testing
+
+Three layers of tests:
+
+- **Unit / integration (JSDOM)** — `npm run test` runs the Vitest suite across all workspaces (102+ tests covering coordinate math, layout, tracks, viewer wiring, gesture handlers).
+- **Browser end-to-end (Playwright + Chromium)** — `npm run test:e2e` boots the playground via Vite, drives Chromium, and asserts each slice's acceptance bar against the rendered figure. Tests live under `apps/playground/tests/e2e/`.
+- **CI** — both layers run on every push and PR (`.github/workflows/ci.yml`). The Playwright job uploads its HTML report and `test-results/` as artifacts on failure.
+
+### Working with Playwright
+
+```sh
+# First time only — pull the Chromium binary.
+npx playwright install chromium
+
+# Run the whole browser suite (auto-starts and kills Vite).
+npm run test:e2e
+
+# Run one file, headed, so you can see what's happening.
+npm run test:e2e:debug -- tests/e2e/slice-9-interactions.spec.ts
+
+# Re-record any failing visual snapshots after a deliberate UI change.
+npm run test:e2e -- --update-snapshots
+```
+
+### Slice convention
+
+Every new slice ships with at least one Playwright test pinning its acceptance bar — added to `apps/playground/tests/e2e/slice-N-*.spec.ts`. Bugs caught in playground iteration land alongside a regression test in the same file. This convention is documented in `docs/slices.md` (Slice 11, RD-1085).
 
 ## Architecture conventions
 

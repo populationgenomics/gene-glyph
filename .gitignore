@@ -4,6 +4,11 @@ dist/
 .vite/
 coverage/
 
+# Playwright
+playwright-report/
+test-results/
+.playwright-cache/
+
 # yalc
 .yalc/
 yalc.lock

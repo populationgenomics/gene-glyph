@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --build",
     "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace apps/playground",
     "dev:playground": "npm run dev --workspace apps/playground",
     "changeset": "changeset",
     "version-packages": "changeset version",
