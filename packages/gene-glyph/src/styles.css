@@ -478,6 +478,23 @@
   opacity: 0.6;
 }
 
+/* Stacked-variant render (Slice 27). Glyph rows replace the tick+dot row;
+ * the per-row translate is set by `<g transform="translate(0 cy)">` inside
+ * the per-exon group, so motion still flows entirely through the parent
+ * exon's CSS transform — no per-glyph CSS variables. */
+.gene-glyph .vv-variant-stacked .vv-variant-glyph {
+  pointer-events: visiblePainted;
+}
+
+.gene-glyph .vv-variant-stacked.is-hovered .vv-variant-inner,
+.gene-glyph .vv-variant-stacked:hover .vv-variant-inner,
+.gene-glyph .vv-variant-stacked:focus-visible .vv-variant-inner {
+  /* Lift uses the same custom property as the tick+dot style. The glyph
+   * sits at row cy + translate(-lift) reads as a hover affordance without
+   * pulling neighbouring rows along. */
+  transform: translateY(calc(var(--vv-variant-hover-lift-px) * -1));
+}
+
 /* Unplaced-variants list. Lives outside the figure SVG so it is structurally
  * excluded from export. Slice 7 will move this into the Footer slot. */
 .gene-glyph .vv-below {

@@ -10,7 +10,13 @@ import type {
   ViewportQuery,
 } from '../types.js';
 import { ViewportController } from '../viewport.js';
-import { partitionVariants, variantIntronGap, variantTrack } from './variant-track.js';
+import {
+  packStackedVariants,
+  partitionVariants,
+  variantIntronGap,
+  variantTrack,
+} from './variant-track.js';
+import { defaultVariantSymbolEncoding } from '../symbol-encoding.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -238,6 +244,96 @@ describe('variantTrack', () => {
     const { container } = render(<Probe />);
     expect(container.querySelector('[data-vv-feature-id="v1"]')?.classList.contains('is-hovered')).toBe(true);
     expect(container.querySelector('[data-vv-feature-id="v2"]')?.classList.contains('is-selected')).toBe(true);
+  });
+
+  it('stacked render emits one .vv-variant-stacked per placed variant inside an exon group', async () => {
+    const t = variantTrack({
+      source: variants,
+      stackedVariantStyle: defaultVariantSymbolEncoding,
+    });
+    const { mapper, viewport, painter, interaction } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const Probe = () => (
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 60 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>
+    );
+    const { container } = render(<Probe />);
+    const stacked = container.querySelectorAll<SVGGElement>('.vv-variant-stacked');
+    expect(stacked).toHaveLength(3);
+    for (const g of stacked) {
+      expect(g.closest('.vv-exon-group')).not.toBeNull();
+      expect(g.querySelector('.vv-variant-glyph')).not.toBeNull();
+      expect(g.hasAttribute('data-vv-stack-row')).toBe(true);
+    }
+    const trackEl = container.querySelector<SVGGElement>('.vv-variant-track-stacked');
+    expect(trackEl).not.toBeNull();
+    expect(trackEl!.getAttribute('data-vv-stack-rows')).toBeTruthy();
+  });
+
+  it('stacked heightPolicy is data-dependent and height grows with row count', async () => {
+    const t = variantTrack({
+      source: variants,
+      stackedVariantStyle: defaultVariantSymbolEncoding,
+    });
+    expect(t.heightPolicy).toBe('data-dependent');
+    const { mapper, viewport } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const h = t.height({ data, viewport, hint: { maxPx: 200 } });
+    expect(h.didTruncate).toBe(false);
+    expect(h.px).toBeGreaterThan(0);
+  });
+
+  it('packStackedVariants groups by lane key, then packs by baselineX', () => {
+    const { mapper, viewport } = setup();
+    // Three variants in the same lane (missense) at the same cPos => three rows.
+    const colocated: ViewerVariant[] = [
+      { id: 'a', label: 'a', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
+      { id: 'b', label: 'b', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
+      { id: 'c', label: 'c', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
+      // A nonsense at the same position lands in a different lane => row 3.
+      { id: 'd', label: 'd', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'nonsense' },
+    ];
+    const { placed } = partitionVariants(colocated, viewport, mapper);
+    const layout = packStackedVariants(placed, defaultVariantSymbolEncoding, viewport, 4);
+    expect(layout.rowCount).toBe(4);
+    const rows = new Map(layout.placements.map((p) => [p.variant.id, p.row]));
+    // The missense group fills rows 0..2; nonsense lands at row 3 (strict
+    // lane separation — no row-sharing across different lane keys).
+    const missenseRows = ['a', 'b', 'c'].map((k) => rows.get(k)!).sort();
+    expect(missenseRows).toEqual([0, 1, 2]);
+    expect(rows.get('d')).toBe(3);
+  });
+
+  it('packStackedVariants gives non-overlapping items in the same lane the same row', () => {
+    const { mapper, viewport } = setup();
+    // Two missense variants far apart should share row 0 (same lane,
+    // baseline-x distance exceeds the glyph diameter).
+    const apart: ViewerVariant[] = [
+      { id: 'a', label: 'a', coord: { kind: 'cds', cPos: 10, offset: 0 }, category: 'missense' },
+      { id: 'b', label: 'b', coord: { kind: 'cds', cPos: 290, offset: 0 }, category: 'missense' },
+    ];
+    const { placed } = partitionVariants(apart, viewport, mapper);
+    const layout = packStackedVariants(placed, defaultVariantSymbolEncoding, viewport, 4);
+    expect(layout.rowCount).toBe(1);
+    for (const p of layout.placements) expect(p.row).toBe(0);
   });
 
   it('renderBelow exposes unplaced variants and fires hover/click callbacks', () => {

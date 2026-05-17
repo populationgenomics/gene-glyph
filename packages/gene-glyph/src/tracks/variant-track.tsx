@@ -1,4 +1,5 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import {
   isDataSource,
   type CoordinateMapper,
@@ -23,16 +24,48 @@ export type VariantSource =
 export interface VariantTrackConfig {
   id?: string;
   source: VariantSource;
-  /** Total track height in pixels. */
+  /** Total track height in pixels (tick+dot style only). Ignored when
+   *  {@link stackedVariantStyle} is set — stacked render uses
+   *  `heightPolicy: 'data-dependent'` and grows to fit packed lanes. */
   height?: number;
   /** Half-height of the variant tick line. */
   tickHalfHeight?: number;
   /** Radius of the dot drawn above the ribbon. */
   dotRadius?: number;
+  /** Opt in to the stacked-symbol render (Slice 27). When supplied, the
+   *  track suppresses the tick+dot row in favour of a stacked column of
+   *  pure-symbol glyphs — shape, fill, and (optional) colour independently
+   *  encode three orthogonal feature attributes via the supplied
+   *  {@link SymbolEncoding}. */
+  stackedVariantStyle?: SymbolEncoding<ViewerVariant>;
+  /** Per-row pitch for stacked render. Defaults to `2 * markRadius + 2` so
+   *  adjacent rows just clear each other. */
+  stackLanePx?: number;
+  /** Glyph radius for stacked render. Defaults to {@link dotRadius}. */
+  stackMarkRadius?: number;
 }
 
 export interface VariantTrackData {
   variants: ViewerVariant[];
+  /** Pre-computed stacked layout — populated only when the track was
+   *  constructed with a `stackedVariantStyle`. Stored on the data payload
+   *  so `height()` and `render()` agree on the row count without
+   *  re-projecting through the coordinate mapper. */
+  stackLayout?: VariantStackLayout;
+}
+
+export interface StackedVariantPlacement extends VariantPlacement {
+  /** Global row index — `0` is closest to the exon ribbon (track top),
+   *  rows count downward into the track area. */
+  row: number;
+  /** Lane-group key returned by {@link SymbolEncoding.lane} (or `_` when
+   *  the encoding omits the accessor). */
+  laneKey: string;
+}
+
+export interface VariantStackLayout {
+  rowCount: number;
+  placements: StackedVariantPlacement[];
 }
 
 export interface VariantPlacement {
@@ -228,6 +261,78 @@ function placeVariant(
   return { variant: v, exonIdx: exonHit.exonIdx, localX: variantBaselineX - eb.xStart };
 }
 
+/** Greedy lane packing in baseline (fit-gene) screen-x. Group placed variants
+ *  by `encoding.lane()` — items with the same key share a contiguous row
+ *  block; items with different keys never share a row, even when their
+ *  baseline-x positions don't overlap (strict lane separation). Within each
+ *  group, sort by baseline-x and assign each item to the lowest local row
+ *  whose previous occupant's right edge has cleared. Pack against baseline-x
+ *  rather than the live screen-x so the row count stays stable across pan
+ *  and zoom (deep zoom only spreads glyphs apart). */
+export function packStackedVariants(
+  placed: VariantPlacement[],
+  encoding: SymbolEncoding<ViewerVariant>,
+  viewport: Viewport,
+  markRadius: number,
+): VariantStackLayout {
+  const baseline = viewport.baselineGeometry();
+  const byExon = new Map<number, { xStart: number }>();
+  for (const eb of baseline.exons) byExon.set(eb.exonIdx, { xStart: eb.xStart });
+
+  const groups = new Map<string, VariantPlacement[]>();
+  const groupOrder: string[] = [];
+  for (const p of placed) {
+    const key = encoding.lane?.(p.variant) ?? '_';
+    let arr = groups.get(key);
+    if (!arr) {
+      arr = [];
+      groups.set(key, arr);
+      groupOrder.push(key);
+    }
+    arr.push(p);
+  }
+
+  const placements: StackedVariantPlacement[] = [];
+  let rowOffset = 0;
+  for (const key of groupOrder) {
+    const items = groups.get(key)!;
+    const withBaseline = items.map((p) => {
+      const exonStart = byExon.get(p.exonIdx)?.xStart ?? 0;
+      const baselineX = exonStart + p.localX;
+      const r = encoding.radius?.(p.variant) ?? markRadius;
+      return { p, baselineX, r };
+    });
+    withBaseline.sort((a, b) => a.baselineX - b.baselineX);
+    const laneEnds: number[] = [];
+    let localMaxLane = -1;
+    for (const it of withBaseline) {
+      const xStart = it.baselineX - it.r;
+      const xEnd = it.baselineX + it.r;
+      let lane = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (laneEnds[i]! <= xStart) {
+          lane = i;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(xEnd);
+      } else {
+        laneEnds[lane] = xEnd;
+      }
+      if (lane > localMaxLane) localMaxLane = lane;
+      placements.push({
+        ...it.p,
+        row: rowOffset + lane,
+        laneKey: key,
+      });
+    }
+    rowOffset += localMaxLane + 1;
+  }
+  return { rowCount: rowOffset, placements };
+}
+
 export function variantTrack(
   config: VariantTrackConfig,
 ): Track<VariantTrackConfig, VariantTrackData> {
@@ -236,20 +341,38 @@ export function variantTrack(
   const tickHalf = config.tickHalfHeight ?? DEFAULT_TICK_HALF;
   const dotRadius = config.dotRadius ?? DEFAULT_DOT_RADIUS;
   const source = config.source;
+  const stackedEncoding = config.stackedVariantStyle;
+  const stackMarkRadius = config.stackMarkRadius ?? dotRadius;
+  const stackLanePx = config.stackLanePx ?? 2 * stackMarkRadius + 2;
+  const stackTopPad = 2;
+  const stackBottomPad = 2;
 
   return {
     id,
     coordSystem: 'cds',
-    heightPolicy: 'fixed',
+    heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 
-    async load({ viewport, signal }: TrackLoadArgs): Promise<VariantTrackData> {
+    async load({ viewport, mapper, signal }: TrackLoadArgs): Promise<VariantTrackData> {
       const variants = isDataSource<ViewportQuery, ViewerVariant[]>(source)
         ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
         : source.slice();
-      return { variants };
+      let stackLayout: VariantStackLayout | undefined;
+      if (stackedEncoding) {
+        const { placed } = partitionVariants(variants, viewport, mapper);
+        stackLayout = packStackedVariants(placed, stackedEncoding, viewport, stackMarkRadius);
+      }
+      return { variants, stackLayout };
     },
 
-    height(_args: TrackHeightArgs<VariantTrackData>): TrackHeightResult {
+    height({ data }: TrackHeightArgs<VariantTrackData>): TrackHeightResult {
+      if (stackedEncoding) {
+        const rows = data?.stackLayout?.rowCount ?? 0;
+        const px = Math.max(
+          trackHeight,
+          stackTopPad + rows * stackLanePx + stackBottomPad,
+        );
+        return { px, didTruncate: false };
+      }
       return { px: trackHeight, didTruncate: false };
     },
 
@@ -277,7 +400,6 @@ export function variantTrack(
 
     render(args: TrackRenderArgs<VariantTrackData>): ReactNode {
       const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } = args;
-      const partition = partitionVariants(data.variants, viewport, mapper);
       const brush = interaction.brushRange;
       const inBrushIds = new Set<string>();
       if (brush) {
@@ -289,6 +411,36 @@ export function variantTrack(
           if (r >= lo && r <= hi) inBrushIds.add(v.id);
         }
       }
+
+      if (stackedEncoding) {
+        // Stacked render: data.stackLayout is pre-packed in load(). On the
+        // first paint before load() resolves stackLayout may be missing
+        // (data was constructed elsewhere), so fall back to live packing.
+        const layout =
+          data.stackLayout ??
+          packStackedVariants(
+            partitionVariants(data.variants, viewport, mapper).placed,
+            stackedEncoding,
+            viewport,
+            stackMarkRadius,
+          );
+        return renderStackedVariants({
+          id,
+          layout,
+          encoding: stackedEncoding,
+          rect,
+          markRadius: stackMarkRadius,
+          laneHeight: stackLanePx,
+          topPad: stackTopPad,
+          interaction,
+          inBrushIds,
+          onFeatureHover,
+          onFeatureClick,
+          painter,
+        });
+      }
+
+      const partition = partitionVariants(data.variants, viewport, mapper);
       const midY = (rect.yTop + rect.yBottom) / 2;
       const dotCy = rect.yTop + dotRadius + 2;
       const tickTop = midY - tickHalf;
@@ -412,9 +564,146 @@ export function variantTrack(
         height: trackHeight,
         tickHalfHeight: tickHalf,
         dotRadius,
+        stackedVariantStyle: stackedEncoding,
+        stackLanePx,
+        stackMarkRadius,
       };
     },
   };
+}
+
+interface RenderStackedArgs {
+  id: string;
+  layout: VariantStackLayout;
+  encoding: SymbolEncoding<ViewerVariant>;
+  rect: { yTop: number; yBottom: number };
+  markRadius: number;
+  laneHeight: number;
+  topPad: number;
+  interaction: TrackRenderArgs<VariantTrackData>['interaction'];
+  inBrushIds: ReadonlySet<string>;
+  onFeatureHover?: (featureId: string | null) => void;
+  onFeatureClick?: (featureId: string) => void;
+  painter: TrackRenderArgs<VariantTrackData>['painter'];
+}
+
+function renderStackedVariants(args: RenderStackedArgs): ReactNode {
+  const {
+    id,
+    layout,
+    encoding,
+    rect,
+    markRadius,
+    laneHeight,
+    topPad,
+    interaction,
+    inBrushIds,
+    onFeatureHover,
+    onFeatureClick,
+    painter,
+  } = args;
+  const byExon = new Map<number, StackedVariantPlacement[]>();
+  for (const p of layout.placements) {
+    let arr = byExon.get(p.exonIdx);
+    if (!arr) {
+      arr = [];
+      byExon.set(p.exonIdx, arr);
+    }
+    arr.push(p);
+  }
+
+  const groups: ReactNode[] = [];
+  for (const [exonIdx, placements] of byExon) {
+    const inner = placements.map((p) => {
+      const v = p.variant;
+      const r = encoding.radius?.(v) ?? markRadius;
+      // Row 0 sits at top of track + topPad + r so the first glyph just
+      // clears the upper edge. Subsequent rows step downward by laneHeight.
+      const cy = rect.yTop + topPad + r + p.row * laneHeight;
+      const shape = encoding.shape(v);
+      const fill = encoding.fill(v);
+      const stroke = encoding.color?.(v) ?? fill;
+      const d = glyphPath(shape, r);
+      const isHovered = interaction.hoveredFeatureId === v.id;
+      const isSelected = interaction.selectedFeatureIds.has(v.id);
+      const inBrush = inBrushIds.has(v.id);
+      const cls = [
+        'vv-variant',
+        'vv-variant-stacked',
+        `vv-variant-${v.category}`,
+        isHovered && 'is-hovered',
+        isSelected && 'is-selected',
+        inBrush && 'is-in-brush',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const counterScale = `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`;
+      return (
+        <g
+          key={v.id}
+          className={cls}
+          data-vv-feature-id={v.id}
+          data-vv-category={v.category}
+          data-vv-stack-row={p.row}
+          data-vv-stack-lane={p.laneKey}
+          data-vv-shape={shape}
+          transform={`translate(${p.localX} 0)`}
+          onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
+          onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+          onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
+          style={{ cursor: onFeatureClick ? 'pointer' : undefined }}
+          tabIndex={0}
+          role="button"
+          aria-label={v.label}
+        >
+          <g className="vv-variant-inner">
+            <g
+              className="vv-variant-shape"
+              style={{ transform: counterScale, transformOrigin: '0 0' }}
+            >
+              <g transform={`translate(0 ${cy})`}>
+                <circle
+                  className="vv-variant-ring"
+                  cx={0}
+                  cy={0}
+                  r={r + 3}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={1.5}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <path
+                  className="vv-variant-glyph"
+                  d={d}
+                  fill={fill}
+                  stroke="var(--vv-variant-dot-stroke, #ffffff)"
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            </g>
+          </g>
+        </g>
+      );
+    });
+    groups.push(
+      painter.placeInExonGroup(
+        exonIdx,
+        <Fragment key={`variants-stacked-exon-${exonIdx}`}>{inner}</Fragment>,
+      ),
+    );
+  }
+
+  return (
+    <g
+      className="vv-variant-track vv-variant-track-stacked"
+      data-vv-track-id={id}
+      data-vv-stack-rows={layout.rowCount}
+      key={id}
+    >
+      {groups}
+    </g>
+  );
 }
 
 interface RenderVariantArgs {

@@ -103,6 +103,7 @@ export {
   partitionVariants,
   variantIntronGap,
   variantRulerPos,
+  packStackedVariants,
 } from './tracks/variant-track.js';
 export type {
   VariantTrackConfig,
@@ -110,6 +111,8 @@ export type {
   VariantSource,
   VariantPlacement,
   VariantPartition,
+  VariantStackLayout,
+  StackedVariantPlacement,
 } from './tracks/variant-track.js';
 export { pfamTrack, domainHue, fitText } from './tracks/pfam-track.js';
 export type { PfamTrackConfig, PfamTrackData } from './tracks/pfam-track.js';
