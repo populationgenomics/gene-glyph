@@ -386,20 +386,83 @@ function emitDomain(args: EmitArgs): void {
   const capHalf = Math.max(2, rectHalf - 1);
   const lineY = laneTop + capHalf + 1;
 
-  // Label segment + anchor: 'rect' uses the segment nearest the domain's
-  // midpoint (label centred above); 'minimal' always anchors to the *first*
-  // segment so the label aligns to the domain's left edge.
+  // Label segment + anchor:
+  //   'rect'    — segment nearest the domain's midpoint, label centred above.
+  //   'minimal' — first segment, label left-aligned to the domain's start.
   const labelSeg = style === 'minimal'
     ? placed.segments[0] ?? null
     : pickLabelSegment(placed);
   const labelExon = labelSeg ? exonByIdx.get(labelSeg.exonIdx) : undefined;
 
-  for (const seg of placed.segments) {
-    const exon = exonByIdx.get(seg.exonIdx);
-    if (!exon) continue;
-    const localX = seg.xStart - exon.xStart;
-    const width = Math.max(1, seg.xEnd - seg.xStart);
-    if (style === 'rect') {
+  if (style === 'minimal') {
+    // One continuous line from the domain's leftmost baseline-x to its
+    // rightmost, with end-cap ticks at both ends. We deliberately ignore
+    // the per-segment fragmentation so the rendering reads as a single
+    // 5'→3' summary regardless of view mode — no per-exon rects, no
+    // intron linkers, no special-case for inter-exon boundaries. The
+    // whole thing rides the first-containing-exon's transform so it
+    // moves with the figure under pan; at high zoom the line drifts
+    // relative to the underlying exon ribbons (the figure's
+    // "gaps-don't-scale" correction differs per exon), which is the
+    // accepted trade-off for the simpler visual.
+    const firstSeg = placed.segments[0];
+    if (firstSeg) {
+      const anchorExon = exonByIdx.get(firstSeg.exonIdx);
+      if (anchorExon) {
+        const localStart = placed.xStart - anchorExon.xStart;
+        const localEnd = placed.xEnd - anchorExon.xStart;
+        pushTo(
+          rectsByExon,
+          anchorExon.exonIdx,
+          <Fragment key={`ipr-${featureId}-line`}>
+            <line
+              key={`ipr-${featureId}-line-main`}
+              x1={localStart}
+              x2={localEnd}
+              y1={lineY}
+              y2={lineY}
+              stroke={fill}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              className="vv-interpro-line"
+            />
+            <line
+              key={`ipr-${featureId}-cap-l`}
+              x1={localStart}
+              x2={localStart}
+              y1={lineY - capHalf}
+              y2={lineY + capHalf}
+              stroke={fill}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              className="vv-interpro-cap"
+            />
+            <line
+              key={`ipr-${featureId}-cap-r`}
+              x1={localEnd}
+              x2={localEnd}
+              y1={lineY - capHalf}
+              y2={lineY + capHalf}
+              stroke={fill}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              className="vv-interpro-cap"
+            />
+          </Fragment>,
+        );
+      }
+    }
+  } else {
+    // 'rect' style — one rounded rectangle per intersected exon with
+    // an intron linker line drawn across each gap.
+    for (const seg of placed.segments) {
+      const exon = exonByIdx.get(seg.exonIdx);
+      if (!exon) continue;
+      const localX = seg.xStart - exon.xStart;
+      const width = Math.max(1, seg.xEnd - seg.xStart);
       pushTo(
         rectsByExon,
         seg.exonIdx,
@@ -420,110 +483,33 @@ function emitDomain(args: EmitArgs): void {
           })}
         </Fragment>,
       );
-    } else {
-      // 'minimal' style — line spanning the segment with vector-effect
-      // non-scaling-stroke so it stays 1.25px wide regardless of zoom.
-      // End-caps land at the *true* domain ends only (first segment's
-      // xStart, last segment's xEnd), not at each fragment boundary —
-      // intra-domain linkers carry the visual continuity across gaps.
-      const isFirstSeg = seg === placed.segments[0];
-      const isLastSeg = seg === placed.segments[placed.segments.length - 1];
-      pushTo(
-        rectsByExon,
-        seg.exonIdx,
-        <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
-          <line
-            key={`ipr-${featureId}-line-${seg.exonIdx}`}
-            x1={localX}
-            x2={localX + width}
-            y1={lineY}
-            y2={lineY}
-            stroke={fill}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            className="vv-interpro-line"
-          />
-          {isFirstSeg && (
-            <g
-              key={`ipr-${featureId}-cap-l-wrap-${seg.exonIdx}`}
-              className="vv-interpro-cap-wrap"
-              style={{
-                transform:
-                  `translateX(${localX}px) ` +
-                  `scaleX(calc(1 / var(--vv-exon-scale-x-${seg.exonIdx}, 1)))`,
-                transformOrigin: '0 0',
-              }}
-            >
-              <line
-                key={`ipr-${featureId}-cap-l`}
-                x1={0}
-                x2={0}
-                y1={lineY - capHalf}
-                y2={lineY + capHalf}
-                stroke={fill}
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-                className="vv-interpro-cap"
-              />
-            </g>
-          )}
-          {isLastSeg && (
-            <g
-              key={`ipr-${featureId}-cap-r-wrap-${seg.exonIdx}`}
-              className="vv-interpro-cap-wrap"
-              style={{
-                transform:
-                  `translateX(${localX + width}px) ` +
-                  `scaleX(calc(1 / var(--vv-exon-scale-x-${seg.exonIdx}, 1)))`,
-                transformOrigin: '0 0',
-              }}
-            >
-              <line
-                key={`ipr-${featureId}-cap-r`}
-                x1={0}
-                x2={0}
-                y1={lineY - capHalf}
-                y2={lineY + capHalf}
-                stroke={fill}
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-                className="vv-interpro-cap"
-              />
-            </g>
-          )}
-        </Fragment>,
+    }
+    for (let i = 0; i < placed.segments.length - 1; i++) {
+      const a = placed.segments[i]!;
+      const b = placed.segments[i + 1]!;
+      if (b.xStart <= a.xEnd) continue;
+      const linkerY = rectY + rectH / 2;
+      const gapKey = `${a.exonIdx}:${b.exonIdx}`;
+      let bucket = linkersByGap.get(gapKey);
+      if (!bucket) {
+        bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
+        linkersByGap.set(gapKey, bucket);
+      }
+      bucket.nodes.push(
+        <line
+          key={`ipr-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
+          x1={0}
+          x2={b.xStart - a.xEnd}
+          y1={linkerY}
+          y2={linkerY}
+          stroke={fill}
+          strokeWidth={1.25}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          className="vv-interpro-linker"
+        />,
       );
     }
-  }
-
-  for (let i = 0; i < placed.segments.length - 1; i++) {
-    const a = placed.segments[i]!;
-    const b = placed.segments[i + 1]!;
-    if (b.xStart <= a.xEnd) continue;
-    const linkerY = style === 'minimal' ? lineY : rectY + rectH / 2;
-    const gapKey = `${a.exonIdx}:${b.exonIdx}`;
-    let bucket = linkersByGap.get(gapKey);
-    if (!bucket) {
-      bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
-      linkersByGap.set(gapKey, bucket);
-    }
-    bucket.nodes.push(
-      <line
-        key={`ipr-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-        x1={0}
-        x2={b.xStart - a.xEnd}
-        y1={linkerY}
-        y2={linkerY}
-        stroke={fill}
-        strokeWidth={style === 'minimal' ? 1 : 1.25}
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-        className="vv-interpro-linker"
-      />,
-    );
   }
 
   const label = fitText(fullName, labelMaxW, labelFont);

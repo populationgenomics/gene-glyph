@@ -176,13 +176,13 @@ describe('interProTrack', () => {
     }
 
     const { container } = render(<Probe />);
-    // D1 has 2 visible segments → 2 lines. Plus a left + right end-cap on
-    // the first / last segments (2 caps total per domain). No vv-interpro-rect.
+    // D1 has 2 visible segments but 'minimal' renders one continuous line
+    // from xStart to xEnd regardless of the exon/intron structure underneath.
+    // Two end-cap ticks at the ends; no per-segment rects, no intron linker.
     expect(container.querySelectorAll('.vv-interpro-rect')).toHaveLength(0);
-    expect(container.querySelectorAll('.vv-interpro-line').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('.vv-interpro-line')).toHaveLength(1);
     expect(container.querySelectorAll('.vv-interpro-cap')).toHaveLength(2);
-    // Still one linker across the intron gap.
-    expect(container.querySelectorAll('.vv-interpro-linker')).toHaveLength(1);
+    expect(container.querySelectorAll('.vv-interpro-linker')).toHaveLength(0);
   });
 
   it('exposes the entry-type label on each sub-track for gutter consumption', () => {
