@@ -139,3 +139,11 @@ export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
 export { packLanes } from './pack-lanes.js';
 export type { LaneInput, PackedItem, PackResult } from './pack-lanes.js';
+export {
+  glyphPath,
+  variantLaneFor,
+  variantShapeFor,
+  defaultVariantSymbolEncoding,
+  defaultClinVarSymbolEncoding,
+} from './symbol-encoding.js';
+export type { GlyphShape, SymbolEncoding } from './symbol-encoding.js';
