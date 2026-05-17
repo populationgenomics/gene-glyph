@@ -84,33 +84,25 @@ export function StackedVariantsDemoScenario() {
           last clicked: <strong>{variant ?? '—'}</strong>
         </span>
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-          gap: 16,
-        }}
-      >
-        <div data-testid="stacked-side-classic">
-          <h3 style={{ margin: '4px 0', fontSize: '0.9rem' }}>tick + dot</h3>
-          <GeneGlyph
-            transcript={TP53_TRANSCRIPT}
-            protein={TP53_PROTEIN}
-            tracks={tracksClassic}
-            trackHeightBudget={260}
-            onFeatureClick={(featureId) => setVariant(featureId)}
-          />
-        </div>
-        <div data-testid="stacked-side-stacked">
-          <h3 style={{ margin: '4px 0', fontSize: '0.9rem' }}>stacked glyph</h3>
-          <GeneGlyph
-            transcript={TP53_TRANSCRIPT}
-            protein={TP53_PROTEIN}
-            tracks={tracksStacked}
-            trackHeightBudget={260}
-            onFeatureClick={(featureId) => setVariant(featureId)}
-          />
-        </div>
+      <div data-testid="stacked-side-classic" style={{ marginBottom: 16 }}>
+        <h3 style={{ margin: '4px 0', fontSize: '0.9rem' }}>tick + dot</h3>
+        <GeneGlyph
+          transcript={TP53_TRANSCRIPT}
+          protein={TP53_PROTEIN}
+          tracks={tracksClassic}
+          trackHeightBudget={260}
+          onFeatureClick={(featureId) => setVariant(featureId)}
+        />
+      </div>
+      <div data-testid="stacked-side-stacked">
+        <h3 style={{ margin: '4px 0', fontSize: '0.9rem' }}>stacked glyph</h3>
+        <GeneGlyph
+          transcript={TP53_TRANSCRIPT}
+          protein={TP53_PROTEIN}
+          tracks={tracksStacked}
+          trackHeightBudget={260}
+          onFeatureClick={(featureId) => setVariant(featureId)}
+        />
       </div>
       <h3 style={{ marginTop: 24, fontSize: '0.9rem' }}>ClinVar in stacked mode</h3>
       <p
