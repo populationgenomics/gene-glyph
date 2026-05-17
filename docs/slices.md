@@ -572,18 +572,28 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 26 — Mini-map as standalone component + Overview track
+### Slice 26 — Mini-map as standalone component + Overview track — **shipped**
 
-Two final pieces of polish.
+**Landed:**
+- `DefaultMinimap` from Slice 20 already takes the same `viewerRef: RefObject<GeneGlyphRef | null>` plus rAF poll on `getViewportInfo()` and `fitTo({ kind: 'range', range }, { animate: false })` write-back as the new overview track — the ref-machinery is shared by construction; the two components only differ on coordinate frame (minimap creates its own mini `ViewportController` scoped to its rendered width, overview shares the embedding figure's viewport)
+- `overviewTrack({ viewerRef, height?, handlePx? })` — drop-in row of the track stack that draws the full gene at fit-gene scale across the figure width plus a draggable window rectangle, edge handles, and click-to-jump background. Lives inside the figure SVG, so `exportSVG()` / `exportPNG()` carry it
+- The overview is a **wholly display-space artifact** built on its own mini-`ViewportController` pinned to fit-gene at the figure's width — it never reads the live figure's CSS-variable transforms, just the visible CDS range from `getViewportInfo()`. The window rectangle's position is pure `miniViewport.cdsToBaselineX(range[0..1])` math: linear in CDS bp (modulo the standard fit-gene gap layout), decoupled from the figure's "gaps don't scale" zoom quirks
+- New `Track.renderMinimap?({ width, height, viewport, mapper, painter }): ReactNode | null` hook on the public `Track` interface. Tracks that have a meaningful thumbnail (the exon track ships with one out of the box) opt in; tracks without it are skipped silently. The overview track takes a `tracks: Track[]` config — typically the same tracks the host passes to `<GeneGlyph>` — and stacks each upstream track's `renderMinimap` output as one row inside its band. The host can pass a subset to show only some tracks in the minimap
+- `Viewport.naturalRange()` and `Viewport.baselineXToRuler()` are now public on the `Viewport` interface (both were previously only on `ViewportController`). Minimap-side coord conversions (drag math, range clamping) reach for these via the public interface rather than the controller subclass
+- Playground scenario `OverviewTrackDemoScenario` stacks the two widgets in a single section so a reader can drag both and compare; Playwright spec `slice-26-overview-track.spec.ts` covers pan / zoom / click-to-jump and asserts the overview's window rect is present in the figure SVG's serialised markup
 
-**In scope:**
-- `DefaultMinimap` already exists from Slice 20; ensure it shares the imperative-ref machinery cleanly
-- `overviewTrack({})` — alternative to footer minimap: a track that renders the full gene at fixed scale with a draggable viewport rectangle, embedded *inside* the figure SVG as a track (for hosts that want it in-figure rather than in chrome)
-- Documentation comparing the two approaches and when to use each
+**Resolved design questions:**
+- *Trade-off between the two:* the overview occupies one row of the track stack and counts against `trackHeightBudget`; the minimap sits outside the stack (in the Footer slot) and adds its own height below the figure. Hosts pick the overview when the export needs to carry navigation context — figure-in-a-paper, where readers benefit from seeing the zoom window — and pick the minimap when only the figure body should land in the rasterised image. The contract is otherwise identical (drag-window-to-pan, drag-handle-to-zoom, click-background-to-jump)
+- *Event isolation:* the overview's window rect and handles call `stopPropagation` on pointer-down so the figure SVG's drag-to-pan doesn't double-count the gesture. Pointermove / pointerup listeners are attached to `window` for the duration of a drag so the user can release outside the figure cleanly. The figure SVG element is captured at drag-start (in `dragRef.svg`) rather than re-derived from `event.target.ownerSVGElement` — window-level pointermoves fire on elements outside the figure where `ownerSVGElement` is null, which would otherwise collapse `clientToFigureX` to zero and freeze the gesture mid-drag
+
+- *Window rectangle clipping:* the rect is clipped to the overview's `[0, width]` band rather than allowed to extend past the figure. When the user pans past the gene's 3' end, the raw window range extends past `width` (the mini-viewport's `cdsToBaselineX` extrapolates linearly past the last exon); without clipping, the rect's bounding box reports as off-figure and subsequent pointerdowns aimed at it miss because the visible portion has a different bounding box than the rendered rect
+
+- *Why pure display-space:* an earlier iteration tried to read the figure's *actually-visible* baseline range via `screenToBaselineX(0)` / `screenToBaselineX(width)` so the rectangle would mirror the figure's gap-correction transforms. Direct user feedback ("the minimap should be a wholly display-space artifact"): coupling the minimap's coordinate system to the figure's rendering details is the wrong abstraction. The minimap operates on its own coordinate system and reports the *logical* CDS range; the figure's rendering quirks (gaps don't scale, partial-exon edges) belong to the figure, not the minimap
+- *Coordinate math:* `clientToFigureX` prefers `getScreenCTM` for accurate mapping under aspect-ratio letterboxing, with a `getBoundingClientRect` ratio fallback for JSDOM (and any browser that returns a null CTM)
 
 **Definition of done:**
-- Both options work
-- Documentation makes clear the trade-off (overview track exports; minimap doesn't)
+- Both options work ✓
+- Documentation makes clear the trade-off (overview track exports; minimap doesn't) ✓
 
 ---
 
@@ -638,7 +648,7 @@ Two final pieces of polish.
 - Slice 14 (mode transitions) blocks new tracks that need to respect modes (Slices 22, 23).
 - Slices 18, 19, 20 unblock independent work.
 - Slices 21–25 (data tracks) are all parallel after Slice 18.
-- Slice 26 is a polish slice; can land any time after Slice 20.
+- Slice 26 is a polish slice; can land any time after Slice 20. **Shipped.**
 - Slice 27 (stacked variant view) is a render-style add-on; lands cleanly after any of Slices 21–25 are in (more interesting once there are multiple variant-bearing tracks to demonstrate).
 
 A two-person team could split: one drives the render path (Slices 1–13), the other follows behind with infrastructure (Slices 16–20) and then peels off data tracks in parallel.
