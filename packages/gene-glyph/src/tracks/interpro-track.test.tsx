@@ -126,9 +126,9 @@ describe('interProTrack', () => {
     expect(repeat.height({ data: repeatData, viewport, hint: { maxPx: 500 } }).px).toBe(0);
   });
 
-  it('renders one rect per intersected exon for each placed domain', async () => {
+  it('renders one rect per intersected exon for each placed domain (style: rect)', async () => {
     const { mapper, viewport, painter, interaction } = setup();
-    const group = interProTrack({ groups: ['domain'] });
+    const group = interProTrack({ groups: ['domain'], style: 'rect' });
     const domainTrack = group.tracks[0]!;
     const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
 
@@ -152,5 +152,71 @@ describe('interProTrack', () => {
     expect(container.querySelectorAll('.vv-interpro-rect').length).toBeGreaterThanOrEqual(2);
     // One inter-exon linker for the exon 1 → exon 2 boundary.
     expect(container.querySelectorAll('.vv-interpro-linker')).toHaveLength(1);
+  });
+
+  it('default style is "minimal" — line + end-cap ticks, no filled rect', async () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const group = interProTrack({ groups: ['domain'] });
+    const domainTrack = group.tracks[0]!;
+    const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+
+    function Probe() {
+      return (
+        <svg>
+          {domainTrack.render({
+            data,
+            rect: { yTop: 0, yBottom: 22 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+    }
+
+    const { container } = render(<Probe />);
+    // D1 has 2 visible segments → 2 lines. Plus a left + right end-cap on
+    // the first / last segments (2 caps total per domain). No vv-interpro-rect.
+    expect(container.querySelectorAll('.vv-interpro-rect')).toHaveLength(0);
+    expect(container.querySelectorAll('.vv-interpro-line').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('.vv-interpro-cap')).toHaveLength(2);
+    // Still one linker across the intron gap.
+    expect(container.querySelectorAll('.vv-interpro-linker')).toHaveLength(1);
+  });
+
+  it('exposes the entry-type label on each sub-track for gutter consumption', () => {
+    const group = interProTrack({ groups: ['family', 'domain', 'repeat'] });
+    expect(group.tracks.map((t) => t.label)).toEqual(['Family', 'Domain', 'Repeat']);
+  });
+
+  it('minimal-style label is left-aligned to the domain start (text-anchor: start)', async () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const group = interProTrack({ groups: ['domain'] });
+    const domainTrack = group.tracks[0]!;
+    const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+
+    function Probe() {
+      return (
+        <svg>
+          {domainTrack.render({
+            data,
+            rect: { yTop: 0, yBottom: 22 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+    }
+
+    const { container } = render(<Probe />);
+    const labels = container.querySelectorAll<SVGTextElement>('.vv-interpro-label');
+    expect(labels.length).toBeGreaterThanOrEqual(1);
+    for (const l of labels) {
+      expect(l.getAttribute('text-anchor')).toBe('start');
+      expect(l.getAttribute('dominant-baseline')).toBe('hanging');
+    }
   });
 });

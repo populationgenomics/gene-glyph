@@ -18,20 +18,30 @@ import type {
 } from '../types.js';
 import { domainHue, fitText } from './pfam-track.js';
 
+export type InterProRenderStyle = 'minimal' | 'rect';
+
 export interface InterProTrackConfig {
   id?: string;
   label?: string;
   /** Entry types to surface, in display order. Each becomes a sub-track in
    *  the returned TrackGroup. Defaults to the four lit-manager surfaces. */
   groups?: ProteinDomainEntryType[];
+  /** Display style for each domain. `'minimal'` (default) draws a thin
+   *  horizontal line with end-cap ticks and a label left-aligned to the
+   *  domain's start — the visual treatment lit-manager used for secondary
+   *  annotations so the Pfam track stays prominent. `'rect'` keeps the
+   *  rounded-rectangle treatment from earlier iterations. */
+  style?: InterProRenderStyle;
   /** Vertical pixels reserved per packed lane in a sub-track. Sized so the
    *  rect + above-rect label fit in one row without crashing the lane above. */
   laneHeight?: number;
-  /** Half-thickness of each rounded rect drawn for a domain segment. */
+  /** Half-thickness of each rounded rect drawn for a domain segment.
+   *  Only consulted by `style: 'rect'`. */
   rectHalfHeight?: number;
   /** Font size used for labels (and for the half-distance label budget). */
   labelFontSize?: number;
-  /** Vertical offset of the label above the rect's top edge. */
+  /** Vertical offset of the label above the rect's top edge / above the
+   *  minimal line. */
   labelOffset?: number;
   /** Pixel gap enforced between domains placed on the same lane so labels
    *  don't crash into each other. */
@@ -124,7 +134,9 @@ function placeAndPack(
 
 interface SubTrackOptions {
   id: string;
+  label: string;
   entryType: ProteinDomainEntryType;
+  style: InterProRenderStyle;
   filter: (d: ProteinDomain) => boolean;
   laneHeight: number;
   rectHalf: number;
@@ -134,10 +146,11 @@ interface SubTrackOptions {
 }
 
 function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackData> {
-  const { id, entryType, filter, laneHeight, rectHalf, labelFont, labelOffset, laneGapPx } = opts;
+  const { id, label, entryType, style, filter, laneHeight, rectHalf, labelFont, labelOffset, laneGapPx } = opts;
 
   return {
     id,
+    label,
     coordSystem: 'protein',
     heightPolicy: 'data-dependent',
 
@@ -194,19 +207,36 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       for (const [lane, items] of byLane) {
         for (let i = 0; i < items.length; i++) {
           const p = items[i]!;
-          const prevMid = i > 0 ? items[i - 1]!.xMid : trackLeft - (p.xMid - trackLeft);
-          const nextMid =
-            i + 1 < items.length ? items[i + 1]!.xMid : trackRight + (trackRight - p.xMid);
-          const maxHalf = Math.max(0, Math.min(p.xMid - prevMid, nextMid - p.xMid) / 2 - 4);
+          // Label-width budget. The two styles measure differently:
+          //   'rect'    — label is centred above the rect, so the budget is
+          //               the smaller of the half-distances to the previous
+          //               and next domain on this lane.
+          //   'minimal' — label is left-aligned to the domain's start, so the
+          //               budget is the distance from this domain's start to
+          //               the next domain's start on this lane (or the track
+          //               right edge for the last domain).
+          let labelMaxW: number;
+          if (style === 'minimal') {
+            const nextStart =
+              i + 1 < items.length ? items[i + 1]!.xStart : trackRight;
+            labelMaxW = Math.max(0, nextStart - p.xStart - 4);
+          } else {
+            const prevMid = i > 0 ? items[i - 1]!.xMid : trackLeft - (p.xMid - trackLeft);
+            const nextMid =
+              i + 1 < items.length ? items[i + 1]!.xMid : trackRight + (trackRight - p.xMid);
+            const maxHalf = Math.max(0, Math.min(p.xMid - prevMid, nextMid - p.xMid) / 2 - 4);
+            labelMaxW = 2 * maxHalf;
+          }
           emitDomain({
             placed: p,
             lane,
             rect,
+            style,
             laneHeight,
             rectHalf,
             labelFont,
             labelOffset,
-            labelMaxW: 2 * maxHalf,
+            labelMaxW,
             exonByIdx,
             painter,
             rectsByExon,
@@ -292,6 +322,7 @@ interface EmitArgs {
   placed: PlacedDomain;
   lane: number;
   rect: TrackRect;
+  style: InterProRenderStyle;
   laneHeight: number;
   rectHalf: number;
   labelFont: number;
@@ -321,6 +352,7 @@ function emitDomain(args: EmitArgs): void {
     placed,
     lane,
     rect,
+    style,
     laneHeight,
     rectHalf,
     labelFont,
@@ -339,15 +371,27 @@ function emitDomain(args: EmitArgs): void {
   const fullName = domain.shortName || domain.description;
   const tooltip = `${domain.shortName}${domain.description ? ` — ${domain.description}` : ''} (aa ${domain.aaStart}–${domain.aaEnd})`;
 
-  // Anchor the rect to the *bottom* of the lane row so the label above it
-  // stays inside this lane's vertical slot and doesn't crash into the lane
-  // above. Matches Pfam's "label sits above the rect" treatment.
+  // The lane row is the vertical slot allocated by lane-packing.
+  //   'rect'    — anchors to the *bottom* of the row (rect at the bottom,
+  //               label above), so the label sits inside the row above
+  //               the rect.
+  //   'minimal' — anchors to the *top* of the row (line + end-caps at the
+  //               top, label hanging below), so the label sits inside the
+  //               row below the line.
+  // Either way, no piece of the domain spills into a neighbouring lane.
   const laneTop = rect.yTop + lane * laneHeight;
   const laneBottom = laneTop + laneHeight;
   const rectH = rectHalf * 2;
   const rectY = laneBottom - rectH - 1;
+  const capHalf = Math.max(2, rectHalf - 1);
+  const lineY = laneTop + capHalf + 1;
 
-  const labelSeg = pickLabelSegment(placed);
+  // Label segment + anchor: 'rect' uses the segment nearest the domain's
+  // midpoint (label centred above); 'minimal' always anchors to the *first*
+  // segment so the label aligns to the domain's left edge.
+  const labelSeg = style === 'minimal'
+    ? placed.segments[0] ?? null
+    : pickLabelSegment(placed);
   const labelExon = labelSeg ? exonByIdx.get(labelSeg.exonIdx) : undefined;
 
   for (const seg of placed.segments) {
@@ -355,33 +399,111 @@ function emitDomain(args: EmitArgs): void {
     if (!exon) continue;
     const localX = seg.xStart - exon.xStart;
     const width = Math.max(1, seg.xEnd - seg.xStart);
-    pushTo(
-      rectsByExon,
-      seg.exonIdx,
-      <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
-        {painter.drawRect({
-          key: `ipr-${featureId}-rect-${seg.exonIdx}`,
-          x: localX,
-          y: rectY,
-          width,
-          height: rectH,
-          rx: 2,
-          ry: 2,
-          fill,
-          stroke: painter.color('vv-color-pfam-stroke', '#475569'),
-          strokeWidth: 0.5,
-          vectorEffect: 'non-scaling-stroke',
-          className: 'vv-interpro-rect',
-        })}
-      </Fragment>,
-    );
+    if (style === 'rect') {
+      pushTo(
+        rectsByExon,
+        seg.exonIdx,
+        <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
+          {painter.drawRect({
+            key: `ipr-${featureId}-rect-${seg.exonIdx}`,
+            x: localX,
+            y: rectY,
+            width,
+            height: rectH,
+            rx: 2,
+            ry: 2,
+            fill,
+            stroke: painter.color('vv-color-pfam-stroke', '#475569'),
+            strokeWidth: 0.5,
+            vectorEffect: 'non-scaling-stroke',
+            className: 'vv-interpro-rect',
+          })}
+        </Fragment>,
+      );
+    } else {
+      // 'minimal' style — line spanning the segment with vector-effect
+      // non-scaling-stroke so it stays 1.25px wide regardless of zoom.
+      // End-caps land at the *true* domain ends only (first segment's
+      // xStart, last segment's xEnd), not at each fragment boundary —
+      // intra-domain linkers carry the visual continuity across gaps.
+      const isFirstSeg = seg === placed.segments[0];
+      const isLastSeg = seg === placed.segments[placed.segments.length - 1];
+      pushTo(
+        rectsByExon,
+        seg.exonIdx,
+        <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
+          <line
+            key={`ipr-${featureId}-line-${seg.exonIdx}`}
+            x1={localX}
+            x2={localX + width}
+            y1={lineY}
+            y2={lineY}
+            stroke={fill}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className="vv-interpro-line"
+          />
+          {isFirstSeg && (
+            <g
+              key={`ipr-${featureId}-cap-l-wrap-${seg.exonIdx}`}
+              className="vv-interpro-cap-wrap"
+              style={{
+                transform:
+                  `translateX(${localX}px) ` +
+                  `scaleX(calc(1 / var(--vv-exon-scale-x-${seg.exonIdx}, 1)))`,
+                transformOrigin: '0 0',
+              }}
+            >
+              <line
+                key={`ipr-${featureId}-cap-l`}
+                x1={0}
+                x2={0}
+                y1={lineY - capHalf}
+                y2={lineY + capHalf}
+                stroke={fill}
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                className="vv-interpro-cap"
+              />
+            </g>
+          )}
+          {isLastSeg && (
+            <g
+              key={`ipr-${featureId}-cap-r-wrap-${seg.exonIdx}`}
+              className="vv-interpro-cap-wrap"
+              style={{
+                transform:
+                  `translateX(${localX + width}px) ` +
+                  `scaleX(calc(1 / var(--vv-exon-scale-x-${seg.exonIdx}, 1)))`,
+                transformOrigin: '0 0',
+              }}
+            >
+              <line
+                key={`ipr-${featureId}-cap-r`}
+                x1={0}
+                x2={0}
+                y1={lineY - capHalf}
+                y2={lineY + capHalf}
+                stroke={fill}
+                strokeWidth={1.5}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                className="vv-interpro-cap"
+              />
+            </g>
+          )}
+        </Fragment>,
+      );
+    }
   }
 
   for (let i = 0; i < placed.segments.length - 1; i++) {
     const a = placed.segments[i]!;
     const b = placed.segments[i + 1]!;
     if (b.xStart <= a.xEnd) continue;
-    const linkerY = rectY + rectH / 2;
+    const linkerY = style === 'minimal' ? lineY : rectY + rectH / 2;
     const gapKey = `${a.exonIdx}:${b.exonIdx}`;
     let bucket = linkersByGap.get(gapKey);
     if (!bucket) {
@@ -396,7 +518,7 @@ function emitDomain(args: EmitArgs): void {
         y1={linkerY}
         y2={linkerY}
         stroke={fill}
-        strokeWidth={1.25}
+        strokeWidth={style === 'minimal' ? 1 : 1.25}
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
         className="vv-interpro-linker"
@@ -406,7 +528,20 @@ function emitDomain(args: EmitArgs): void {
 
   const label = fitText(fullName, labelMaxW, labelFont);
   if (label && labelExon) {
-    const localXMid = placed.xMid - labelExon.xStart;
+    // Anchor differs between styles:
+    //   'rect'    — centred above the rect (anchor at xMid, text-anchor: middle).
+    //   'minimal' — left-aligned to the domain's leftmost segment
+    //               (anchor at first-segment.xStart, text-anchor: start).
+    const anchorX = style === 'minimal'
+      ? (placed.segments[0]?.xStart ?? placed.xMid) - labelExon.xStart
+      : placed.xMid - labelExon.xStart;
+    const textAnchor: 'start' | 'middle' = style === 'minimal' ? 'start' : 'middle';
+    // 'minimal' labels hang *below* the line so the line itself is the
+    // primary visual anchor; 'rect' labels sit above the rect to keep the
+    // existing Pfam-style cadence. dominantBaseline='hanging' anchors the
+    // text top at labelY, so the text reads top-down from there.
+    const labelY = style === 'minimal' ? lineY + capHalf + 1 : rectY - labelOffset;
+    const dominantBaseline: 'auto' | 'hanging' = style === 'minimal' ? 'hanging' : 'auto';
     pushTo(
       labelsByExon,
       labelExon.exonIdx,
@@ -415,7 +550,7 @@ function emitDomain(args: EmitArgs): void {
         className="vv-interpro-label-wrap"
         style={{
           transform:
-            `translateX(${localXMid}px) ` +
+            `translateX(${anchorX}px) ` +
             `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
           transformOrigin: '0 0',
         }}
@@ -423,9 +558,9 @@ function emitDomain(args: EmitArgs): void {
         <text
           key={`ipr-${featureId}-label`}
           x={0}
-          y={rectY - labelOffset}
-          textAnchor="middle"
-          dominantBaseline="auto"
+          y={labelY}
+          textAnchor={textAnchor}
+          dominantBaseline={dominantBaseline}
           fontSize={labelFont}
           fill={painter.color('vv-color-pfam-label', '#475569')}
           className="vv-interpro-label"
@@ -463,6 +598,7 @@ function pickLabelSegment(placed: PlacedDomain): RangeSegment | null {
 export function interProTrack(config: InterProTrackConfig = {}): TrackGroup {
   const baseId = config.id ?? 'interpro';
   const groups = config.groups ?? DEFAULT_GROUPS;
+  const style: InterProRenderStyle = config.style ?? 'minimal';
   const laneHeight = config.laneHeight ?? DEFAULT_LANE_HEIGHT;
   const rectHalf = config.rectHalfHeight ?? DEFAULT_RECT_HALF;
   const labelFont = config.labelFontSize ?? DEFAULT_LABEL_FONT;
@@ -473,7 +609,9 @@ export function interProTrack(config: InterProTrackConfig = {}): TrackGroup {
   const tracks = groups.map((entryType) =>
     makeSubTrack({
       id: `${baseId}-${entryType}`,
+      label: ENTRY_TYPE_LABEL[entryType],
       entryType,
+      style,
       filter,
       laneHeight,
       rectHalf,
