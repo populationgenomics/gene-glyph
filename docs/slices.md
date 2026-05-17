@@ -587,30 +587,27 @@ Two final pieces of polish.
 
 ---
 
-### Slice 27 — Stacked variant view (Decipher-style)
+### Slice 27 — Stacked variant view (Decipher-style) — **shipped**
 
-A new render style for variant-bearing tracks that swaps the dot+tick row for a stacked column of pure-symbol glyphs (no anchor line back to the ribbon). Shape, colour, and fill independently encode three attribute axes — typically *category* (missense / nonsense / splice / …), *predicted effect* (LoF / missense pathogenicity score bucket / …), and *clinical significance* (path / VUS / benign / …) — so a single glyph carries three orthogonal facts without a legend lookup per variant. Lifted from the Decipher gene viewer's variant track.
+**Landed:**
+- `SymbolEncoding<T>` in `packages/gene-glyph/src/symbol-encoding.ts` describes the host-supplied mapping from feature → `{shape, fill, color?, lane?, radius?}`. `glyphPath(shape, r)` emits SVG path data for eight shapes (`circle`, `square`, `triangle-up`, `triangle-down`, `diamond`, `pentagon`, `cross`, `bar`), each inscribed in a circle of radius `r` so encodings can swap shape without resizing. Counter-scale wrappers (the same trick the variant dot uses) keep glyphs regular under per-exon scaleX. Default encodings ship for `ViewerVariant` (shape ← category, lane ← LoF / missense / synonymous / regulatory) and `ClinVarRecord` (shape ← clinical significance, lane ← path / vus / benign / conflicting)
+- `variantTrack({ stackedVariantStyle })` and `clinVarTrack({ stackedVariantStyle })` flip into stacked mode. Both run their packing in `load()` so `height()` and `render()` agree on row count without re-projecting. `heightPolicy` becomes `'data-dependent'` only when stacked — the existing tick+dot and density-cluster paths stay `'fixed'`, so no consumer breaks. Hover lift, selection ring, and brush-in reuse the existing `vv-variant-*` / `vv-clinvar-*` interaction classes
+- `packStackedVariants` / `packStackedClinVar` group placements by `encoding.lane()`, sort each group by baseline (fit-gene) screen-x, then greedy-assign each placement to the lowest local row whose previous occupant has cleared. Strict lane separation: items with different `lane()` keys never share a row. Packing uses *baseline* x (not live screen-x) so the row count is stable across pan and zoom — deep zoom only spreads glyphs apart
+- Playground `StackedVariantsDemoScenario` shows the dense fixture (`TP53_DENSE_VARIANTS`, 60+ seeded synthetic entries with hotspot piles around codons 175 / 248 / 273) side-by-side in both styles, plus a third figure rendering the existing TP53 ClinVar fixture in stacked mode. Hosts can compare densities; the dense fixture is deterministic so visual snapshots and Playwright counts don't drift
+- Playwright spec `slice-27-stacked-variants.spec.ts` pins: glyph-count parity between the two styles, ≥ 4 rows at hotspot positions, click-through wiring, and the ClinVar suppress-clustering invariant. Unit tests in `symbol-encoding.test.ts`, `variant-track.test.tsx`, and `clinvar-track.test.tsx` cover lane grouping, glyph paths, height growth, and stacked rendering
 
-**In scope:**
-- `stackedVariantStyle` config on `variantTrack` (and by extension `clinVarTrack`, `gnomADTrack`): selects between the existing tick+dot render and the new stacked render without forking the factory. Default stays tick+dot so existing hosts don't change behaviour
-- Symbol vocabulary: a `SymbolEncoding` describing `{shape: (v) => GlyphShape, fill: (v) => string, color: (v) => string, lane?: (v) => string}`. Hosts supply their own encoding; the package ships a sensible default for `ViewerVariant` (shape ← category, fill ← `clinicalSignificance` if present else solid, colour ← significance)
-- Glyph shapes: `circle`, `square`, `triangle-up`, `triangle-down`, `diamond`, `pentagon`, `cross`, `bar`. Each renders inside the per-exon group with counter-scale so they stay regular under per-exon zoom (same trick the variant dot uses today)
-- Lane packing: variants at the same screen-x stack vertically rather than overlap. Lane order is deterministic — by `lane()` accessor first (e.g., group LoF / missense / synonymous into discrete rows), then by category, then by screen-x. Track height becomes `heightPolicy: 'data-dependent'` so it grows to fit the deepest stack
-- Hover-lift, selection ring, and brush-in behaviour all reuse the existing `vv-variant-*` interaction classes — no per-glyph re-implementation. Tooltip surface unchanged
-- Playground scenario showing the same variant set rendered in both styles side-by-side so the user can compare densities; a toggle on the existing `interaction-demo` scenario plus a fresh `stacked-variants-demo` scenario for the dense case
-
-**Open design questions to resolve in a Plan pass before coding:**
-- Does the stack grow upward from the ribbon or downward from the track top? Decipher grows up; lit-manager's existing comp grows down
-- Lane gap default — fixed (e.g., 14 px) or content-derived from `markRadius`?
-- When two glyphs collide horizontally but live on different `lane()`s, do they pack into the same column (saves space) or honour lane separation strictly (clearer legend)?
-- For `clinVarTrack`, does stacking suppress density-clustering (Slice 21) or coexist with it (cluster diamond as one glyph, stacked members below it)?
-- What does the brush range overlay look like over a stacked column — full-column highlight, or per-glyph ring like today?
+**Resolved design questions:**
+- *Stack direction:* downward from the track top. Row 0 sits at `rect.yTop + topPad + r`; subsequent rows step downward by `2 * markRadius + 2`. The variant track sits below the exon track, so growing downward keeps the ribbon at the top edge and pushes deeper stacks away from it
+- *Lane gap:* content-derived. Defaults to `2 * markRadius + 2` (glyph diameter + 2 px breathing room); host can override via `stackLanePx`
+- *Cross-lane horizontal collisions:* lane separation is strict. Items with different `lane()` keys occupy disjoint row blocks even when their baseline-x positions don't overlap, so each row reads as a single category
+- *ClinVar interaction:* stacked mode **suppresses** density-clustering. The whole point of stacking is to show every variant; clustering would defeat the purpose. Hosts that want both can use the default (cluster) style and switch on zoom
+- *Brush range overlay:* per-glyph ring (reuses the existing `is-in-brush` CSS). A full-column highlight would conflict with hover-lift and selection-ring affordances
 
 **Definition of done:**
-- Both render styles available with no breaking changes to existing hosts
-- Stacked render handles 50+ variants in one viewport without occluding the exon ribbon
-- Encoding API documented with a worked example mapping `ClinVarRecord` → shape × colour × fill
-- Playground side-by-side demonstrates the visual trade-off
+- Both render styles available with no breaking changes to existing hosts ✓
+- Stacked render handles 50+ variants in one viewport without occluding the exon ribbon ✓ (`TP53_DENSE_VARIANTS` fixture)
+- Encoding API documented with worked defaults for `ViewerVariant` and `ClinVarRecord` ✓
+- Playground side-by-side demonstrates the visual trade-off ✓
 
 ---
 
