@@ -2,7 +2,7 @@
 
 Tracer-bullet vertical slices ordered to deliver visible value incrementally. Each slice ends with a runnable demonstration in `apps/playground` and a defined acceptance bar.
 
-Slices 1–20 deliver the cutover-ready package. Slices 21–26 deliver the post-cutover feature wishlist.
+Slices 1–20 deliver the cutover-ready package. Slices 21–27 deliver the post-cutover feature wishlist.
 
 ---
 
@@ -587,6 +587,33 @@ Two final pieces of polish.
 
 ---
 
+### Slice 27 — Stacked variant view (Decipher-style)
+
+A new render style for variant-bearing tracks that swaps the dot+tick row for a stacked column of pure-symbol glyphs (no anchor line back to the ribbon). Shape, colour, and fill independently encode three attribute axes — typically *category* (missense / nonsense / splice / …), *predicted effect* (LoF / missense pathogenicity score bucket / …), and *clinical significance* (path / VUS / benign / …) — so a single glyph carries three orthogonal facts without a legend lookup per variant. Lifted from the Decipher gene viewer's variant track.
+
+**In scope:**
+- `stackedVariantStyle` config on `variantTrack` (and by extension `clinVarTrack`, `gnomADTrack`): selects between the existing tick+dot render and the new stacked render without forking the factory. Default stays tick+dot so existing hosts don't change behaviour
+- Symbol vocabulary: a `SymbolEncoding` describing `{shape: (v) => GlyphShape, fill: (v) => string, color: (v) => string, lane?: (v) => string}`. Hosts supply their own encoding; the package ships a sensible default for `ViewerVariant` (shape ← category, fill ← `clinicalSignificance` if present else solid, colour ← significance)
+- Glyph shapes: `circle`, `square`, `triangle-up`, `triangle-down`, `diamond`, `pentagon`, `cross`, `bar`. Each renders inside the per-exon group with counter-scale so they stay regular under per-exon zoom (same trick the variant dot uses today)
+- Lane packing: variants at the same screen-x stack vertically rather than overlap. Lane order is deterministic — by `lane()` accessor first (e.g., group LoF / missense / synonymous into discrete rows), then by category, then by screen-x. Track height becomes `heightPolicy: 'data-dependent'` so it grows to fit the deepest stack
+- Hover-lift, selection ring, and brush-in behaviour all reuse the existing `vv-variant-*` interaction classes — no per-glyph re-implementation. Tooltip surface unchanged
+- Playground scenario showing the same variant set rendered in both styles side-by-side so the user can compare densities; a toggle on the existing `interaction-demo` scenario plus a fresh `stacked-variants-demo` scenario for the dense case
+
+**Open design questions to resolve in a Plan pass before coding:**
+- Does the stack grow upward from the ribbon or downward from the track top? Decipher grows up; lit-manager's existing comp grows down
+- Lane gap default — fixed (e.g., 14 px) or content-derived from `markRadius`?
+- When two glyphs collide horizontally but live on different `lane()`s, do they pack into the same column (saves space) or honour lane separation strictly (clearer legend)?
+- For `clinVarTrack`, does stacking suppress density-clustering (Slice 21) or coexist with it (cluster diamond as one glyph, stacked members below it)?
+- What does the brush range overlay look like over a stacked column — full-column highlight, or per-glyph ring like today?
+
+**Definition of done:**
+- Both render styles available with no breaking changes to existing hosts
+- Stacked render handles 50+ variants in one viewport without occluding the exon ribbon
+- Encoding API documented with a worked example mapping `ClinVarRecord` → shape × colour × fill
+- Playground side-by-side demonstrates the visual trade-off
+
+---
+
 ## Cross-cutting work (not slice-specific)
 
 ### Documentation
@@ -615,5 +642,6 @@ Two final pieces of polish.
 - Slices 18, 19, 20 unblock independent work.
 - Slices 21–25 (data tracks) are all parallel after Slice 18.
 - Slice 26 is a polish slice; can land any time after Slice 20.
+- Slice 27 (stacked variant view) is a render-style add-on; lands cleanly after any of Slices 21–25 are in (more interesting once there are multiple variant-bearing tracks to demonstrate).
 
 A two-person team could split: one drives the render path (Slices 1–13), the other follows behind with infrastructure (Slices 16–20) and then peels off data tracks in parallel.
