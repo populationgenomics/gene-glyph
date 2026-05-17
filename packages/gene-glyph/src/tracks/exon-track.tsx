@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type {
+  MinimapRenderArgs,
   Track,
   TrackHeightArgs,
   TrackHeightResult,
@@ -199,6 +200,68 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
               {hiddenMarks}
             </g>
           )}
+        </g>
+      );
+    },
+
+    renderMinimap(args: MinimapRenderArgs<ExonTrackData>): ReactNode {
+      // The mini-viewport is pinned to fit-gene at the target width, so
+      // its baseline geometry is the display-space layout. No live
+      // CSS-variable transforms are applied here — the minimap is pure
+      // pixel math.
+      const { width: mmWidth, height: mmHeight, viewport: mini } = args;
+      const geom = mini.baselineGeometry();
+      const exonH = Math.max(2, mmHeight - 6);
+      const exonY = (mmHeight - exonH) / 2;
+      const midY = mmHeight / 2;
+      const intronStroke = 'var(--vv-color-intron-line, #64748b)';
+      const exonFill = 'var(--vv-color-exon-fill, #cbd5e1)';
+      const exonStroke = 'var(--vv-color-exon-stroke, #475569)';
+      return (
+        <g className="vv-exon-track-minimap" data-vv-track-id={id}>
+          {geom.gaps.map((g) =>
+            g.width > 0 ? (
+              <line
+                key={`mm-gap-${g.exonIdxA}-${g.exonIdxB}`}
+                className="vv-exon-minimap-intron"
+                x1={g.xStart}
+                x2={g.xEnd}
+                y1={midY}
+                y2={midY}
+                stroke={intronStroke}
+                strokeWidth={1}
+                pointerEvents="none"
+              />
+            ) : null,
+          )}
+          {geom.exons.map((e) => (
+            <rect
+              key={`mm-exon-${e.exonIdx}`}
+              className="vv-exon-minimap-exon"
+              x={e.xStart}
+              y={exonY}
+              width={Math.max(1, e.width)}
+              height={exonH}
+              rx={1.5}
+              ry={1.5}
+              fill={exonFill}
+              stroke={exonStroke}
+              strokeWidth={0.75}
+              pointerEvents="none"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {/* `mmWidth` is the contract: render fills `[0, mmWidth]`. */}
+          <rect
+            className="vv-exon-minimap-frame"
+            x={0}
+            y={0}
+            width={mmWidth}
+            height={mmHeight}
+            fill="none"
+            stroke="none"
+            pointerEvents="none"
+          />
         </g>
       );
     },

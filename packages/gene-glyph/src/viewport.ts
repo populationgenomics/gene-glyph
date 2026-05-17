@@ -678,6 +678,16 @@ export class ViewportController implements Viewport {
     return lastCurrentXEnd + (baselineX - lastEb.xEnd);
   }
 
+  /** Public face of {@link currentToBaselineX} (Slice 26). The interface
+   *  method never returns null — falls through to extrapolated baseline-x
+   *  past the last exon's right edge so the overview track can mark its
+   *  window even when the user has panned past the gene's 3' end into the
+   *  padding zone. */
+  screenToBaselineX(currentX: number): number {
+    const baseline = this.currentToBaselineX(currentX);
+    return baseline ?? 0;
+  }
+
   /** Inverse of {@link baselineToCurrentX}: live screen-x → baseline-x. */
   private currentToBaselineX(currentX: number): number | null {
     const geom = this.baselineGeometry();

@@ -254,6 +254,10 @@ export interface Viewport {
   readonly intronScale: number;
   readonly range: readonly [number, number];
   readonly width: number;
+  /** Natural fit-gene ruler range for the active mode. CDS bp in CDS
+   *  modes, aa in protein mode. Stable until the mode or transcript
+   *  changes; chrome / minimap code uses it as the thumbnail span. */
+  naturalRange(): readonly [number, number];
 
   cdsToScreen(cPos: number, offset: number): number | null;
   proteinToScreen(aa: number): number | null;
@@ -266,6 +270,21 @@ export interface Viewport {
   /** Ruler → baseline screen-x. CDS bp in CDS modes, aa in protein mode.
    *  Always returns a finite value (extrapolates past the gene's edges). */
   cdsToBaselineX(rulerPos: number): number;
+  /** Inverse of {@link cdsToBaselineX}. CDS bp in CDS modes, aa in protein
+   *  mode. Fractional; callers round if they want a discrete ruler value.
+   *  Slice 26 surfaced this on the public interface so direct-manipulation
+   *  chrome embedded as a track (overviewTrack) can map cursor positions
+   *  back to ruler coords without reaching for the controller subclass. */
+  baselineXToRuler(x: number): number;
+  /** Live screen-x → baseline screen-x. The figure renders exons via per-
+   *  exon CSS transforms that aren't a uniform scale (inter-exon gaps stay
+   *  at their baseline pixel width regardless of zoom — see the publish
+   *  comment in {@link ViewportController.publish}); the live-to-baseline
+   *  mapping therefore isn't just `(currentX / zoom + S_lo)`. Slice 26
+   *  exposes this on the public interface so the overview track can mark
+   *  the *actually-visible* baseline range, including past-the-gene-end
+   *  padding zones. Extrapolates linearly past the last exon. */
+  screenToBaselineX(currentX: number): number;
   /** Viewport-independent geometry at fit-gene zoom. Tracks render against
    *  this frame; the wrapping exon/intron `<g>` elements carry the live
    *  translate + scale derived from the current range. */
@@ -324,6 +343,28 @@ export interface TrackHeightArgs<TData> {
   hint: TrackHeightHint;
 }
 
+/** Args passed to {@link Track.renderMinimap}. The minimap is a pure
+ *  display-space artifact: the track is handed a target width and height
+ *  in pixels and asked to render its content at fit-gene scale, decoupled
+ *  from the figure's live zoom / pan / CSS-variable transforms. Tracks
+ *  that have no meaningful thumbnail (overlay-only tracks, the overview
+ *  track itself) omit the hook and the host minimap skips them. Slice 26. */
+export interface MinimapRenderArgs<TData> {
+  data: TData;
+  /** Target width in viewBox pixels. The track should fill `[0, width]`
+   *  on the x axis. */
+  width: number;
+  /** Target height in viewBox pixels. The track should fill `[0, height]`
+   *  on the y axis. */
+  height: number;
+  /** Pre-built mini-viewport at the target width, pinned to fit-gene zoom
+   *  in the current mode. Tracks can use its `baselineGeometry()` to read
+   *  per-exon screen positions and widths without recomputing them. */
+  viewport: Viewport;
+  mapper: CoordinateMapper;
+  painter: Painter;
+}
+
 export interface TrackRenderArgs<TData> {
   data: TData;
   rect: TrackRect;
@@ -366,6 +407,14 @@ export interface Track<TConfig = unknown, TData = unknown> {
    *  in collapsed introns can omit this. */
   hiddenFeaturesByIntron?(args: HiddenFeaturesArgs<TData>): HiddenFeatureBucket[];
   render(args: TrackRenderArgs<TData>): ReactNode;
+  /** Optional minimap representation of this track at a fixed pixel size,
+   *  decoupled from the figure's live viewport. The overview track (and
+   *  any host-supplied minimap chrome) invokes this to compose a
+   *  display-space thumbnail of the track stack — exons appear at
+   *  fit-gene baseline, features (variants, domains, etc.) at the same
+   *  scale. Tracks that don't have a useful thumbnail (the overview track
+   *  itself, overlay-only tracks) omit this hook. Slice 26. */
+  renderMinimap?(args: MinimapRenderArgs<TData>): ReactNode | null;
   /** Optional DOM rendered below the figure SVG (e.g., unplaced-feature
    *  lists). Lives in a sibling `<div class="vv-below">` outside the figure
    *  so it never leaks into export. Slice 7 introduces formal slots; this
