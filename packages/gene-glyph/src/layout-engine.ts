@@ -11,8 +11,10 @@ import {
 export interface LayoutItem {
   kind: 'track' | 'group';
   id: string;
-  /** Group label, set when `kind === 'group'`. Surfaced via gutter slots so
-   *  hosts can render it without re-walking the input track list. */
+  /** Label, set from `TrackGroup.label` for groups and from `Track.label`
+   *  for tracks (optional on tracks). Surfaced via gutter slots so hosts
+   *  can render group + sub-track labels (e.g. multi-level InterPro
+   *  nesting) without re-walking the input track list. */
   label?: string;
   rect: TrackRect;
   didTruncate: boolean;
@@ -94,6 +96,7 @@ function layoutTrack(
   const item: LayoutItem = {
     kind: 'track',
     id: track.id,
+    label: track.label,
     rect: { yTop, yBottom: yTop + px },
     didTruncate: result.didTruncate || px < result.px,
     droppedCount: result.droppedCount ?? 0,

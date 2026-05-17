@@ -397,6 +397,15 @@ export interface HiddenFeaturesArgs<TData> {
 
 export interface Track<TConfig = unknown, TData = unknown> {
   readonly id: string;
+  /** Optional human-readable label surfaced to gutter render-props via the
+   *  {@link GutterItem} for this track. When a track sits inside a
+   *  {@link TrackGroup} (e.g. the entry-type sub-tracks emitted by
+   *  `interProTrack`), the label conveys the sub-track's category so a
+   *  multi-level gutter can render the nesting structure. Hosts can render
+   *  the label however they like — italic small-caps for entry-types,
+   *  bold for primary tracks — by branching on `kind` / `item.id` in the
+   *  render-prop. */
+  readonly label?: string;
   readonly coordSystem: CoordSystem;
   readonly heightPolicy: HeightPolicy;
   load(args: TrackLoadArgs): Promise<TData>;
