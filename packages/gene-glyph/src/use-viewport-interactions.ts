@@ -149,8 +149,17 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       // uniform regardless of where lo / hi land in the gene.
       const sLo = viewport.cdsToBaselineX(lo);
       const sHi = viewport.cdsToBaselineX(hi);
-      const newLo = viewport.baselineXToRuler(sLo + deltaViewboxPx);
-      const newHi = viewport.baselineXToRuler(sHi + deltaViewboxPx);
+      // Convert on-screen pixel delta to baseline-x delta. At fit-gene,
+      // baselineSpan ≈ viewport.width and 1 viewBox-px equals 1 baseline-px;
+      // at zoom N×, baselineSpan = viewport.width/N so each on-screen pixel
+      // must shift the baseline window by only 1/N of a baseline-px to keep
+      // visual motion matched to the cursor. Without this, drag/wheel pan
+      // accelerates by the zoom factor — "skating on ice" at deep zoom.
+      const baselineSpan = sHi - sLo;
+      if (!(baselineSpan > 0)) return;
+      const baselineDelta = deltaViewboxPx * (baselineSpan / viewport.width);
+      const newLo = viewport.baselineXToRuler(sLo + baselineDelta);
+      const newHi = viewport.baselineXToRuler(sHi + baselineDelta);
       applyRange([newLo, newHi], reason);
     },
     [viewport, applyRange],

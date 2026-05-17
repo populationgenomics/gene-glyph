@@ -181,6 +181,51 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       const root = container.querySelector('[data-testid="gene-glyph"]');
       expect(root?.classList.contains('vv-no-transition')).toBe(false);
     });
+
+    it('moves the gene by the cursor distance at any zoom level (no acceleration)', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      // Zoom in tight (~10× narrower than fit-gene) so any zoom-dependent
+      // overshoot in panByPx becomes obvious.
+      act(() => {
+        ref.current!.fitTo({ kind: 'range', range: [140, 170] });
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 400));
+      });
+      const svg = stubFigureRect(container, 1000);
+      // Read the cPos under the cursor's *starting* CSS-x. After a drag of
+      // dxCss the cPos under the new cursor position should land back on the
+      // same gene location — that's what "1 px of cursor = 1 px of gene"
+      // means in practice and is the regression bar for the high-zoom pan
+      // bug (panByPx used to overshoot by the zoom factor, "skating on ice").
+      const startCursorX = 500;
+      const dxCss = -120;
+      const cposUnderCursorBefore = ref.current!
+        .getViewportInfo()
+        // Reach through the screen at the cursor's start. Use the same
+        // ruler-at-screen math the brush gesture relies on.
+        .range;
+      const startRange = cposUnderCursorBefore as readonly [number, number];
+      const startSpan = startRange[1] - startRange[0];
+      fireEvent.pointerDown(svg, { pointerId: 1, clientX: startCursorX, button: 0 });
+      fireEvent.pointerMove(window, { pointerId: 1, clientX: startCursorX + dxCss });
+      fireEvent.pointerUp(window, { pointerId: 1, clientX: startCursorX + dxCss });
+      const endRange = ref.current!.getViewportInfo().range as readonly [number, number];
+      // Span should be preserved across a pure pan.
+      expect(endRange[1] - endRange[0]).toBeCloseTo(startSpan, 1);
+      // For a 120-px cursor shift over a 1000-px rect at this zoom, the
+      // visible CDS-bp range should shift by *roughly* startSpan × 0.12.
+      // Pre-fix the shift would be ≈ 120 baseline-px which at deep zoom
+      // collapses the range by way more than the cursor distance — at the
+      // 10× zoom here that's ≈ 30 cPos vs. the correct ≈ 3.6.
+      const observedShift = endRange[0] - startRange[0];
+      const expectedShift = startSpan * (-dxCss / 1000);
+      expect(Math.abs(observedShift - expectedShift)).toBeLessThan(startSpan * 0.25);
+    });
   });
 
   describe('brush selection', () => {
