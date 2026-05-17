@@ -383,7 +383,10 @@ function emitDomain(args: EmitArgs): void {
   const laneBottom = laneTop + laneHeight;
   const rectH = rectHalf * 2;
   const rectY = laneBottom - rectH - 1;
-  const capHalf = Math.max(2, rectHalf - 1);
+  // 'minimal' geometry — main line is thicker than the original 1.5px, so
+  // bump the cap reach to keep the end-tick visibly sticking out above /
+  // below the line.
+  const capHalf = style === 'minimal' ? 5 : Math.max(2, rectHalf - 1);
   const lineY = laneTop + capHalf + 1;
 
   // Label segment + anchor:
@@ -422,8 +425,8 @@ function emitDomain(args: EmitArgs): void {
               y1={lineY}
               y2={lineY}
               stroke={fill}
-              strokeWidth={1.5}
-              strokeLinecap="round"
+              strokeWidth={4.5}
+              strokeLinecap="butt"
               vectorEffect="non-scaling-stroke"
               className="vv-interpro-line"
             />
@@ -434,8 +437,8 @@ function emitDomain(args: EmitArgs): void {
               y1={lineY - capHalf}
               y2={lineY + capHalf}
               stroke={fill}
-              strokeWidth={1.5}
-              strokeLinecap="round"
+              strokeWidth={2}
+              strokeLinecap="butt"
               vectorEffect="non-scaling-stroke"
               className="vv-interpro-cap"
             />
@@ -446,8 +449,8 @@ function emitDomain(args: EmitArgs): void {
               y1={lineY - capHalf}
               y2={lineY + capHalf}
               stroke={fill}
-              strokeWidth={1.5}
-              strokeLinecap="round"
+              strokeWidth={2}
+              strokeLinecap="butt"
               vectorEffect="non-scaling-stroke"
               className="vv-interpro-cap"
             />
