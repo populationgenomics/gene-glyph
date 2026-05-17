@@ -258,6 +258,21 @@
   opacity: 0.85;
 }
 
+/* Slice 26: overview track. Lives inside the figure SVG (so exportSVG /
+ * exportPNG include it) and mirrors the minimap's direct-manipulation
+ * contract. The window rectangle reads from a CSS variable cascade keyed
+ * on `--vv-color-overview-*`; hosts can override either set independently
+ * of the minimap so a figure carrying both still reads as one chrome. */
+.gene-glyph .vv-overview-track {
+  user-select: none;
+}
+.gene-glyph .vv-overview-handle:hover {
+  opacity: 0.85;
+}
+.gene-glyph.vv-dragging .vv-overview-window {
+  cursor: grabbing;
+}
+
 /* Slice 17: figure wrap. Sits as a flex item inside .vv-figure-row and is the
  * positioning context for absolutely-placed overlays (tooltips, "you are
  * here" markers). The figure SVG and the overlay layer are DOM siblings

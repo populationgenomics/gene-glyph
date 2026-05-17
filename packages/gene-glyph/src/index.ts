@@ -98,6 +98,8 @@ export { createSvgPainter } from './painter/svg-painter.js';
 export type { SvgPainterOptions } from './painter/svg-painter.js';
 export { exonTrack } from './tracks/exon-track.js';
 export type { ExonTrackConfig } from './tracks/exon-track.js';
+export { overviewTrack } from './tracks/overview-track.js';
+export type { OverviewTrackConfig } from './tracks/overview-track.js';
 export {
   variantTrack,
   partitionVariants,
