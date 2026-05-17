@@ -847,3 +847,21 @@
 .gene-glyph .vv-clinvar-popover-backdrop {
   pointer-events: all;
 }
+
+/* Stacked ClinVar render (Slice 27). Density clustering is suppressed —
+ * every record renders as its own glyph in a packed-lane column. */
+.gene-glyph .vv-clinvar-mark-stacked .vv-clinvar-glyph {
+  pointer-events: visiblePainted;
+}
+
+.gene-glyph .vv-clinvar-mark-stacked .vv-clinvar-ring {
+  opacity: 0;
+  transition: opacity 100ms ease-out;
+}
+
+.gene-glyph .vv-clinvar-mark-stacked.is-selected .vv-clinvar-ring,
+.gene-glyph .vv-clinvar-mark-stacked.is-hovered .vv-clinvar-ring,
+.gene-glyph .vv-clinvar-mark-stacked:hover .vv-clinvar-ring,
+.gene-glyph .vv-clinvar-mark-stacked:focus-visible .vv-clinvar-ring {
+  opacity: 0.7;
+}

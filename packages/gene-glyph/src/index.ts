@@ -125,6 +125,7 @@ export {
   clinVarTrack,
   clusterClinVar,
   placeClinVarRecords,
+  packStackedClinVar,
   parseClinVarSignificance,
   clinVarSignificanceColor,
   humanSignificance,
@@ -136,7 +137,9 @@ export type {
   ClinVarRecord,
   ClinVarSignificance,
   ClinVarCluster,
+  ClinVarStackLayout,
   PlacedClinVar,
+  PlacedClinVarStacked,
 } from './tracks/clinvar-track.js';
 export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';

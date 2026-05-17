@@ -3,6 +3,7 @@
  * only used by `clinVarTrack` below; HMR doesn't apply to the track factory's
  * own exports so the rule's caution doesn't fit here. */
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import {
   isDataSource,
   type CoordinateMapper,
@@ -55,7 +56,9 @@ export type ClinVarSource =
 export interface ClinVarTrackConfig {
   id?: string;
   source: ClinVarSource;
-  /** Total track height in pixels. */
+  /** Total track height in pixels (cluster style only). Ignored when
+   *  {@link stackedVariantStyle} is set — stacked render uses
+   *  `heightPolicy: 'data-dependent'` and grows to fit packed lanes. */
   height?: number;
   /** Pixel threshold for density clustering. Records whose live screen-x
    *  positions are within this distance are merged into one cluster mark.
@@ -64,10 +67,29 @@ export interface ClinVarTrackConfig {
   clusterPx?: number;
   /** Radius of the cluster mark. */
   markRadius?: number;
+  /** Opt in to the stacked-symbol render (Slice 27). When supplied the track
+   *  suppresses density-clustering — every record renders as its own
+   *  pure-symbol glyph in a packed-lane column. */
+  stackedVariantStyle?: SymbolEncoding<ClinVarRecord>;
+  /** Per-row pitch for the stacked render. Defaults to `2 * markRadius + 2`. */
+  stackLanePx?: number;
 }
 
 export interface ClinVarTrackData {
   records: ClinVarRecord[];
+  /** Pre-computed stacked layout — populated only when the track was
+   *  constructed with a `stackedVariantStyle`. */
+  stackLayout?: ClinVarStackLayout;
+}
+
+export interface PlacedClinVarStacked extends PlacedClinVar {
+  row: number;
+  laneKey: string;
+}
+
+export interface ClinVarStackLayout {
+  rowCount: number;
+  placements: PlacedClinVarStacked[];
 }
 
 export interface PlacedClinVar {
@@ -230,6 +252,60 @@ export function clusterClinVar(
   return out;
 }
 
+/** Pack ClinVar placements into stacked rows. Mirrors `packStackedVariants`
+ *  for the variant track: group by `encoding.lane()`, sort each group by
+ *  baseline-x, assign each record to the lowest local row whose previous
+ *  occupant's right edge has cleared. Strict lane separation — items with
+ *  different lane keys never share a row. */
+export function packStackedClinVar(
+  placed: PlacedClinVar[],
+  encoding: SymbolEncoding<ClinVarRecord>,
+  markRadius: number,
+): ClinVarStackLayout {
+  const groups = new Map<string, PlacedClinVar[]>();
+  const groupOrder: string[] = [];
+  for (const p of placed) {
+    const key = encoding.lane?.(p.record) ?? '_';
+    let arr = groups.get(key);
+    if (!arr) {
+      arr = [];
+      groups.set(key, arr);
+      groupOrder.push(key);
+    }
+    arr.push(p);
+  }
+
+  const placements: PlacedClinVarStacked[] = [];
+  let rowOffset = 0;
+  for (const key of groupOrder) {
+    const items = groups.get(key)!.slice().sort((a, b) => a.baselineX - b.baselineX);
+    const laneEnds: number[] = [];
+    let localMaxLane = -1;
+    for (const it of items) {
+      const r = encoding.radius?.(it.record) ?? markRadius;
+      const xStart = it.baselineX - r;
+      const xEnd = it.baselineX + r;
+      let lane = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (laneEnds[i]! <= xStart) {
+          lane = i;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(xEnd);
+      } else {
+        laneEnds[lane] = xEnd;
+      }
+      if (lane > localMaxLane) localMaxLane = lane;
+      placements.push({ ...it, row: rowOffset + lane, laneKey: key });
+    }
+    rowOffset += localMaxLane + 1;
+  }
+  return { rowCount: rowOffset, placements };
+}
+
 export function clinVarTrack(
   config: ClinVarTrackConfig,
 ): Track<ClinVarTrackConfig, ClinVarTrackData> {
@@ -238,24 +314,54 @@ export function clinVarTrack(
   const clusterPx = config.clusterPx ?? DEFAULT_CLUSTER_PX;
   const markRadius = config.markRadius ?? DEFAULT_MARK_RADIUS;
   const source = config.source;
+  const stackedEncoding = config.stackedVariantStyle;
+  const stackLanePx = config.stackLanePx ?? 2 * markRadius + 2;
+  const stackTopPad = 2;
+  const stackBottomPad = 2;
 
   return {
     id,
     coordSystem: 'genomic',
-    heightPolicy: 'fixed',
+    heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 
-    async load({ viewport, signal }: TrackLoadArgs): Promise<ClinVarTrackData> {
+    async load({ viewport, mapper, signal }: TrackLoadArgs): Promise<ClinVarTrackData> {
       const records = isDataSource<ViewportQuery, ClinVarRecord[]>(source)
         ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
         : source.slice();
-      return { records };
+      let stackLayout: ClinVarStackLayout | undefined;
+      if (stackedEncoding) {
+        const { placed } = placeClinVarRecords(records, viewport, mapper);
+        stackLayout = packStackedClinVar(placed, stackedEncoding, markRadius);
+      }
+      return { records, stackLayout };
     },
 
-    height(_args: TrackHeightArgs<ClinVarTrackData>): TrackHeightResult {
+    height({ data }: TrackHeightArgs<ClinVarTrackData>): TrackHeightResult {
+      if (stackedEncoding) {
+        const rows = data?.stackLayout?.rowCount ?? 0;
+        const px = Math.max(
+          trackHeight,
+          stackTopPad + rows * stackLanePx + stackBottomPad,
+        );
+        return { px, didTruncate: false };
+      }
       return { px: trackHeight, didTruncate: false };
     },
 
     render(args: TrackRenderArgs<ClinVarTrackData>): ReactNode {
+      if (stackedEncoding) {
+        return (
+          <ClinVarStackedBody
+            key={id}
+            trackId={id}
+            encoding={stackedEncoding}
+            markRadius={markRadius}
+            laneHeight={stackLanePx}
+            topPad={stackTopPad}
+            args={args}
+          />
+        );
+      }
       return (
         <ClinVarBody
           key={id}
@@ -285,9 +391,147 @@ export function clinVarTrack(
     },
 
     toJSON() {
-      return { id, source, height: trackHeight, clusterPx, markRadius };
+      return {
+        id,
+        source,
+        height: trackHeight,
+        clusterPx,
+        markRadius,
+        stackedVariantStyle: stackedEncoding,
+        stackLanePx,
+      };
     },
   };
+}
+
+interface ClinVarStackedBodyProps {
+  trackId: string;
+  encoding: SymbolEncoding<ClinVarRecord>;
+  markRadius: number;
+  laneHeight: number;
+  topPad: number;
+  args: TrackRenderArgs<ClinVarTrackData>;
+}
+
+function ClinVarStackedBody({
+  trackId,
+  encoding,
+  markRadius,
+  laneHeight,
+  topPad,
+  args,
+}: ClinVarStackedBodyProps): ReactNode {
+  const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } =
+    args;
+  const layout =
+    data.stackLayout ??
+    packStackedClinVar(
+      placeClinVarRecords(data.records, viewport, mapper).placed,
+      encoding,
+      markRadius,
+    );
+
+  const byExon = new Map<number, PlacedClinVarStacked[]>();
+  for (const p of layout.placements) {
+    let arr = byExon.get(p.exonIdx);
+    if (!arr) {
+      arr = [];
+      byExon.set(p.exonIdx, arr);
+    }
+    arr.push(p);
+  }
+
+  const baseline = viewport.baselineGeometry();
+  const exonByIdx = new Map<number, ExonBaseline>();
+  for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
+
+  const groups: ReactNode[] = [];
+  for (const [exonIdx, placements] of byExon) {
+    const exon = exonByIdx.get(exonIdx);
+    if (!exon) continue;
+    const counterScale = `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`;
+    const inner = placements.map((p) => {
+      const r = encoding.radius?.(p.record) ?? markRadius;
+      const cy = rect.yTop + topPad + r + p.row * laneHeight;
+      const shape = encoding.shape(p.record);
+      const fill = encoding.fill(p.record);
+      const stroke = encoding.color?.(p.record) ?? fill;
+      const d = glyphPath(shape, r);
+      const isHovered = interaction.hoveredFeatureId === p.record.id;
+      const isSelected = interaction.selectedFeatureIds.has(p.record.id);
+      const localX = p.baselineX - exon.xStart;
+      const cls = [
+        'vv-clinvar-mark',
+        'vv-clinvar-mark-stacked',
+        isHovered && 'is-hovered',
+        isSelected && 'is-selected',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      return (
+        <g
+          key={p.record.id}
+          className={cls}
+          data-vv-feature-id={p.record.id}
+          data-vv-significance={p.record.significance}
+          data-vv-stack-row={p.row}
+          data-vv-stack-lane={p.laneKey}
+          data-vv-shape={shape}
+          transform={`translate(${localX} 0)`}
+          onMouseEnter={onFeatureHover ? () => onFeatureHover(p.record.id) : undefined}
+          onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+          onClick={onFeatureClick ? () => onFeatureClick(p.record.id) : undefined}
+          style={{ cursor: 'pointer' }}
+          tabIndex={0}
+          role="button"
+          aria-label={p.record.label}
+        >
+          <g
+            className="vv-clinvar-shape"
+            style={{ transform: counterScale, transformOrigin: '0 0' }}
+          >
+            <g transform={`translate(0 ${cy})`}>
+              <circle
+                className="vv-clinvar-ring"
+                cx={0}
+                cy={0}
+                r={r + 3}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={1.5}
+                vectorEffect="non-scaling-stroke"
+              />
+              <path
+                className="vv-clinvar-glyph"
+                d={d}
+                fill={fill}
+                stroke="var(--vv-clinvar-dot-stroke, #ffffff)"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          </g>
+        </g>
+      );
+    });
+    groups.push(
+      painter.placeInExonGroup(
+        exonIdx,
+        <Fragment key={`clinvar-stacked-exon-${exonIdx}`}>{inner}</Fragment>,
+      ),
+    );
+  }
+
+  return (
+    <g
+      className="vv-clinvar-track vv-clinvar-track-stacked"
+      data-vv-track-id={trackId}
+      data-vv-stack-rows={layout.rowCount}
+      key={trackId}
+    >
+      {groups}
+    </g>
+  );
 }
 
 interface ClinVarBodyProps {

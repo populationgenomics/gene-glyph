@@ -7,10 +7,12 @@ import { ViewportController } from '../viewport.js';
 import {
   clinVarTrack,
   clusterClinVar,
+  packStackedClinVar,
   parseClinVarSignificance,
   placeClinVarRecords,
   type ClinVarRecord,
 } from './clinvar-track.js';
+import { defaultClinVarSymbolEncoding } from '../symbol-encoding.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -241,5 +243,56 @@ describe('clinVarTrack', () => {
     const data = { records };
     expect(t.resolveFeature!(data, 'cv-1')).toMatchObject({ id: 'cv-1' });
     expect(t.featureLabel!(data, 'cv-1')).toContain('Pathogenic');
+  });
+
+  it('stacked render suppresses density clustering and emits one glyph per record', async () => {
+    const t = clinVarTrack({
+      source: records,
+      stackedVariantStyle: defaultClinVarSymbolEncoding,
+    });
+    expect(t.heightPolicy).toBe('data-dependent');
+    const { mapper, viewport, painter, interaction } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    expect(data.stackLayout).toBeDefined();
+    // 4 placeable records, 2 intronic/oob — so 4 glyphs.
+    expect(data.stackLayout!.placements.length).toBe(4);
+    const Probe = () => (
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 80 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>
+    );
+    const { container } = render(<Probe />);
+    const glyphs = container.querySelectorAll('.vv-clinvar-mark-stacked');
+    expect(glyphs).toHaveLength(4);
+    // No cluster diamonds: stacking suppresses density-clustering by design.
+    const clusters = container.querySelectorAll('.vv-clinvar-mark.is-cluster');
+    expect(clusters).toHaveLength(0);
+    // Popover is part of the cluster path and shouldn't render in stacked mode.
+    const popover = container.querySelector('[data-testid="clinvar-popover"]');
+    expect(popover).toBeNull();
+  });
+
+  it('packStackedClinVar groups by significance lane', () => {
+    const { viewport, mapper } = setup();
+    const { placed } = placeClinVarRecords(records, viewport, mapper);
+    const layout = packStackedClinVar(placed, defaultClinVarSymbolEncoding, 5);
+    expect(layout.rowCount).toBeGreaterThan(0);
+    const lanes = new Set(layout.placements.map((p) => p.laneKey));
+    // Four placeable records map to four distinct lane keys: path, vus,
+    // benign (cv-3 likely_benign → benign), benign (cv-4 benign → benign).
+    // So we expect 3 lane keys: path, vus, benign.
+    expect(lanes).toEqual(new Set(['path', 'vus', 'benign']));
   });
 });
