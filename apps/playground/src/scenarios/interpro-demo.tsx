@@ -19,10 +19,15 @@ export function InterProDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-interpro">
       <h2 id="scenario-interpro">InterPro — TP53</h2>
       <p className="scenario-blurb">
-        Slice 6 acceptance bar: InterPro lanes render at functional parity
-        with lit-manager. The group label appears in the left gutter, vertically
-        centred on the group&apos;s y-extent; overlapping family entries
-        lane-pack into two rows without crashing labels.
+        InterPro lanes render in the <code>minimal</code> style by default —
+        a thin coloured line per domain with end-cap ticks and a label
+        left-aligned to the domain&apos;s start. Pfam stays rect-shaped, so
+        InterPro reads as secondary annotation. The left gutter renders the
+        nesting structure: the <em>InterPro</em> group label sits at the
+        top of the group&apos;s y-extent, with the entry-type sub-track
+        labels (Family, Domain, Repeat, Homologous SF) indented below.
+        Overlapping family entries still lane-pack into two rows without
+        crashing labels.
       </p>
       <GeneGlyph
         transcript={TP53_TRANSCRIPT}
@@ -30,17 +35,45 @@ export function InterProDemoScenario() {
         tracks={[exonTrack({}), interProTrack({})]}
         trackHeightBudget={220}
       >
-        <GeneGlyph.LeftGutter width={88}>
+        <GeneGlyph.LeftGutter width={120}>
           {(item: GutterItem) => {
-            // Only render the group label; the slice's stated visual is the
-            // italic group label vertically centred on the group's y-extent.
-            // Sub-track entry-type chrome lands when DefaultTrackChevron
-            // arrives in slice 18 — until then we leave the lanes unlabelled
-            // in the gutter so there's nothing for the group label to
-            // collide with.
-            if (item.kind !== 'group') return null;
+            // Multi-level gutter: groups render their label in italic
+            // bold; the entry-type sub-tracks render their per-track
+            // `label` indented underneath to make the nesting structure
+            // visible. Sub-tracks without a label (the exon track, etc.)
+            // are skipped — the gutter row is reserved by the layout
+            // engine regardless, so the figure rows stay aligned.
+            if (item.kind === 'group') {
+              // Top-align the group label so it sits at the *top* of the
+              // group's y-extent. The sub-track rows are centred within
+              // their own smaller rects, so without this override the
+              // group label (centred on the whole group rect) collides
+              // vertically with whichever sub-track row happens to sit at
+              // the group's midline.
+              return (
+                <span
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingTop: 2,
+                    fontWeight: 700,
+                    fontStyle: 'italic',
+                  }}
+                  title={item.label}
+                >
+                  {item.label}
+                </span>
+              );
+            }
+            if (!item.label) return null;
             return (
-              <span style={{ fontWeight: 600 }} title={item.label}>
+              <span
+                style={{
+                  paddingLeft: 14,
+                  fontSize: '0.8rem',
+                  color: '#64748b',
+                }}
+                title={item.label}
+              >
                 {item.label}
               </span>
             );
