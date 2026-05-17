@@ -9,6 +9,7 @@ import { InterProDemoScenario } from './scenarios/interpro-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
 import { PfamDemoScenario } from './scenarios/pfam-demo.js';
 import { SlotSystemScenario } from './scenarios/slot-system.js';
+import { StackedVariantsDemoScenario } from './scenarios/stacked-variants-demo.js';
 import { TooltipDemoScenario } from './scenarios/tooltip-demo.js';
 
 export function App() {
@@ -36,6 +37,7 @@ export function App() {
       <DefaultChromeScenario />
       <ExportDemoScenario />
       <ClinVarDemoScenario />
+      <StackedVariantsDemoScenario />
       <PaperReportScenario />
       <PfamDemoScenario />
       <InterProDemoScenario />
