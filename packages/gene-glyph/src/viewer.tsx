@@ -494,12 +494,31 @@ function GeneGlyphInner(
     onTrackStateChangeRef.current?.(id, next);
   }, []);
 
+  // Stable id-signature of the track stack. The `tracks` prop is often an
+  // inline array literal (`tracks={[exonTrack({}), ...]}`) on the host
+  // side; its reference changes on every parent re-render even when the
+  // logical track list is identical. Gating the load / cleanup effects
+  // on the id-signature instead of `flatTracks` identity prevents an
+  // unbounded re-render loop where every parent re-render aborts and
+  // re-fires every track's load, and each load's `setTrackData` triggers
+  // another re-render. The actual `flatTracks` array is read through a
+  // ref inside the effect so the latest track instances are still in
+  // play. (Recently surfaced when modal mode-switches plus a host rAF
+  // poll combined to trip React's "Maximum update depth exceeded"
+  // safeguard — Slice 26 follow-up.)
+  const trackIdsKey = useMemo(
+    () => flatTracks.map((t) => t.id).join('|'),
+    [flatTracks],
+  );
+  const flatTracksRef = useRef(flatTracks);
+  flatTracksRef.current = flatTracks;
+
   // Drop state for tracks that were removed from the stack so stale entries
   // don't linger across track-list edits. setState calls are gated by an
   // actual diff so the effect is a no-op when the track list is unchanged
   // (which is the common case and what the lint rule is concerned about).
   useEffect(() => {
-    const live = new Set(flatTracks.map((t) => t.id));
+    const live = new Set(flatTracksRef.current.map((t) => t.id));
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTrackData((prev) => {
       let changed = false;
@@ -517,7 +536,7 @@ function GeneGlyphInner(
     for (const [id, ac] of controllers) {
       if (!live.has(id)) { ac.abort(); controllers.delete(id); }
     }
-  }, [flatTracks]);
+  }, [trackIdsKey]);
 
   const loadTrack = useCallback(
     (t: Track) => {
@@ -558,21 +577,21 @@ function GeneGlyphInner(
     [mapper, protein, setTrackState, viewport],
   );
 
-  // Identity-change loads: when the track list / viewport instance / mapper /
-  // protein changes, kick every track immediately (no debounce). This is the
-  // "first paint" path and the path used by hosts swapping the transcript.
-  // `loadTrack` sets state synchronously to flag the track as loading; the
-  // alternative (queueing the kick onto a microtask) would briefly paint
-  // an empty-data frame, which we don't want.
+  // Identity-change loads: when the set of track ids / viewport instance /
+  // mapper / protein changes, kick every track immediately (no debounce).
+  // This is the "first paint" path and the path used by hosts swapping the
+  // transcript. Gated on `trackIdsKey` so inline `tracks` arrays on the host
+  // side don't loop the load through every re-render (see the comment on
+  // `trackIdsKey` for the surfacing scenario).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    for (const t of flatTracks) loadTrack(t);
+    for (const t of flatTracksRef.current) loadTrack(t);
     const controllers = trackControllersRef.current;
     return () => {
       for (const ac of controllers.values()) ac.abort();
       controllers.clear();
     };
-  }, [flatTracks, loadTrack]);
+  }, [trackIdsKey, loadTrack]);
 
   // Range/mode-change debounce. Marks the figure stale (CSS desaturates
   // feature fills) on every change, then once the viewport has been quiet for
@@ -589,10 +608,10 @@ function GeneGlyphInner(
     setStale(true);
     const timer = setTimeout(() => {
       setStale(false);
-      for (const t of flatTracks) loadTrack(t);
+      for (const t of flatTracksRef.current) loadTrack(t);
     }, Math.max(0, loadDebounceMs));
     return () => clearTimeout(timer);
-  }, [rangeKey, flatTracks, loadDebounceMs, loadTrack]);
+  }, [rangeKey, trackIdsKey, loadDebounceMs, loadTrack]);
 
   const layout = useMemo(
     () =>
