@@ -6,6 +6,7 @@ import { DefaultChromeScenario } from './scenarios/default-chrome.js';
 import { ExportDemoScenario } from './scenarios/export-demo.js';
 import { InteractionDemoScenario } from './scenarios/interaction-demo.js';
 import { InterProDemoScenario } from './scenarios/interpro-demo.js';
+import { OverviewTrackDemoScenario } from './scenarios/overview-track-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
 import { PfamDemoScenario } from './scenarios/pfam-demo.js';
 import { SlotSystemScenario } from './scenarios/slot-system.js';
@@ -35,6 +36,7 @@ export function App() {
       <TooltipDemoScenario />
       <AsyncDataSourceScenario />
       <DefaultChromeScenario />
+      <OverviewTrackDemoScenario />
       <ExportDemoScenario />
       <ClinVarDemoScenario />
       <StackedVariantsDemoScenario />
