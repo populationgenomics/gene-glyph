@@ -351,12 +351,25 @@ function OverviewTrackImpl({
     return last.cdsEnd + (x - sLast.xEnd) / Math.max(1e-6, scaledPxPerBp);
   };
 
-  // Bounds rectangle: the figure's visible CDS range mapped through
-  // the scaled minimap coord system. Because the scale mirrors the
-  // figure's gap-fix proportions, the window's edges line up with the
-  // figure's gene-body edges at any zoom.
-  const xLoRaw = cdsToMinimapX(liveRange[0]);
-  const xHiRaw = cdsToMinimapX(liveRange[1]);
+  // Bounds rectangle: drive the window endpoints off the figure's
+  // *actually-visible* baseline range (screenToBaselineX(0..width))
+  // rather than `liveRange[0..1]`. The figure's publish formula applies
+  // a "gaps don't scale" correction proportional to all preceding gaps
+  // (not just those within the visible range), so `cdsToBaselineX(
+  // range[0])` is not where screen-x = 0 actually sits when the user
+  // has panned away from the gene's 5' end. Going through
+  // `screenToBaselineX` + `baselineXToRuler` lands the window exactly
+  // where the figure puts its leftmost / rightmost rendered content,
+  // and mapping those CDS positions through the scaled minimap frame
+  // keeps the alignment correct visually.
+  const figureLeftCds = viewport.baselineXToRuler(
+    viewport.screenToBaselineX(0),
+  );
+  const figureRightCds = viewport.baselineXToRuler(
+    viewport.screenToBaselineX(viewport.width),
+  );
+  const xLoRaw = cdsToMinimapX(figureLeftCds);
+  const xHiRaw = cdsToMinimapX(figureRightCds);
   const xLo = Math.max(0, Math.min(width, Math.min(xLoRaw, xHiRaw)));
   const xHi = Math.max(0, Math.min(width, Math.max(xLoRaw, xHiRaw)));
   const windowX = xLo;
