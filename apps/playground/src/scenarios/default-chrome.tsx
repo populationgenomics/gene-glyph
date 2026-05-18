@@ -130,8 +130,29 @@ export function DefaultChromeScenario() {
         tracks={tracks}
         trackHeightBudget={260}
       >
-        <GeneGlyph.LeftGutter width={140}>
+        <GeneGlyph.LeftGutter width={160}>
           {(item: GutterItem) => {
+            // Groups: anchor the chevron+label to the *top* of the group's
+            // y-extent so it reads as a header above its sub-tracks
+            // instead of sitting on top of whichever sub-track happens
+            // to fall on the group's vertical midline.
+            if (item.kind === 'group' && collapsibleTopLevel.has(item.id)) {
+              return (
+                <span
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingTop: 1,
+                  }}
+                >
+                  <DefaultTrackChevron
+                    item={item}
+                    collapsed={collapsed.has(item.id)}
+                    onToggle={() => toggle(item.id)}
+                    label={labels[item.id]}
+                  />
+                </span>
+              );
+            }
             if (collapsibleTopLevel.has(item.id)) {
               return (
                 <DefaultTrackChevron
@@ -142,10 +163,33 @@ export function DefaultChromeScenario() {
                 />
               );
             }
-            const label = item.label ?? item.id;
+            // Sub-track of a group (e.g. interpro-family). Render with a
+            // tree-style indent + branch glyph so the nesting reads at
+            // a glance. We detect "this is a sub-track" by the presence
+            // of a `label` on an `item.kind === 'track'` row — only
+            // entry-type sub-tracks carry one, the exon track row has
+            // no label and falls through to the catch-all branch.
+            const label = item.label;
+            if (item.kind === 'track' && label) {
+              return (
+                <span
+                  style={{
+                    paddingLeft: 18,
+                    fontSize: '0.8rem',
+                    color: '#64748b',
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  }}
+                  title={label}
+                >
+                  └─ {label}
+                </span>
+              );
+            }
+            const text = label ?? item.id;
             return (
-              <span className="vv-default-chevron-label" title={label}>
-                {label}
+              <span className="vv-default-chevron-label" title={text}>
+                {text}
               </span>
             );
           }}
