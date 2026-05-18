@@ -49,10 +49,6 @@ jobs:
           PLAYGROUND_BASE: /gene-glyph/
 
       - uses: actions/configure-pages@v5
-        with:
-          # Programmatically enable Pages on the repo if it isn't
-          # already. Subsequent runs are a no-op.
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
