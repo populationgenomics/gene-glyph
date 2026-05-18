@@ -189,24 +189,28 @@ export function DefaultChromeScenario() {
             // touch and read as one continuous line.
             const label = item.label;
             if (item.kind === 'track' && label) {
+              // The first sub-track row shares its top with the group row,
+              // so its content must clear the chevron+label area above.
+              // Push the *whole wrapper* down — not just the bar — because
+              // the label span (full row height) would otherwise intercept
+              // pointer events at the chevron's y-range and swallow clicks.
+              // Non-first sub-tracks fill the row so adjacent bars touch
+              // and read as one continuous line.
               const isFirst = firstSubTrackIds.has(item.id);
               return (
                 <span
                   style={{
                     display: 'flex',
                     alignItems: 'stretch',
-                    height: '100%',
+                    height: isFirst ? 'calc(100% - 20px)' : '100%',
+                    marginTop: isFirst ? 20 : 0,
                     marginLeft: 6,
                   }}
                   title={label}
                 >
                   <span
                     aria-hidden
-                    style={{
-                      width: 3,
-                      background: '#cbd5e1',
-                      marginTop: isFirst ? 20 : 0,
-                    }}
+                    style={{ width: 3, background: '#cbd5e1' }}
                   />
                   <span
                     style={{
