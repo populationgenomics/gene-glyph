@@ -109,15 +109,24 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // baseline gap-frame [0, baseline_gap_width]. Translate + scale on the
       // wrapper handle the live screen position; the polyline geometry never
       // changes after first render.
+      //
+      // Inset by `halfSlot` on each side so the polyline tucks into the
+      // visible gap between the two exon ribbons — without the inset, the
+      // donor / acceptor flanks would draw under the surrounding exon
+      // rectangles (which now overhang the baseline gap by `halfSlot` on
+      // each side per the half-slot ribbon extension above).
       for (const gap of geom.gaps) {
-        if (gap.width <= 0) continue;
-        const flank = Math.min(flankPx, gap.width / 3);
-        const donorEnd = flank;
-        const acceptorStart = gap.width - flank;
-        const peakX = gap.width / 2;
+        const visibleGap = gap.width - halfSlot * 2;
+        if (visibleGap <= 0) continue;
+        const flank = Math.min(flankPx, visibleGap / 3);
+        const left = halfSlot;
+        const right = gap.width - halfSlot;
+        const donorEnd = left + flank;
+        const acceptorStart = right - flank;
+        const peakX = (left + right) / 2;
         const peakY = intronY - chevronLift;
         const stroke = painter.color('vv-color-intron-line', '#475569');
-        const points = `0,${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${gap.width},${intronY}`;
+        const points = `${left},${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${right},${intronY}`;
         intronDecorations.push(
           painter.placeInInterExon(
             gap.exonIdxA,
