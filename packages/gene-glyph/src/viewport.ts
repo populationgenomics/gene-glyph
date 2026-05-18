@@ -1050,14 +1050,26 @@ interface ExonLayout {
  *
  *    1. S_lo lands at screen-x = 0
  *    2. S_hi lands at screen-x = width
- *    3. every visible inter-exon gap occupies exactly `geom.gapPx` of screen
+ *    3. in cds-with-introns mode, every visible inter-exon gap occupies
+ *       exactly `geom.gapPx` of screen (the gap *content* — dashed-intron
+ *       polyline + a small breathing room — is the same screen-width
+ *       regardless of zoom, so Pfam segments in adjacent exons stay
+ *       visually close at deep zoom).
  *
- *  Naive `zoom = width / (S_hi − S_lo)` violates (3) — gaps shouldn't scale
- *  with zoom — so we partition the visible baseline into "exon baseline"
- *  (which scales) and "gap baseline" (which doesn't), reserve gap pixels in
- *  screen-space, and solve for the exon scale that makes the exon content
- *  fill the remainder. Walks left + right from the pivot exon so the
- *  positions are stable as the user pans across an intron. */
+ *  In spliced / protein modes the gap is conceptually a single "missing"
+ *  bp slot (or zero in protein) and scales with the surrounding exon
+ *  content — so adjacent bp letters across the intron stay one bp-width
+ *  apart at deep zoom rather than collapsing into a single pixel. The
+ *  `geom.gapPx === 0` sentinel distinguishes the two regimes; the
+ *  baseline already records gap widths (`gap.width`) consistently.
+ *
+ *  Naive `zoom = width / (S_hi − S_lo)` violates (3) — gaps don't scale
+ *  in with-introns mode — so we partition the visible baseline into
+ *  "exon baseline" (always scales) + "fixed gap baseline" (only in
+ *  with-introns mode), reserve gap pixels in screen-space, and solve
+ *  for the exon scale that makes the exon content fill the remainder.
+ *  Walks left + right from the pivot exon so the positions are stable
+ *  as the user pans across an intron. */
 function computeExonLayout(
   geom: BaselineGeometry,
   S_lo: number,
@@ -1068,16 +1080,27 @@ function computeExonLayout(
   const out = new Array<number>(exons.length).fill(0);
   if (exons.length === 0) return { exonScale: 1, exonCurrentX: out };
 
-  // How much of `[S_lo, S_hi]` is exon vs gap? Walk gaps; whatever isn't
-  // gap is exon (including padding before/after the first/last exon).
-  let visibleGapBaseline = 0;
-  for (const gap of geom.gaps) {
-    const lo = Math.max(gap.xStart, S_lo);
-    const hi = Math.min(gap.xEnd, S_hi);
-    if (hi > lo) visibleGapBaseline += hi - lo;
+  // Fixed-width gaps only matter when `geom.gapPx > 0` (cds-with-introns).
+  // In spliced / protein, gaps either don't exist (protein) or live in the
+  // same linear bp ruler as the surrounding exons (spliced) — they scale
+  // with `exonScale` and don't carve out fixed screen pixels.
+  const gapsScale = geom.gapPx === 0;
+  let visibleFixedGapBaseline = 0;
+  if (!gapsScale) {
+    for (const gap of geom.gaps) {
+      const lo = Math.max(gap.xStart, S_lo);
+      const hi = Math.min(gap.xEnd, S_hi);
+      if (hi > lo) visibleFixedGapBaseline += hi - lo;
+    }
   }
-  const visibleExonBaseline = Math.max(1e-9, S_hi - S_lo - visibleGapBaseline);
-  const exonScale = Math.max(1e-9, (width - visibleGapBaseline) / visibleExonBaseline);
+  const visibleScalingBaseline = Math.max(
+    1e-9,
+    S_hi - S_lo - visibleFixedGapBaseline,
+  );
+  const exonScale = Math.max(
+    1e-9,
+    (width - visibleFixedGapBaseline) / visibleScalingBaseline,
+  );
 
   // Pivot exon + its anchoring currentX. If S_lo is inside an exon, anchor
   // S_lo at screen-x = 0; if S_lo is inside a gap, the gap content fills
@@ -1089,28 +1112,32 @@ function computeExonLayout(
   if (S_lo >= pivotEb.xStart) {
     pivotCurrentX = -(S_lo - pivotEb.xStart) * exonScale;
   } else {
-    // S_lo is upstream of the pivot exon — either in the gap directly
-    // before it, or in the padding zone before exon 0. Either way, the
-    // pivot exon's left edge sits at screen-x = (pivotEb.xStart − S_lo);
-    // the gap before the pivot exon, if any, fills that region.
-    pivotCurrentX = pivotEb.xStart - S_lo;
+    // S_lo is upstream of the pivot exon — in the gap directly before it
+    // or in the padding zone before exon 0. The pivot exon's left edge
+    // sits at the remaining gap-or-padding width on screen.
+    const baselineUpstream = pivotEb.xStart - S_lo;
+    pivotCurrentX = gapsScale ? baselineUpstream * exonScale : baselineUpstream;
   }
   out[pivotIdx] = pivotCurrentX;
 
-  // Walk right + left from the pivot. Gaps bridge adjacent exons in screen
-  // at their baseline width (gaps don't scale under zoom). Use the actual
-  // per-gap width — `geom.gapPx` is 0 in spliced / protein modes even when
-  // the inter-exon baseline width is non-zero (cds-spliced uses one
-  // pxPerBp per gap, swallowed into the linear bp ruler).
+  // Walk right + left from the pivot. Per-gap step matches the mode:
+  // unscaled `gap.width` in with-introns (fixed inter-exon breathing room
+  // regardless of zoom), `gap.width * exonScale` in spliced (gap is one
+  // bp slot in the linear ruler and scales with the exons).
+  const gapStep = (gapIdx: number): number => {
+    const g = geom.gaps[gapIdx];
+    if (!g) return 0;
+    return gapsScale ? g.width * exonScale : g.width;
+  };
   let cursor = pivotCurrentX + pivotEb.width * exonScale;
   for (let i = pivotIdx + 1; i < exons.length; i++) {
-    cursor += geom.gaps[i - 1]?.width ?? 0;
+    cursor += gapStep(i - 1);
     out[i] = cursor;
     cursor += exons[i]!.width * exonScale;
   }
   cursor = pivotCurrentX;
   for (let i = pivotIdx - 1; i >= 0; i--) {
-    cursor -= geom.gaps[i]?.width ?? 0;
+    cursor -= gapStep(i);
     cursor -= exons[i]!.width * exonScale;
     out[i] = cursor;
   }
