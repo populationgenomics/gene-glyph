@@ -645,7 +645,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
-### Slice 29 — Nucleotide + AA sequence tracks (zoom-gated)
+### Slice 29 — Nucleotide + AA sequence tracks (zoom-gated) — **shipped**
 
 **Motivation:**
 At deep zoom (one bp ≳ 8 px / one aa ≳ 14 px) the figure has enough room
