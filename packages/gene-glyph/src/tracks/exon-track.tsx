@@ -75,6 +75,14 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // the active range. The wrapping `<g>` applies the live translate +
       // scale; the figure SVG's `overflow: hidden` clips edge exons that
       // slide off-figure during pan / zoom.
+      //
+      // Extend the ribbon visually by half a bp-slot on each side so per-bp
+      // markers (nt/aa letters, variant lollipops, ruler ticks) sit *inside*
+      // the ribbon at the 5′/3′ exon boundaries. `cdsToBaselineX` returns the
+      // bp's centre point — without the half-slot pad, the bp at cdsStart /
+      // cdsEnd anchors at the ribbon's hard edge and its glyph hangs into the
+      // padding zone or gap.
+      const halfSlot = geom.pxPerBp * 0.5;
       for (const eb of geom.exons) {
         exonRects.push(
           painter.placeInExonGroup(
@@ -82,9 +90,9 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
             <Fragment key={`exon-${eb.exonIdx}`}>
               {painter.drawRect({
                 key: `exon-rect-${eb.exonIdx}`,
-                x: 0,
+                x: -halfSlot,
                 y: exonY,
-                width: eb.width,
+                width: eb.width + halfSlot * 2,
                 height: exonH,
                 fill: painter.color('vv-color-exon-fill', '#94a3b8'),
                 stroke: painter.color('vv-color-exon-stroke', '#475569'),
