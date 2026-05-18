@@ -25,6 +25,23 @@ test.describe('Slice 29 — nucleotide + aa sequence tracks', () => {
     await expect(ntLetters.first()).toBeVisible();
     await expect(aaLetters.first()).toBeVisible();
 
+    // …and they actually land inside the figure's visible viewport.
+    // `toBeVisible` passes on any non-empty bbox; an SVG element whose
+    // CSS-transform places it far off-screen still satisfies it. The
+    // gap-correction bug fixed alongside Slice 31 manifested exactly
+    // that way in `cds-with-introns` mode — pin the assertion here.
+    const onScreen = await s.evaluate((sec) => {
+      const fig = sec.querySelector('svg.vv-figure') as SVGSVGElement | null;
+      const figBox = fig?.getBoundingClientRect();
+      if (!figBox) return { ok: false, why: 'no figure' };
+      const first = sec.querySelector('.vv-nt-letter') as SVGGraphicsElement | null;
+      if (!first) return { ok: false, why: 'no letter' };
+      const r = first.getBoundingClientRect();
+      const relX = r.x - figBox.x;
+      return { ok: relX >= 0 && relX <= figBox.width, relX, figW: figBox.width };
+    });
+    expect(onScreen.ok).toBe(true);
+
     // The R175 letter should be present in the visible aa track.
     const aa175 = s.locator('.vv-aa-letter[data-vv-aa-pos="175"]');
     await expect(aa175).toHaveText('R');

@@ -93,23 +93,22 @@ test.describe('Slice 26 — overview track + minimap', () => {
     // width; cdsToBaselineX(viewerRange[0..1]) in that frame is purely
     // logical CDS-to-display math, decoupled from the figure's
     // gaps-don't-scale transforms. After deep zoom+pan to the 3' end,
-    // the window's left edge should sit in the gene's last ~25% of
-    // baseline-x (the visible CDS range is at the 3' end of TP53).
+    // the window's left edge should sit past the gene's midpoint —
+    // the 4 keyboard zooms (centre-anchored) leave the range near
+    // codon 591, and the 8 ArrowRight pans (0.1·len each) shift it
+    // ~80% of one window-length further along the 3' end.
     const s = await scenario(page);
     const fig = s.locator('svg.vv-figure').first();
     await fig.click({ position: { x: 5, y: 80 } });
+    const win = s.locator('[data-testid="gene-glyph-overview-window"]');
+    const windowXBefore = await win.evaluate((el) => (el as SVGRectElement).x.baseVal.value);
     for (let i = 0; i < 4; i++) await page.keyboard.press('=');
     await page.waitForTimeout(450);
     for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(450);
-    const windowX = await s.evaluate((sectionEl) => {
-      const figSvg = sectionEl.querySelector('svg.vv-figure') as SVGSVGElement;
-      const win = figSvg.querySelector(
-        '[data-testid="gene-glyph-overview-window"]',
-      ) as SVGRectElement;
-      return win.x.baseVal.value;
-    });
-    expect(windowX).toBeGreaterThan(700);
+    const windowX = await win.evaluate((el) => (el as SVGRectElement).x.baseVal.value);
+    expect(windowX).toBeGreaterThan(windowXBefore + 400);
+    expect(windowX).toBeGreaterThan(550);
   });
 
   test('both overviewTrack and DefaultMinimap coexist in this scenario', async ({ page }) => {
