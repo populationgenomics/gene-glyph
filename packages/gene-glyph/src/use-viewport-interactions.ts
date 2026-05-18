@@ -440,22 +440,30 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       switch (key) {
         case '+':
         case '=':
+        case 'w':
+        case 'W':
           e.preventDefault();
           setNoTransition(false);
           zoomAtX(2, viewport.width / 2, 'keyboard');
           return;
         case '-':
         case '_':
+        case 's':
+        case 'S':
           e.preventDefault();
           setNoTransition(false);
           zoomAtX(0.5, viewport.width / 2, 'keyboard');
           return;
         case 'ArrowLeft':
+        case 'a':
+        case 'A':
           e.preventDefault();
           setNoTransition(false);
           applyRange([lo - len * KEYBOARD_PAN_STEP, hi - len * KEYBOARD_PAN_STEP], 'keyboard');
           return;
         case 'ArrowRight':
+        case 'd':
+        case 'D':
           e.preventDefault();
           setNoTransition(false);
           applyRange([lo + len * KEYBOARD_PAN_STEP, hi + len * KEYBOARD_PAN_STEP], 'keyboard');

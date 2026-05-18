@@ -327,6 +327,31 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(ref.current!.getViewportInfo().range).toEqual([1, transcript.cdsLength]);
     });
 
+    it('WASD mirror the arrow + zoom bindings (w/s zoom, a/d pan)', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      const root = container.querySelector<HTMLElement>('[data-testid="gene-glyph"]')!;
+
+      fireEvent.keyDown(root, { key: 'w' });
+      const afterW = ref.current!.getViewportInfo();
+      expect(afterW.zoom).toBeGreaterThan(1);
+
+      fireEvent.keyDown(root, { key: 'd' });
+      const afterD = ref.current!.getViewportInfo();
+      expect(afterD.range[0]).toBeGreaterThan(afterW.range[0]);
+
+      fireEvent.keyDown(root, { key: 'a' });
+      const afterA = ref.current!.getViewportInfo();
+      expect(afterA.range[0]).toBeLessThan(afterD.range[0]);
+
+      fireEvent.keyDown(root, { key: 's' });
+      const afterS = ref.current!.getViewportInfo();
+      expect(afterS.zoom).toBeLessThan(afterA.zoom);
+    });
+
     it('keyboard pan/zoom animates (no vv-no-transition) — Slice 10 baseline geometry keeps children stable across the animation', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
