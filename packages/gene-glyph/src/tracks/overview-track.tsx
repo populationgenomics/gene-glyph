@@ -11,7 +11,10 @@ import {
 import { createSvgPainter } from '../painter/svg-painter.js';
 import { ViewportController } from '../viewport.js';
 import type {
+  BaselineGeometry,
   CoordinateMapper,
+  ExonBaseline,
+  GapBaseline,
   Track,
   TrackHeightArgs,
   TrackHeightResult,
@@ -230,13 +233,130 @@ function OverviewTrackImpl({
     [tracks],
   );
 
-  // Bounds rectangle: pure CDS-range → baseline-x mapping via the
-  // mini-viewport. The mini-viewport is at fit-gene zoom, so its
-  // cdsToBaselineX is the display-space mapping. Clip to [0, width] when
-  // the user has panned into the padding zone past the gene's 5' or 3'
-  // end.
-  const xLoRaw = miniViewport.cdsToBaselineX(liveRange[0]);
-  const xHiRaw = miniViewport.cdsToBaselineX(liveRange[1]);
+  // Mirror the figure's gap-fix scaling in the minimap. The figure
+  // renders exon content at `figureZoom` (live zoom factor — exon
+  // content stretches with zoom, gaps stay at their baseline pixel
+  // width). To keep the minimap's coordinates a linear scaling of the
+  // figure's screen coordinates, compute "what the gene would look
+  // like at this zoom if it spanned the figure's whole width" and
+  // compress that to the minimap's width.
+  const figureBaseGeom = viewport.baselineGeometry();
+  const figureBaselineSpan = Math.max(
+    1e-6,
+    viewport.cdsToBaselineX(liveRange[1]) -
+      viewport.cdsToBaselineX(liveRange[0]),
+  );
+  const figureZoom = viewport.width / figureBaselineSpan;
+  const sumExonBaselineWidth = figureBaseGeom.exons.reduce(
+    (s, e) => s + e.width,
+    0,
+  );
+  const nGaps = Math.max(0, figureBaseGeom.exons.length - 1);
+  const fullWidthAtZoom =
+    sumExonBaselineWidth * figureZoom + nGaps * figureBaseGeom.gapPx;
+  const compress = fullWidthAtZoom > 0 ? width / fullWidthAtZoom : 1;
+  const scaledGapPx = figureBaseGeom.gapPx * compress;
+  const scaledPxPerBp = figureBaseGeom.pxPerBp * figureZoom * compress;
+
+  const scaledExons: ExonBaseline[] = [];
+  const scaledGaps: GapBaseline[] = [];
+  {
+    let cursor = 0;
+    for (let i = 0; i < figureBaseGeom.exons.length; i++) {
+      const e = figureBaseGeom.exons[i]!;
+      const newWidth = e.width * figureZoom * compress;
+      scaledExons.push({
+        exonIdx: i,
+        xStart: cursor,
+        xEnd: cursor + newWidth,
+        width: newWidth,
+      });
+      cursor += newWidth;
+      if (i < figureBaseGeom.exons.length - 1) {
+        scaledGaps.push({
+          exonIdxA: i,
+          exonIdxB: i + 1,
+          xStart: cursor,
+          xEnd: cursor + scaledGapPx,
+          width: scaledGapPx,
+        });
+        cursor += scaledGapPx;
+      }
+    }
+  }
+  const scaledGeom: BaselineGeometry = {
+    exons: scaledExons,
+    gaps: scaledGaps,
+    pxPerBp: scaledPxPerBp,
+    gapPx: scaledGapPx,
+    totalWidth: width,
+  };
+
+  // Coord conversion helpers for the scaled minimap frame. Used by the
+  // window-rect math, drag handler, and click-to-jump.
+  const transcriptExons = mapper.transcript.exons;
+  const cdsToMinimapX = (cPos: number): number => {
+    if (transcriptExons.length === 0) return 0;
+    for (let i = 0; i < transcriptExons.length; i++) {
+      const e = transcriptExons[i]!;
+      const se = scaledExons[i]!;
+      if (cPos >= e.cdsStart && cPos <= e.cdsEnd) {
+        const span = Math.max(1, e.cdsEnd - e.cdsStart);
+        return se.xStart + ((cPos - e.cdsStart) / span) * se.width;
+      }
+      if (i < transcriptExons.length - 1) {
+        const next = transcriptExons[i + 1]!;
+        if (cPos > e.cdsEnd && cPos < next.cdsStart) {
+          const denom = Math.max(1, next.cdsStart - e.cdsEnd);
+          return se.xEnd + ((cPos - e.cdsEnd) / denom) * scaledGapPx;
+        }
+      }
+    }
+    // Extrapolate past the gene's ends linearly along the scaled
+    // px-per-bp so drag-pan into the padding zone still produces
+    // sensible positions.
+    const first = transcriptExons[0]!;
+    const last = transcriptExons[transcriptExons.length - 1]!;
+    const sFirst = scaledExons[0]!;
+    const sLast = scaledExons[scaledExons.length - 1]!;
+    if (cPos < first.cdsStart) {
+      return sFirst.xStart - (first.cdsStart - cPos) * scaledPxPerBp;
+    }
+    return sLast.xEnd + (cPos - last.cdsEnd) * scaledPxPerBp;
+  };
+  const minimapXToCds = (x: number): number => {
+    if (transcriptExons.length === 0) return 0;
+    for (let i = 0; i < transcriptExons.length; i++) {
+      const e = transcriptExons[i]!;
+      const se = scaledExons[i]!;
+      if (x >= se.xStart && x <= se.xEnd) {
+        const span = Math.max(1, e.cdsEnd - e.cdsStart);
+        return e.cdsStart + ((x - se.xStart) / Math.max(1e-6, se.width)) * span;
+      }
+      if (i < transcriptExons.length - 1) {
+        const next = transcriptExons[i + 1]!;
+        if (x > se.xEnd && x < scaledExons[i + 1]!.xStart) {
+          const t = (x - se.xEnd) / Math.max(1e-6, scaledGapPx);
+          return e.cdsEnd + t * (next.cdsStart - e.cdsEnd);
+        }
+      }
+    }
+    const first = transcriptExons[0]!;
+    const last = transcriptExons[transcriptExons.length - 1]!;
+    const sFirst = scaledExons[0]!;
+    const sLast = scaledExons[scaledExons.length - 1]!;
+    if (x < sFirst.xStart) {
+      return first.cdsStart - (sFirst.xStart - x) / Math.max(1e-6, scaledPxPerBp);
+    }
+    return last.cdsEnd + (x - sLast.xEnd) / Math.max(1e-6, scaledPxPerBp);
+  };
+
+  // Bounds rectangle: the figure's visible CDS range mapped through
+  // the scaled minimap coord system. Because the scale mirrors the
+  // figure's gap-fix proportions, the window's edges line up with the
+  // figure's gene-body edges at any zoom.
+  const xLoRaw = cdsToMinimapX(liveRange[0]);
+  const xHiRaw = cdsToMinimapX(liveRange[1]);
   const xLo = Math.max(0, Math.min(width, Math.min(xLoRaw, xHiRaw)));
   const xHi = Math.max(0, Math.min(width, Math.max(xLoRaw, xHiRaw)));
   const windowX = xLo;
@@ -295,23 +415,23 @@ function OverviewTrackImpl({
       if (!v) return;
       const baselineStart = clientToFigureX(drag.startClientX, drag.svg);
       const baselineNow = clientToFigureX(e.clientX, drag.svg);
-      // Map figure-svg-x deltas through the mini-viewport: figure pixel
-      // delta translates to mini-viewport baseline-x delta 1:1 (both
-      // share width). The mini-viewport's baselineXToRuler converts back
-      // to CDS bp.
-      const xLoStart = miniViewport.cdsToBaselineX(drag.startRange[0]);
-      const xHiStart = miniViewport.cdsToBaselineX(drag.startRange[1]);
+      // Drag math runs in the *scaled* minimap frame. Each figure-svg
+      // pixel of cursor movement maps 1:1 to the minimap's px (both
+      // share the figure's width), and `minimapXToCds` reverses the
+      // gap-fix scaling that the geometry uses.
+      const xLoStart = cdsToMinimapX(drag.startRange[0]);
+      const xHiStart = cdsToMinimapX(drag.startRange[1]);
       const dx = baselineNow - baselineStart;
 
       if (drag.kind === 'pan') {
-        const newLo = miniViewport.baselineXToRuler(xLoStart + dx);
-        const newHi = miniViewport.baselineXToRuler(xHiStart + dx);
+        const newLo = minimapXToCds(xLoStart + dx);
+        const newHi = minimapXToCds(xHiStart + dx);
         v.fitTo({ kind: 'range', range: clamp([newLo, newHi]) }, { animate: false });
         return;
       }
       if (drag.kind === 'resize-left') {
         const xLoNew = Math.min(xHiStart - 4, xLoStart + dx);
-        const newLo = miniViewport.baselineXToRuler(xLoNew);
+        const newLo = minimapXToCds(xLoNew);
         const newHi = drag.startRange[1];
         v.fitTo(
           { kind: 'range', range: clamp([Math.min(newLo, newHi - 1), newHi]) },
@@ -321,7 +441,7 @@ function OverviewTrackImpl({
       }
       if (drag.kind === 'resize-right') {
         const xHiNew = Math.max(xLoStart + 4, xHiStart + dx);
-        const newHi = miniViewport.baselineXToRuler(xHiNew);
+        const newHi = minimapXToCds(xHiNew);
         const newLo = drag.startRange[0];
         v.fitTo(
           { kind: 'range', range: clamp([newLo, Math.max(newHi, newLo + 1)]) },
@@ -330,7 +450,7 @@ function OverviewTrackImpl({
         return;
       }
     },
-    [viewerRef, miniViewport, clientToFigureX, clamp],
+    [viewerRef, cdsToMinimapX, minimapXToCds, clientToFigureX, clamp],
   );
 
   const onPointerUp = useCallback((e: PointerEvent) => {
@@ -377,13 +497,36 @@ function OverviewTrackImpl({
       if (!v) return;
       const svg = (e.currentTarget.ownerSVGElement ?? null) as SVGSVGElement | null;
       const x = clientToFigureX(e.clientX, svg);
-      const ruler = miniViewport.baselineXToRuler(x);
+      const ruler = minimapXToCds(x);
       const [lo, hi] = viewport.range;
       const len = hi - lo;
       v.fitTo({ kind: 'range', range: clamp([ruler - len / 2, ruler + len / 2]) });
     },
-    [viewerRef, viewport, miniViewport, clientToFigureX, clamp],
+    [viewerRef, viewport, minimapXToCds, clientToFigureX, clamp],
   );
+
+  // Hand renderMinimap consumers a viewport whose `baselineGeometry()`
+  // returns the *scaled* (zoom-tracking) geometry, not the fit-gene
+  // baseline. exonTrack.renderMinimap reads only `baselineGeometry()`
+  // off the viewport; the Proxy delegates everything else to the
+  // original mini-viewport so tracks that consume other Viewport
+  // methods continue to work. (The scaled geometry's totalWidth is
+  // already the minimap's `width`, so width = miniViewport.width.)
+  const scaledMinimapViewport = useMemo<Viewport>(() => {
+    return new Proxy(miniViewport, {
+      get(target, prop, receiver) {
+        if (prop === 'baselineGeometry') return () => scaledGeom;
+        if (prop === 'cdsToBaselineX') return cdsToMinimapX;
+        if (prop === 'baselineXToRuler') return minimapXToCds;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    // The proxy closes over scaledGeom / coord helpers, which are
+    // recomputed on every render — the memo gates on those identities
+    // so renderMinimap consumers see a fresh geometry per figure-zoom
+    // change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [miniViewport, scaledGeom, cdsToMinimapX, minimapXToCds]);
 
   // Lay rows out top-to-bottom inside the overview's vertical band.
   const contentTop = trackTop + verticalPadding;
@@ -395,8 +538,8 @@ function OverviewTrackImpl({
       data: { ready: true } as unknown,
       width,
       height: rowHeight,
-      viewport: miniViewport,
-      mapper: miniViewport.mapper,
+      viewport: scaledMinimapViewport,
+      mapper,
       painter: minimapPainter,
     });
     return (
