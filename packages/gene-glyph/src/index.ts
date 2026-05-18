@@ -110,6 +110,23 @@ export type {
   NucleotideLetter,
 } from './tracks/nucleotide-track.js';
 export { aaTrack, translate, livePxPerAa } from './tracks/aa-track.js';
+export {
+  profileTrack,
+  bucketise,
+  pickStep,
+  buildAreaPath,
+  defaultViridis,
+} from './tracks/profile-track.js';
+export type {
+  ProfileTrackConfig,
+  ProfileTrackData,
+  ProfileSource,
+  ProfileDatum,
+  ProfileRender,
+  ProfileYScale,
+  ProfileAggregate,
+  ColorRamp,
+} from './tracks/profile-track.js';
 export type {
   AaTrackConfig,
   AaTrackData,
