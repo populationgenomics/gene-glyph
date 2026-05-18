@@ -6,6 +6,7 @@ import { DefaultChromeScenario } from './scenarios/default-chrome.js';
 import { ExportDemoScenario } from './scenarios/export-demo.js';
 import { InteractionDemoScenario } from './scenarios/interaction-demo.js';
 import { InterProDemoScenario } from './scenarios/interpro-demo.js';
+import { LiveDataDemoScenario } from './scenarios/live-data-demo.js';
 import { OverviewTrackDemoScenario } from './scenarios/overview-track-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
 import { PfamDemoScenario } from './scenarios/pfam-demo.js';
@@ -31,6 +32,7 @@ export function App() {
         />
         Simulate prefers-reduced-motion
       </label>
+      <LiveDataDemoScenario />
       <InteractionDemoScenario />
       <SlotSystemScenario />
       <TooltipDemoScenario />
