@@ -558,37 +558,38 @@ export class ViewportController implements Viewport {
     const [lo, hi] = this._range;
     const S_lo = this.cdsToBaselineX(lo);
     const S_hi = this.cdsToBaselineX(hi);
-    const span = Math.max(1e-6, S_hi - S_lo);
-    const zoom = this._width / span;
 
-    // Exon content scales uniformly with zoom; inter-exon gaps DO NOT — they
-    // stay at their baseline pixel width regardless of zoom level so Pfam /
-    // InterPro segments in adjacent exons stay visually close at high zoom
-    // (otherwise the gap visually overpowers the segment widths). Each exon
-    // gets a per-exon correction proportional to the number of gaps between
-    // it and the *pivot exon* (the exon containing the viewport's left edge
-    // S_lo) — gaps that aren't actually visible at the current zoom must
-    // not pull the pivot exon off-screen. Anchoring on the pivot is what
-    // keeps S_lo at screen-x = 0 when the user zooms into a single exon
-    // (otherwise the pivot lands at −K·gapPx·(zoom−1) and the figure shifts
-    // catastrophically left at deep zoom).
-    const gapPx = geom.gapPx;
-    const pivotIdx = gapPx > 0 ? pivotExonIdx(geom, S_lo) : 0;
+    // Exon content scales uniformly with the live zoom; inter-exon gaps DO
+    // NOT — they stay at their baseline pixel width regardless of zoom level
+    // so Pfam / InterPro segments in adjacent exons stay visually close at
+    // high zoom (otherwise the gap visually overpowers the segment widths).
+    //
+    // Naive `zoom = width / (S_hi − S_lo)` over-counts: gap-baseline-x doesn't
+    // shrink under zoom, so scaling it up like exon content leaves the right
+    // edge short whenever a gap is visible in the range. Compute the *effective*
+    // scale by partitioning the visible baseline into "exon baseline" (which
+    // scales) and "gap baseline" (which doesn't); reserve gap pixels in screen
+    // space and divide the rest among the exons. At fit-gene this reduces to
+    // 1; at zoom into a single exon it reduces to `width / visibleExonBaseline`;
+    // mid-zoom crossing a gap it solves the constraint that S_lo lands at
+    // screen-x = 0 AND S_hi lands at screen-x = width AND each gap takes
+    // exactly `gapPx` of screen.
+    const layout = computeExonLayout(geom, S_lo, S_hi, this._width);
+    const exonScale = layout.exonScale;
     for (const eb of geom.exons) {
-      const correction = (eb.exonIdx - pivotIdx) * gapPx * (zoom - 1);
-      const currentX = (eb.xStart - S_lo) * zoom - correction;
+      const currentX = layout.exonCurrentX[eb.exonIdx]!;
       s.setProperty(`--vv-exon-x-${eb.exonIdx}`, `${currentX}px`);
-      s.setProperty(`--vv-exon-scale-x-${eb.exonIdx}`, zoom.toString());
+      s.setProperty(`--vv-exon-scale-x-${eb.exonIdx}`, exonScale.toString());
       s.setProperty(`--vv-exon-w-${eb.exonIdx}`, `${eb.width}px`);
     }
 
     // Per-gap current-x sits at the upstream exon's `currentXEnd`; scale-x
     // folds in `intronScale` so collapsed modes (cds-spliced, protein) shrink
     // the gap-content to zero width without affecting the gap's screen
-    // width — that's controlled by the absence of scaleX-zoom above.
+    // width — that's controlled by `exonScale` only applying to exon content.
     for (const gap of geom.gaps) {
-      const correction = (gap.exonIdxA - pivotIdx) * gapPx * (zoom - 1);
-      const aXEnd = (geom.exons[gap.exonIdxA]!.xEnd - S_lo) * zoom - correction;
+      const aEb = geom.exons[gap.exonIdxA]!;
+      const aXEnd = layout.exonCurrentX[gap.exonIdxA]! + aEb.width * exonScale;
       s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${aXEnd}px`);
       // intron scale-x = intronScale (not multiplied by zoom): the inter-exon
       // `<g>` carries the polyline at baseline gap width; in cds-spliced or
@@ -657,32 +658,28 @@ export class ViewportController implements Viewport {
     const [lo, hi] = this._range;
     const S_lo = this.cdsToBaselineX(lo);
     const S_hi = this.cdsToBaselineX(hi);
-    const span = S_hi - S_lo;
-    if (span <= 0) return null;
-    const zoom = this._width / span;
-    const gapPx = geom.gapPx;
-    const pivotIdx = gapPx > 0 ? pivotExonIdx(geom, S_lo) : 0;
+    if (S_hi - S_lo <= 0) return null;
+    const layout = computeExonLayout(geom, S_lo, S_hi, this._width);
+    const exonScale = layout.exonScale;
     for (let i = 0; i < geom.exons.length; i++) {
       const eb = geom.exons[i]!;
       if (baselineX <= eb.xEnd) {
         if (baselineX >= eb.xStart) {
-          const exonCurrentX = (eb.xStart - S_lo) * zoom - (i - pivotIdx) * gapPx * (zoom - 1);
-          return exonCurrentX + (baselineX - eb.xStart) * zoom;
+          return layout.exonCurrentX[i]! + (baselineX - eb.xStart) * exonScale;
         }
         if (i === 0) {
-          // Padding zone before exon 0 — linear extrapolation.
-          return (baselineX - S_lo) * zoom;
+          // Padding zone before exon 0 — exon scale extrapolates linearly.
+          return layout.exonCurrentX[0]! + (baselineX - eb.xStart) * exonScale;
         }
         const prevExon = geom.exons[i - 1]!;
-        const prevExonCurrentXEnd =
-          (prevExon.xEnd - S_lo) * zoom - (i - 1 - pivotIdx) * gapPx * (zoom - 1);
+        const prevExonCurrentXEnd = layout.exonCurrentX[i - 1]! + prevExon.width * exonScale;
         return prevExonCurrentXEnd + (baselineX - prevExon.xEnd);
       }
     }
     const lastIdx = geom.exons.length - 1;
     const lastEb = geom.exons[lastIdx]!;
-    const lastCurrentXEnd = (lastEb.xEnd - S_lo) * zoom - (lastIdx - pivotIdx) * gapPx * (zoom - 1);
-    return lastCurrentXEnd + (baselineX - lastEb.xEnd);
+    const lastCurrentXEnd = layout.exonCurrentX[lastIdx]! + lastEb.width * exonScale;
+    return lastCurrentXEnd + (baselineX - lastEb.xEnd) * exonScale;
   }
 
   /** Public face of {@link currentToBaselineX} (Slice 26). The interface
@@ -702,32 +699,31 @@ export class ViewportController implements Viewport {
     const [lo, hi] = this._range;
     const S_lo = this.cdsToBaselineX(lo);
     const S_hi = this.cdsToBaselineX(hi);
-    const span = S_hi - S_lo;
-    if (span <= 0) return null;
-    const zoom = this._width / span;
-    const gapPx = geom.gapPx;
-    const pivotIdx = gapPx > 0 ? pivotExonIdx(geom, S_lo) : 0;
+    if (S_hi - S_lo <= 0) return null;
+    const layout = computeExonLayout(geom, S_lo, S_hi, this._width);
+    const exonScale = layout.exonScale;
+    if (exonScale <= 0) return null;
     for (let i = 0; i < geom.exons.length; i++) {
       const eb = geom.exons[i]!;
-      const exonCurrentX = (eb.xStart - S_lo) * zoom - (i - pivotIdx) * gapPx * (zoom - 1);
-      const exonCurrentXEnd = exonCurrentX + (eb.xEnd - eb.xStart) * zoom;
+      const exonCurrentX = layout.exonCurrentX[i]!;
+      const exonCurrentXEnd = exonCurrentX + eb.width * exonScale;
       if (currentX <= exonCurrentXEnd) {
         if (currentX >= exonCurrentX) {
-          return eb.xStart + (currentX - exonCurrentX) / zoom;
+          return eb.xStart + (currentX - exonCurrentX) / exonScale;
         }
         if (i === 0) {
-          return S_lo + currentX / zoom;
+          return eb.xStart + (currentX - exonCurrentX) / exonScale;
         }
         const prevExon = geom.exons[i - 1]!;
         const prevExonCurrentXEnd =
-          (prevExon.xEnd - S_lo) * zoom - (i - 1 - pivotIdx) * gapPx * (zoom - 1);
+          layout.exonCurrentX[i - 1]! + prevExon.width * exonScale;
         return prevExon.xEnd + (currentX - prevExonCurrentXEnd);
       }
     }
     const lastIdx = geom.exons.length - 1;
     const lastEb = geom.exons[lastIdx]!;
-    const lastCurrentXEnd = (lastEb.xEnd - S_lo) * zoom - (lastIdx - pivotIdx) * gapPx * (zoom - 1);
-    return lastEb.xEnd + (currentX - lastCurrentXEnd);
+    const lastCurrentXEnd = layout.exonCurrentX[lastIdx]! + lastEb.width * exonScale;
+    return lastEb.xEnd + (currentX - lastCurrentXEnd) / exonScale;
   }
 
   screenToCds(x: number): CdsPosition | null {
@@ -1029,16 +1025,96 @@ function snapRightEdge(exonRects: ExonBaseline[], width: number): void {
  *  or in the padding zone before the first / after the last exon, returns
  *  the upstream-most exon whose right edge is at or past `baselineX` (or
  *  the last exon if `baselineX` lies past the gene's 3′ end). The result
- *  is used as the "pivot exon" for the gap-correction term in `publish()`
- *  and the screen↔baseline mappings — without it, zooming into a single
- *  exon would shift the figure off-screen by `K·gapPx·(zoom−1)` where K
- *  is the pivot exon's index. */
+ *  pins the "pivot exon" used by {@link computeExonLayout}. */
 function pivotExonIdx(geom: BaselineGeometry, baselineX: number): number {
   if (geom.exons.length === 0) return 0;
   for (const eb of geom.exons) {
     if (baselineX <= eb.xEnd) return eb.exonIdx;
   }
   return geom.exons[geom.exons.length - 1]!.exonIdx;
+}
+
+interface ExonLayout {
+  /** Per-exon scale factor applied to baseline exon content. Same across
+   *  all exons; the per-exon CSS variable still keys by exonIdx so future
+   *  hosts can layer in per-exon zoom (e.g., a zoom-into-one-exon affordance
+   *  with adjacent exons at fit-gene scale). */
+  exonScale: number;
+  /** Per-exon screen-x of the exon's left edge (`--vv-exon-x-N`). Indexed
+   *  by `exonIdx`. */
+  exonCurrentX: number[];
+}
+
+/** Map a visible baseline range `[S_lo, S_hi]` to per-exon screen-x positions
+ *  such that:
+ *
+ *    1. S_lo lands at screen-x = 0
+ *    2. S_hi lands at screen-x = width
+ *    3. every visible inter-exon gap occupies exactly `geom.gapPx` of screen
+ *
+ *  Naive `zoom = width / (S_hi − S_lo)` violates (3) — gaps shouldn't scale
+ *  with zoom — so we partition the visible baseline into "exon baseline"
+ *  (which scales) and "gap baseline" (which doesn't), reserve gap pixels in
+ *  screen-space, and solve for the exon scale that makes the exon content
+ *  fill the remainder. Walks left + right from the pivot exon so the
+ *  positions are stable as the user pans across an intron. */
+function computeExonLayout(
+  geom: BaselineGeometry,
+  S_lo: number,
+  S_hi: number,
+  width: number,
+): ExonLayout {
+  const exons = geom.exons;
+  const out = new Array<number>(exons.length).fill(0);
+  if (exons.length === 0) return { exonScale: 1, exonCurrentX: out };
+
+  // How much of `[S_lo, S_hi]` is exon vs gap? Walk gaps; whatever isn't
+  // gap is exon (including padding before/after the first/last exon).
+  let visibleGapBaseline = 0;
+  for (const gap of geom.gaps) {
+    const lo = Math.max(gap.xStart, S_lo);
+    const hi = Math.min(gap.xEnd, S_hi);
+    if (hi > lo) visibleGapBaseline += hi - lo;
+  }
+  const visibleExonBaseline = Math.max(1e-9, S_hi - S_lo - visibleGapBaseline);
+  const exonScale = Math.max(1e-9, (width - visibleGapBaseline) / visibleExonBaseline);
+
+  // Pivot exon + its anchoring currentX. If S_lo is inside an exon, anchor
+  // S_lo at screen-x = 0; if S_lo is inside a gap, the gap content fills
+  // the left of the screen and the next exon starts at the gap's remaining
+  // visible width.
+  const pivotIdx = pivotExonIdx(geom, S_lo);
+  const pivotEb = exons[pivotIdx]!;
+  let pivotCurrentX: number;
+  if (S_lo >= pivotEb.xStart) {
+    pivotCurrentX = -(S_lo - pivotEb.xStart) * exonScale;
+  } else {
+    // S_lo is upstream of the pivot exon — either in the gap directly
+    // before it, or in the padding zone before exon 0. Either way, the
+    // pivot exon's left edge sits at screen-x = (pivotEb.xStart − S_lo);
+    // the gap before the pivot exon, if any, fills that region.
+    pivotCurrentX = pivotEb.xStart - S_lo;
+  }
+  out[pivotIdx] = pivotCurrentX;
+
+  // Walk right + left from the pivot. Gaps bridge adjacent exons in screen
+  // at their baseline width (gaps don't scale under zoom). Use the actual
+  // per-gap width — `geom.gapPx` is 0 in spliced / protein modes even when
+  // the inter-exon baseline width is non-zero (cds-spliced uses one
+  // pxPerBp per gap, swallowed into the linear bp ruler).
+  let cursor = pivotCurrentX + pivotEb.width * exonScale;
+  for (let i = pivotIdx + 1; i < exons.length; i++) {
+    cursor += geom.gaps[i - 1]?.width ?? 0;
+    out[i] = cursor;
+    cursor += exons[i]!.width * exonScale;
+  }
+  cursor = pivotCurrentX;
+  for (let i = pivotIdx - 1; i >= 0; i--) {
+    cursor -= geom.gaps[i]?.width ?? 0;
+    cursor -= exons[i]!.width * exonScale;
+    out[i] = cursor;
+  }
+  return { exonScale, exonCurrentX: out };
 }
 
 function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd: number }, pos: number, strand: '+' | '-'): number {

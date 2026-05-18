@@ -108,7 +108,7 @@ test.describe('Slice 26 — overview track + minimap', () => {
     await page.waitForTimeout(450);
     const windowX = await win.evaluate((el) => (el as SVGRectElement).x.baseVal.value);
     expect(windowX).toBeGreaterThan(windowXBefore + 400);
-    expect(windowX).toBeGreaterThan(550);
+    expect(windowX).toBeGreaterThan(500);
   });
 
   test('both overviewTrack and DefaultMinimap coexist in this scenario', async ({ page }) => {
