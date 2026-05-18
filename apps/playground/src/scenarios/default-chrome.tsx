@@ -164,25 +164,30 @@ export function DefaultChromeScenario() {
               );
             }
             // Sub-track of a group (e.g. interpro-family). Render with a
-            // tree-style indent + branch glyph so the nesting reads at
-            // a glance. We detect "this is a sub-track" by the presence
-            // of a `label` on an `item.kind === 'track'` row — only
-            // entry-type sub-tracks carry one, the exon track row has
-            // no label and falls through to the catch-all branch.
+            // left-border quote bar that connects the run of sub-tracks
+            // into a single continuous vertical line — reads as a
+            // blockquote-style nesting indicator without competing with
+            // the chevrons higher up. Detection: any `kind === 'track'`
+            // row that carries a `label` is a sub-track (only entry-
+            // type sub-tracks set one); the bare exon-track row has no
+            // label and falls through to the catch-all.
             const label = item.label;
             if (item.kind === 'track' && label) {
               return (
                 <span
                   style={{
-                    paddingLeft: 18,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    height: '100%',
+                    paddingLeft: 12,
+                    marginLeft: 6,
+                    borderLeft: '3px solid #475569',
                     fontSize: '0.8rem',
                     color: '#64748b',
-                    fontFamily:
-                      'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
                   }}
                   title={label}
                 >
-                  └─ {label}
+                  {label}
                 </span>
               );
             }
