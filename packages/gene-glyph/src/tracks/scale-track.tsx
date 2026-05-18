@@ -108,11 +108,58 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       const minorTickLen = Math.max(2, Math.floor(trackHeight * 0.2));
       const labelY = baselineY - majorTickLen - 2;
 
-      const majors = collectTicks(viewport, mapper, majorStep);
+      // Skip-on-crash: walk the candidate majors forward and drop any
+      // whose label would visually run into the previously-emitted
+      // label. The crash check works in baseline-x (matches screen-x at
+      // fit-gene; per-exon transforms only spread labels further apart
+      // at higher zoom, so this is also a conservative check there).
+      // Label width estimate is character-count × `labelFontSize × 0.6`
+      // — close enough for the digits / commas / `bp` / `aa` glyphs we
+      // emit. Tick mark + label drop together: the user shouldn't see
+      // a tick stuck next to a labelled one with no label of its own.
+      const charPx = labelFontSize * 0.6;
+      const labelPadPx = 6;
+      const halfWidthOf = (rulerPos: number, withSuffix: boolean): number =>
+        (formatLabel(rulerPos, unit, withSuffix).length * charPx) / 2;
+      const allMajors = collectTicks(viewport, mapper, majorStep);
+
+      // Pass 1: walk assuming no suffix. The suffix goes on the actually-
+      // emitted last tick (only one survives the walk to wear it), so
+      // sizing all ticks the same here avoids over-shrinking the run.
+      const majors: TickRow[] = [];
+      let lastBaselineX = -Infinity;
+      let lastHalfWidth = 0;
+      for (const t of allMajors) {
+        const half = halfWidthOf(t.rulerPos, false);
+        if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadPx) {
+          continue;
+        }
+        majors.push(t);
+        lastBaselineX = t.baselineX;
+        lastHalfWidth = half;
+      }
+
+      // Pass 2: now the last emitted gets the suffix; if that widens it
+      // past the previous label's clearance, drop it and promote the
+      // suffix to its predecessor. Iterate until the last fits or
+      // there's only one tick left (a single tick with a suffix always
+      // fits — there's nothing to crash against).
+      if (unitSuffix === 'last') {
+        while (majors.length > 1) {
+          const last = majors[majors.length - 1]!;
+          const prev = majors[majors.length - 2]!;
+          const lastHalfSuffix = halfWidthOf(last.rulerPos, true);
+          const prevHalf = halfWidthOf(prev.rulerPos, false);
+          if (last.baselineX - prev.baselineX >= prevHalf + lastHalfSuffix + labelPadPx) break;
+          majors.pop();
+        }
+      }
+
+      const majorPositions = new Set(majors.map((t) => t.rulerPos));
       const minors =
         minorStep > 0
           ? collectTicks(viewport, mapper, minorStep).filter(
-              (t) => !isMultipleOf(t.rulerPos, majorStep),
+              (t) => !majorPositions.has(t.rulerPos),
             )
           : [];
 
@@ -308,12 +355,6 @@ function exonForRulerPos(
   }
   const hit = mapper.findExonByCds(pos);
   return hit?.exonIdx ?? null;
-}
-
-function isMultipleOf(value: number, step: number): boolean {
-  if (step === 0) return false;
-  const q = value / step;
-  return Math.abs(q - Math.round(q)) < 1e-9;
 }
 
 function formatLabel(pos: number, unit: 'bp' | 'aa', withSuffix: boolean): string {

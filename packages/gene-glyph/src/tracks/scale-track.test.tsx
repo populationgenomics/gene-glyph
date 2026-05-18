@@ -103,14 +103,20 @@ describe('scaleTrack', () => {
     const track = container.querySelector<SVGGElement>('.vv-scale-track')!;
     expect(track.getAttribute('data-vv-scale-unit')).toBe('bp');
     expect(track.getAttribute('data-vv-scale-major-step')).toBe('50');
-    // CDS length 1182 → major ticks every 50: 50, 100, …, 1150 = 23 ticks.
-    expect(container.querySelectorAll('.vv-scale-tick-major').length).toBe(23);
+    // CDS length 1182 → candidate major positions are 50, 100, …, 1150
+    // (23 candidates). The crash-aware walk drops any whose label would
+    // overlap its predecessor — a few near the right end where short
+    // exons compress the baseline-x spacing fall out. The remaining set
+    // is still close to the candidate count.
+    const majorCount = container.querySelectorAll('.vv-scale-tick-major').length;
+    expect(majorCount).toBeGreaterThanOrEqual(18);
+    expect(majorCount).toBeLessThanOrEqual(23);
     // Minor ticks subdivide major by 5 (default); minors at 10, 20, 30,
-    // 40, 60, 70, … excluding multiples of 50.
+    // 40, 60, 70, … excluding emitted-major positions.
     expect(container.querySelectorAll('.vv-scale-tick-minor').length).toBeGreaterThan(50);
-    // Every major tick has a label.
+    // Every emitted major has a label.
     const labels = container.querySelectorAll<SVGTextElement>('.vv-scale-label');
-    expect(labels.length).toBe(23);
+    expect(labels.length).toBe(majorCount);
   });
 
   it('flips bp ↔ aa unit when the viewport mode changes', () => {
