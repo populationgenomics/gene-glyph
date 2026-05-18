@@ -184,12 +184,17 @@ export function placeClinVarRecords(
       unplaced.push(r);
       continue;
     }
-    const screenX = viewport.cdsToScreen(cds.cPos, 0);
-    if (screenX === null) {
-      unplaced.push(r);
-      continue;
-    }
     const baselineX = viewport.cdsToBaselineX(cds.cPos);
+    // Records outside the current screen window (cdsToScreen returns
+    // null) used to land in `unplaced`. That made the stacked layout
+    // re-pack on every pan/zoom — the figure SVG already clips
+    // off-figure renderings (per the variant-track pattern) so keeping
+    // them in `placed` lets stacked stay stable. `screenX` is stamped
+    // with `Infinity` for off-screen records so `clusterClinVar` (which
+    // sorts by screen-pixel distance) naturally pushes them past every
+    // on-screen cluster and out of the cluster gap window.
+    const liveScreenX = viewport.cdsToScreen(cds.cPos, 0);
+    const screenX = liveScreenX ?? Infinity;
     placed.push({
       record: r,
       exonIdx: exonHit.exonIdx,
@@ -209,7 +214,13 @@ export function clusterClinVar(
   placed: PlacedClinVar[],
   clusterPx: number,
 ): ClinVarCluster[] {
-  const sorted = placed.slice().sort((a, b) => a.screenX - b.screenX);
+  // Off-screen placements carry `screenX = Infinity` (so they don't
+  // collide with on-screen cluster windows). Filter them out before
+  // clustering — they'd otherwise emit singleton clusters off-figure
+  // that bloat the DOM with no visual benefit. The figure SVG's
+  // overflow: hidden was already clipping them.
+  const onScreen = placed.filter((p) => Number.isFinite(p.screenX));
+  const sorted = onScreen.slice().sort((a, b) => a.screenX - b.screenX);
   const out: ClinVarCluster[] = [];
   let current: PlacedClinVar[] = [];
   let last: number | null = null;
@@ -263,22 +274,33 @@ export function packStackedClinVar(
   markRadius: number,
 ): ClinVarStackLayout {
   const groups = new Map<string, PlacedClinVar[]>();
-  const groupOrder: string[] = [];
   for (const p of placed) {
     const key = encoding.lane?.(p.record) ?? '_';
     let arr = groups.get(key);
     if (!arr) {
       arr = [];
       groups.set(key, arr);
-      groupOrder.push(key);
     }
     arr.push(p);
   }
+  // Lane block order: declared `laneOrder` first (top → bottom by host
+  // intent — e.g. pathogenic → VUS → benign for ClinVar), then any
+  // remaining lanes appended alphabetically. Deterministic across
+  // reloads, gene changes, and out-of-order input.
+  const groupOrder = orderedLaneKeys(groups, encoding.laneOrder);
 
   const placements: PlacedClinVarStacked[] = [];
   let rowOffset = 0;
   for (const key of groupOrder) {
-    const items = groups.get(key)!.slice().sort((a, b) => a.baselineX - b.baselineX);
+    const items = groups
+      .get(key)!
+      .slice()
+      // Stable, content-derived sort. Primary key: baseline-x (visual
+      // left → right). Secondary key: record.id (deterministic tie-
+      // break for variants at the same baseline-x, e.g. a SNP and an
+      // indel at the same nucleotide). Same input rows → same output
+      // rows on every reload.
+      .sort((a, b) => a.baselineX - b.baselineX || compareStrings(a.record.id, b.record.id));
     const laneEnds: number[] = [];
     let localMaxLane = -1;
     for (const it of items) {
@@ -304,6 +326,24 @@ export function packStackedClinVar(
     rowOffset += localMaxLane + 1;
   }
   return { rowCount: rowOffset, placements };
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function orderedLaneKeys<T>(
+  groups: Map<string, T>,
+  declared: readonly string[] | undefined,
+): string[] {
+  const allKeys = [...groups.keys()];
+  if (!declared || declared.length === 0) return allKeys.slice().sort(compareStrings);
+  const declaredSet = new Set(declared);
+  const ordered = declared.filter((k) => groups.has(k));
+  const leftovers = allKeys
+    .filter((k) => !declaredSet.has(k))
+    .sort(compareStrings);
+  return [...ordered, ...leftovers];
 }
 
 export function clinVarTrack(
