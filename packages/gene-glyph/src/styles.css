@@ -273,6 +273,19 @@
   cursor: grabbing;
 }
 
+/* Slice 28: coordinate ruler track. The ticks sit in per-exon `<g>`
+ * groups so they ride the live exon transforms; labels counter-scale
+ * to stay legible. Colour comes from the standard text palette
+ * variables so it inherits any host theme override. */
+.gene-glyph .vv-scale-tick {
+  pointer-events: none;
+}
+.gene-glyph .vv-scale-label {
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Slice 17: figure wrap. Sits as a flex item inside .vv-figure-row and is the
  * positioning context for absolutely-placed overlays (tooltips, "you are
  * here" markers). The figure SVG and the overlay layer are DOM siblings

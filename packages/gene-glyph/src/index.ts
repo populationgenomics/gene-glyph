@@ -100,6 +100,8 @@ export { exonTrack } from './tracks/exon-track.js';
 export type { ExonTrackConfig } from './tracks/exon-track.js';
 export { overviewTrack } from './tracks/overview-track.js';
 export type { OverviewTrackConfig } from './tracks/overview-track.js';
+export { scaleTrack, pickAutoStep } from './tracks/scale-track.js';
+export type { ScaleTrackConfig } from './tracks/scale-track.js';
 export {
   variantTrack,
   partitionVariants,
