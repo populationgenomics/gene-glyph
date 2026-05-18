@@ -152,21 +152,16 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       };
       const allMajors = collectTicks(viewport, mapper, majorStep);
 
-      // Pass 1: walk forward, skipping any candidate whose label would
-      // crash with its predecessor's. The canonical-last candidate is
-      // sized as if suffixed up front so the suffix-promotion case is
-      // typically resolved here — the second pass below is reserved
-      // for the rare edge case where the first pass drops the suffix-
-      // wearing tick.
-      const lastCandidatePos =
-        allMajors.length > 0 ? allMajors[allMajors.length - 1]!.rulerPos : null;
+      // Walk forward, skipping any candidate whose label would crash
+      // with its predecessor's. Widths are sized as if *no* suffix is
+      // attached — every tick has the same label-width budget, the
+      // walk doesn't cascade-drop ticks just to make room for the
+      // suffix at the right end.
       const majors: TickRow[] = [];
       let lastBaselineX = -Infinity;
       let lastHalfWidth = 0;
       for (const t of allMajors) {
-        const wearsSuffix =
-          unitSuffix === 'last' && t.rulerPos === lastCandidatePos;
-        const half = halfWidthOf(t.rulerPos, wearsSuffix);
+        const half = halfWidthOf(t.rulerPos, false);
         if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadPx) {
           continue;
         }
@@ -175,19 +170,22 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
         lastHalfWidth = half;
       }
 
-      // Pass 2: now the last emitted gets the suffix; if that widens it
-      // past the previous label's clearance, drop it and promote the
-      // suffix to its predecessor. Iterate until the last fits or
-      // there's only one tick left (a single tick with a suffix always
-      // fits — there's nothing to crash against).
-      if (unitSuffix === 'last') {
-        while (majors.length > 1) {
+      // Decide whether the *actually-emitted* last tick gets the unit
+      // suffix. The suffix is informational — if attaching it would
+      // make the last label crash with its predecessor, we drop the
+      // suffix rather than dropping the tick (the unit reads as a
+      // `data-vv-scale-unit` attribute on the track group either way).
+      let showSuffix = false;
+      if (unitSuffix === 'last' && majors.length > 0) {
+        if (majors.length === 1) {
+          showSuffix = true;
+        } else {
           const last = majors[majors.length - 1]!;
           const prev = majors[majors.length - 2]!;
-          const lastHalfSuffix = halfWidthOf(last.rulerPos, true);
           const prevHalf = halfWidthOf(prev.rulerPos, false);
-          if (last.baselineX - prev.baselineX >= prevHalf + lastHalfSuffix + labelPadPx) break;
-          majors.pop();
+          const lastSuffixedHalf = halfWidthOf(last.rulerPos, true);
+          showSuffix =
+            last.baselineX - prev.baselineX >= prevHalf + lastSuffixedHalf + labelPadPx;
         }
       }
 
@@ -250,7 +248,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                 const label = formatLabel(
                   t.rulerPos,
                   unit,
-                  unitSuffix === 'last' && isLast,
+                  showSuffix && isLast,
                 );
                 // The counter-scale wrap neutralises the exon group's
                 // scaleX so the text inside renders at natural size.
