@@ -315,11 +315,13 @@ describe('variantTrack', () => {
     const layout = packStackedVariants(placed, defaultVariantSymbolEncoding, viewport, 4);
     expect(layout.rowCount).toBe(4);
     const rows = new Map(layout.placements.map((p) => [p.variant.id, p.row]));
-    // The missense group fills rows 0..2; nonsense lands at row 3 (strict
-    // lane separation — no row-sharing across different lane keys).
+    // Strict lane separation — no row-sharing across different lane
+    // keys. Stable lane order: `defaultVariantSymbolEncoding.laneOrder`
+    // puts 'lof' before 'missense', so the nonsense variant (lane 'lof')
+    // takes row 0, then the missense variants fill rows 1..3.
+    expect(rows.get('d')).toBe(0);
     const missenseRows = ['a', 'b', 'c'].map((k) => rows.get(k)!).sort();
-    expect(missenseRows).toEqual([0, 1, 2]);
-    expect(rows.get('d')).toBe(3);
+    expect(missenseRows).toEqual([1, 2, 3]);
   });
 
   it('packStackedVariants gives non-overlapping items in the same lane the same row', () => {

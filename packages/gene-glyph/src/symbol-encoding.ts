@@ -37,6 +37,13 @@ export interface SymbolEncoding<T> {
   lane?: (v: T) => string;
   /** Optional per-glyph radius override. Defaults to the track's `markRadius`. */
   radius?: (v: T) => number;
+  /** Canonical lane order for stacked render. When supplied, the packer
+   *  emits lane blocks in this sequence (top → bottom) regardless of
+   *  the order records arrive in. Lane keys not in `laneOrder` are
+   *  appended alphabetically after the declared keys, so the layout is
+   *  deterministic even when the encoding adds new lanes later. Omit to
+   *  fall back to alphabetical-by-key order. */
+  laneOrder?: readonly string[];
 }
 
 /**
@@ -195,6 +202,11 @@ export const defaultVariantSymbolEncoding: SymbolEncoding<ViewerVariant> = {
   shape: (v) => variantShapeFor(v.category),
   fill: (v) => variantCategoryColor(v.category),
   lane: (v) => variantLaneFor(v.category),
+  // Canonical lane order — top → bottom. Loss-of-function first
+  // (highest impact), then missense, regulatory, synonymous, other.
+  // Determines stacking deterministically across reloads / data
+  // sources so the same variant lands on the same row.
+  laneOrder: ['lof', 'missense', 'regulatory', 'synonymous', 'other'],
 };
 
 const CLINVAR_SHAPE: Record<ClinVarSignificance, GlyphShape> = {
@@ -227,4 +239,10 @@ export const defaultClinVarSymbolEncoding: SymbolEncoding<ClinVarRecord> = {
   shape: (r) => CLINVAR_SHAPE[r.significance],
   fill: (r) => clinVarSignificanceColor(r.significance),
   lane: (r) => CLINVAR_LANE[r.significance],
+  // Canonical lane order — top → bottom by clinical impact:
+  // pathogenic / likely-pathogenic → uncertain → conflicting → benign /
+  // likely-benign → other. Stable across reloads + gene changes so a
+  // given record always lands on the same row regardless of fetch
+  // ordering.
+  laneOrder: ['path', 'vus', 'conflicting', 'benign', 'other'],
 };

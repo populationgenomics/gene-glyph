@@ -280,17 +280,19 @@ export function packStackedVariants(
   for (const eb of baseline.exons) byExon.set(eb.exonIdx, { xStart: eb.xStart });
 
   const groups = new Map<string, VariantPlacement[]>();
-  const groupOrder: string[] = [];
   for (const p of placed) {
     const key = encoding.lane?.(p.variant) ?? '_';
     let arr = groups.get(key);
     if (!arr) {
       arr = [];
       groups.set(key, arr);
-      groupOrder.push(key);
     }
     arr.push(p);
   }
+  // Lane block order: declared `laneOrder` first, then any remaining
+  // keys alphabetically. Deterministic across reloads, source orderings,
+  // and gene changes so a given variant always lands on the same row.
+  const groupOrder = orderedLaneKeysForVariants(groups, encoding.laneOrder);
 
   const placements: StackedVariantPlacement[] = [];
   let rowOffset = 0;
@@ -302,7 +304,11 @@ export function packStackedVariants(
       const r = encoding.radius?.(p.variant) ?? markRadius;
       return { p, baselineX, r };
     });
-    withBaseline.sort((a, b) => a.baselineX - b.baselineX);
+    // Primary: baseline-x. Secondary: variant.id — stable tie-break for
+    // variants at the same baseline position.
+    withBaseline.sort(
+      (a, b) => a.baselineX - b.baselineX || cmpStr(a.p.variant.id, b.p.variant.id),
+    );
     const laneEnds: number[] = [];
     let localMaxLane = -1;
     for (const it of withBaseline) {
@@ -794,4 +800,20 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       </g>
     </g>
   );
+}
+
+function cmpStr(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function orderedLaneKeysForVariants<T>(
+  groups: Map<string, T>,
+  declared: readonly string[] | undefined,
+): string[] {
+  const allKeys = [...groups.keys()];
+  if (!declared || declared.length === 0) return allKeys.slice().sort(cmpStr);
+  const declaredSet = new Set(declared);
+  const ordered = declared.filter((k) => groups.has(k));
+  const leftovers = allKeys.filter((k) => !declaredSet.has(k)).sort(cmpStr);
+  return [...ordered, ...leftovers];
 }
