@@ -147,6 +147,17 @@
   display: flex;
   align-items: center;
   box-sizing: border-box;
+  /* Group rows and sub-track rows overlap vertically — the group's rect
+   * extends across all its children, and children render later in DOM so
+   * they sit on top in z-order. If sub-track rows captured pointer events
+   * across their full box, the group's chevron underneath would be
+   * unclickable. Make the row container transparent and let host content
+   * opt back in via the direct-child rule below. */
+  pointer-events: none;
+}
+
+.gene-glyph .vv-gutter-item > * {
+  pointer-events: auto;
 }
 
 .gene-glyph .vv-left-gutter .vv-gutter-item {
