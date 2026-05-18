@@ -102,6 +102,20 @@ export { overviewTrack } from './tracks/overview-track.js';
 export type { OverviewTrackConfig } from './tracks/overview-track.js';
 export { scaleTrack, pickAutoStep } from './tracks/scale-track.js';
 export type { ScaleTrackConfig } from './tracks/scale-track.js';
+export { nucleotideTrack, livePxPerUnit } from './tracks/nucleotide-track.js';
+export type {
+  NucleotideTrackConfig,
+  NucleotideTrackData,
+  NucleotideSource,
+  NucleotideLetter,
+} from './tracks/nucleotide-track.js';
+export { aaTrack, translate, livePxPerAa } from './tracks/aa-track.js';
+export type {
+  AaTrackConfig,
+  AaTrackData,
+  ProteinSequenceSource,
+  NucleotideForAaSource,
+} from './tracks/aa-track.js';
 export {
   variantTrack,
   partitionVariants,
