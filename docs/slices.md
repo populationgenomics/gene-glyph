@@ -645,6 +645,197 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
+### Slice 29 — Nucleotide + AA sequence tracks (zoom-gated)
+
+**Motivation:**
+At deep zoom (one bp ≳ 8 px / one aa ≳ 14 px) the figure has enough room
+to show the actual residue letters under each exon. Two tracks — one for
+genomic / CDS bp letters, one for the translated amino acid sequence —
+turn the existing exon geometry into a readable sequence ladder when
+the user zooms in.
+
+**In scope:**
+- `nucleotideTrack({ source, minPxPerBp? })` — renders single-character
+  glyphs (A / C / G / T / N) anchored to each CDS bp position. `source`
+  is a `DataSource` adapter (Slice 18) returning the CDS or pre-mRNA
+  sequence as a string keyed by transcript id; `coordSystem: 'cds'` so
+  letters track exon transforms identically to the ruler ticks
+- `aaTrack({ source, minPxPerAa?, frame? })` — same shape, but
+  per-codon: one letter every three bp in CDS mode, every bp in protein
+  mode. Reads either from a supplied protein-sequence source or derives
+  from the nucleotide track using the standard codon table; the
+  derivation path is what the playground uses
+- Zoom-gating: both tracks compute their visibility from
+  `viewport.baselineGeometry().pxPerBp * liveZoom`. Below the threshold
+  the track collapses to `height() === 0` and renders nothing — the
+  layout engine then drops the row entirely (no empty gap). Above the
+  threshold the row grows to `letterFontPx + topPad`
+- Per-letter colour ramp: nucleotides use the conventional A=green,
+  C=blue, G=orange, T=red palette (host-overridable); amino acids
+  default to a chemistry-coloured palette (hydrophobic / polar /
+  charged / aromatic / special) with a host override hook
+- Mode-aware: protein mode hides the nucleotide track (CDS bp don't
+  layout under the aa axis); CDS-spliced and CDS-with-introns show
+  both. Intronic gaps in CDS-with-introns show no letters (no sequence
+  data threaded through introns in v1)
+- Playground scenario zooms in on TP53 codon 175 / 248 / 273 so a
+  reader can see hotspot residues line up with the ClinVar lollipops
+
+**Definition of done:**
+- Below the threshold, neither track contributes height (asserted by
+  playwright)
+- Above the threshold, the letters land *exactly* under their bp / aa
+  positions in all three modes (snapshot test against fit-gene +
+  zoomed-in scales)
+- Zoom-gating threshold configurable per-track and exposed in the
+  factory's options; default is "letters readable" (≥ 8 px per bp / ≥
+  14 px per aa)
+- AA derivation handles non-multiple-of-three CDS lengths gracefully
+  (truncate at the last whole codon, no crash)
+
+---
+
+### Slice 30 — Segment band track (categorical / boolean colour bands)
+
+**Motivation:**
+Several of the KIF21A annotations are full-row colour bands keyed by
+position: Predicted NMD Escape (boolean per exon), Regional Missense
+Constraint (categorical segments along the protein axis), Secondary
+Structure (α-helix / β-sheet / loop runs). They share a primitive: a
+non-overlapping series of `{start, end, category}` intervals coloured
+by a host-supplied palette.
+
+**In scope:**
+- `segmentBandTrack({ source, coordSystem, palette, heightPx?,
+  showLabels? })` factory in `packages/gene-glyph/src/tracks/`
+- `source` returns `Array<{start, end, category, label?}>` in the
+  configured `coordSystem` (`'cds'` or `'protein'`). The track packs
+  these to one row (overlaps are an input error; surfaced via an
+  optional `onOverlapWarning` callback rather than thrown)
+- Rendering is one `<rect>` per segment, filled from `palette[category]`
+  via the existing per-exon CSS-variable transforms. `coordSystem`
+  drives whether the rects sit on the CDS axis or the protein axis,
+  same as every other track
+- Optional inline labels: when `showLabels` is set and a segment is
+  wide enough (`segmentWidthPx >= minLabelWidthPx`), render the label
+  centred inside the segment with the standard counter-scale wrapper
+  so the text doesn't squash under zoom
+- Hover + click parity: `onFeatureClick` fires with the segment id;
+  hover lift uses the same `vv-hover` CSS the variant track already
+  registers
+- Three demo scenarios in the playground:
+  1. NMD escape on TP53 (boolean: escapes ⇄ doesn't escape)
+  2. RMC on a constraint-rich gene (4-way categorical)
+  3. Secondary structure derived from a DSSP-shaped fixture (3-way:
+     helix / sheet / loop)
+
+**Definition of done:**
+- A single factory produces all three of the boolean / categorical /
+  multi-class band rendering above with no per-track-type branching in
+  the library
+- Track stays correctly aligned through pan, zoom, and mode
+  transitions (assertion: bp 100 of an RMC segment lines up with the
+  same column in the ruler track and the exon ribbon)
+- Palette is type-safe — the source's `category` field's literal-union
+  type is what's keyed into `palette`, so an unknown category is a
+  compile error, not a render fallback
+
+---
+
+### Slice 31 — Numeric profile track (per-position histogram / heatmap)
+
+**Motivation:**
+Conservation scores and gnomAD variant frequencies are dense numeric
+signals along the position axis. The KIF21A figure shows them two
+ways: as a vertical-density heatmap (Conservation — colour intensity
+encodes a per-position score) and as a histogram (gnomAD Missense — an
+area-fill encodes per-position variant count). Both share one
+primitive: a per-position numeric value mapped to either a bar height
+or a colour ramp.
+
+**In scope:**
+- `profileTrack({ source, coordSystem, render, heightPx, colorRamp?,
+  yScale? })` factory. `source` returns `Array<{position, value}>` or
+  a callable `(position) => value | null` for sparse signals
+- `render: 'histogram' | 'heatmap'` selects the visual: histogram
+  draws an SVG `<path>` area-fill with a baseline at the row's
+  midline; heatmap draws one full-height rect per position coloured
+  via `colorRamp(value)`. Both reuse per-exon CSS transforms so the
+  profile pans and zooms in lock-step with the figure
+- `yScale: 'linear' | 'log' | { domain, scale }` controls histogram
+  bar heights. `colorRamp` is a `(value) => string` (host owns the
+  scale); a sensible viridis default ships for heatmap
+- Aggregation: when the live zoom is dense enough that several
+  positions land in one pixel column, the track aggregates by the
+  configured `aggregate: 'max' | 'mean' | 'sum'` (default: `max` for
+  heatmap, `sum` for histogram). Without aggregation the histogram
+  would alias at zoom-out; with aggregation the silhouette stays
+  faithful to the underlying signal
+- Two playground scenarios:
+  1. Conservation heatmap (TP53 PhyloP scores from a fixture)
+  2. gnomAD missense histogram (TP53 missense variant density per aa
+     position, derived from the existing TP53 variant fixture)
+
+**Definition of done:**
+- The same `profileTrack` factory renders both Conservation-style
+  heatmap and gnomAD-style histogram with no library branching beyond
+  the `render` discriminator
+- Aggregation preserves the silhouette of the raw signal across the
+  full zoom range (snapshot test at fit-gene + 2× + 5× zoom)
+- `colorRamp` and `yScale` are pure functions — no track-local state
+  — so the same track can be reused with a different palette per
+  host
+
+---
+
+### Slice 32 — Compact variant-tick track (single-row lollipop / sparse marker)
+
+**Motivation:**
+gnomAD LoF / Homozygous LoF / Homozygous Missense and DECIPHER
+variants in the KIF21A figure are all rendered as compact vertical
+ticks: a single thin coloured line per variant at its codon, no
+stacking, no per-glyph chrome. This is the existing variant track
+stripped down: same packing logic, same hover semantics, but a much
+smaller per-mark footprint so several variant categories can stack as
+adjacent thin rows above the gene body.
+
+**In scope:**
+- `tickVariantTrack({ source, coordSystem, encoding, heightPx?,
+  thicknessPx? })` factory — distinct from `variantTrack` because
+  enough of the rendering and packing logic diverges that a flag on
+  the existing factory would multiply complexity rather than reduce
+  it (no stacked-into-rows packing — single row by construction —
+  and no glyph shapes — just rects)
+- `encoding: SymbolEncoding<T>` reused from Slice 27, but only
+  `color` and `lane?` are consulted; `shape` / `radius` are ignored.
+  Variants land as single thin rects (height = `heightPx`, width =
+  `thicknessPx`) anchored to the variant's position
+- Optional lane sub-row mode: when `encoding.lane()` returns a key,
+  variants in different lanes get separate horizontal *slots* within
+  the same row (offset by `lanePxOffset`) so e.g. heterozygous vs
+  homozygous don't pile on the same x-column. Default: no lane
+  separation (truly single-row)
+- Click / hover: identical to `variantTrack` — same overlay tooltip
+  surface, same `onFeatureClick` plumbing
+- Playground scenario adds a stack of `tickVariantTrack` rows above
+  the gene body for the KIF21A-style panel: gnomAD missense (yellow,
+  thin), gnomAD LoF (red), gnomAD homozygous LoF (red, dotted), all
+  fed from the existing TP53 variant fixture filtered by category
+
+**Definition of done:**
+- A single-figure scenario shows four `tickVariantTrack` rows above
+  the gene body without exceeding the existing playground
+  trackHeightBudget
+- Tick positions match the variant's `cdsPosition` / `aaPosition` to
+  within ±1 px across the zoom range (snapshot + Playwright)
+- Hover and click parity with the existing variant track — same
+  tooltip layout, same selection ring
+- Bundle-size impact: ≤ 2 KB gzipped added to the core lib (the new
+  track shares ~80% of its code path with `variantTrack` via a
+  small `renderMark` callback)
+
+---
+
 ## Cross-cutting work (not slice-specific)
 
 ### Documentation
