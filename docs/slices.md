@@ -621,6 +621,30 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ---
 
+### Slice 28 — Coordinate ruler track — **shipped**
+
+**Landed:**
+- `scaleTrack({})` in `packages/gene-glyph/src/tracks/scale-track.tsx` — a fixed-height track that renders major + minor tick marks plus labels above the gene body. The host adds it to the `tracks` array (typically first) and the layout engine slots it directly above whatever comes next; no viewer or chrome changes required
+- Mode-aware: CDS modes label in `bp`, protein mode labels in `aa`. Switching modes flips the ruler in lock-step with the figure's mode transition (same 450 ms ease-in-out-quart) because ticks ride per-exon CSS transforms
+- Nice-number step picker exposed as `pickAutoStep(pxPerUnit, minSpacingPx, rulerLength)`. The ladder is `[1, 2, 5, 10, 20, 50, 100, …, 1_000_000]`; the picker promotes one rung at a time until the minimum on-screen label gap is satisfied, with a downward demotion path for pathologically short genes. Hosts can override with a literal `majorStep` (e.g. force every-100-bp ticks)
+- Step calculation reads `viewport.baselineGeometry().pxPerBp` — fit-gene px-per-unit — *not* the live zoom. Tick steps therefore stay stable as the user zooms; the figure's CSS transforms move the ticks rather than the React tree re-emitting them, so there's no flicker
+- Minor subdivisions (default 5 per major step) drawn shorter and unlabelled; `unitSuffix: 'last'` (default) appends the active unit to the highest visible label so the ruler reads as `… 1,150 bp` / `… 380 aa`
+- Slot-system playground scenario picks up the ruler so the mode dropdown's effect on the figure is mirrored in the ruler row. Playwright spec `slice-28-scale-track.spec.ts` pins major-tick count, the unit-suffix invariant, the bp↔aa flip on mode change, and the per-exon-group invariant (every tick lives inside a `vv-exon-group`)
+
+**Resolved design questions:**
+- *Where does the ruler live?* As a `Track` rather than a chrome slot. Lets the existing layout engine + per-exon CSS-variable machinery do all the heavy lifting — pan, zoom, and mode transitions come for free, and the ruler is included in `exportSVG()` / `exportPNG()` automatically
+- *Tick step against fit-gene or live zoom?* Fit-gene. Live-zoom-driven step would repop labels in/out on every wheel tick, which reads as flicker. The current behaviour mirrors how typical map UIs handle zoom-stable rulers
+- *Intronic positions?* No ticks in inter-exon gaps. In `cds-with-introns` the gap carries the chevron decoration; sitting a number on top reads as wrong. In `cds-spliced` and `protein` the gap collapses so the question is moot. Walking ticks by *exon* (not by uniform ruler stride) keeps the contract simple
+- *Major-tick label anchoring?* Anchored to a *global* ruler (1, step, 2·step, …) rather than the gene's first `cdsStart`. Reads as round numbers (100, 200, 500) regardless of where the CDS opens
+
+**Definition of done:**
+- Ruler renders major + minor ticks above the exon ribbon ✓
+- Ticks pan and zoom smoothly without React re-render flicker ✓
+- Mode switch in slot-system cross-fades bp ruler to aa ruler in lock-step with the figure ✓
+- Playwright + unit tests pin tick count, label format, and mode flip ✓
+
+---
+
 ## Cross-cutting work (not slice-specific)
 
 ### Documentation
