@@ -33,6 +33,22 @@ export interface ScaleTrackConfig {
    *  highest visible label so the ruler reads as `… 1,000 bp` /
    *  `… 393 aa`. `'never'` omits the suffix. */
   unitSuffix?: 'never' | 'last';
+  /** Extra padding between adjacent label edges in baseline-x pixels.
+   *  Bumping this makes the first-pass skip more conservative — labels
+   *  get clear breathing room and the suffix-promotion re-check rarely
+   *  has to drop a tick. Default 16. */
+  labelPadPx?: number;
+  /** Rotate major-tick labels in degrees. `0` (default) keeps text
+   *  horizontal above the tick; `90` rotates the text counter-clockwise
+   *  so labels read bottom-to-top stacked above their tick mark. Useful
+   *  for dense scales where horizontal text would crash even after
+   *  skipping: rotated labels' horizontal footprint shrinks to the
+   *  font's height (~10 px) instead of the text's natural width
+   *  (~30–50 px), so far more labels fit per inch of ruler.
+   *
+   *  When rotated, the track defaults to a taller `height` to fit the
+   *  rotated text vertically. The host can override `height` directly. */
+  labelRotation?: 0 | 90;
 }
 
 interface ScaleTrackData {
@@ -40,9 +56,11 @@ interface ScaleTrackData {
 }
 
 const DEFAULT_HEIGHT = 18;
+const DEFAULT_ROTATED_HEIGHT = 60;
 const DEFAULT_MINOR_SUBDIVISIONS = 5;
 const DEFAULT_MIN_LABEL_SPACING_PX = 32;
 const DEFAULT_LABEL_FONT = 10;
+const DEFAULT_LABEL_PAD_PX = 12;
 
 const STEP_LADDER: readonly number[] = [
   1, 2, 5,
@@ -69,12 +87,15 @@ const STEP_LADDER: readonly number[] = [
  */
 export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfig, ScaleTrackData> {
   const id = config.id ?? 'scale-track';
-  const trackHeight = config.height ?? DEFAULT_HEIGHT;
+  const labelRotation = config.labelRotation ?? 0;
+  const trackHeight =
+    config.height ?? (labelRotation === 90 ? DEFAULT_ROTATED_HEIGHT : DEFAULT_HEIGHT);
   const majorStepConfig = config.majorStep ?? 'auto';
   const minorSubdivisions = config.minorSubdivisions ?? DEFAULT_MINOR_SUBDIVISIONS;
   const minLabelSpacingPx = config.minLabelSpacingPx ?? DEFAULT_MIN_LABEL_SPACING_PX;
   const labelFontSize = config.labelFontSize ?? DEFAULT_LABEL_FONT;
   const unitSuffix = config.unitSuffix ?? 'last';
+  const labelPadPx = config.labelPadPx ?? DEFAULT_LABEL_PAD_PX;
 
   return {
     id,
@@ -118,19 +139,34 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // emit. Tick mark + label drop together: the user shouldn't see
       // a tick stuck next to a labelled one with no label of its own.
       const charPx = labelFontSize * 0.6;
-      const labelPadPx = 6;
-      const halfWidthOf = (rulerPos: number, withSuffix: boolean): number =>
-        (formatLabel(rulerPos, unit, withSuffix).length * charPx) / 2;
+      const halfWidthOf = (rulerPos: number, withSuffix: boolean): number => {
+        if (labelRotation === 90) {
+          // Rotated labels stand vertically — their on-screen horizontal
+          // footprint is the font height (≈ labelFontSize), independent
+          // of character count. The suffix only widens the rotated
+          // label *vertically* (which the track height handles), not
+          // horizontally, so `withSuffix` is irrelevant here.
+          return labelFontSize / 2;
+        }
+        return (formatLabel(rulerPos, unit, withSuffix).length * charPx) / 2;
+      };
       const allMajors = collectTicks(viewport, mapper, majorStep);
 
-      // Pass 1: walk assuming no suffix. The suffix goes on the actually-
-      // emitted last tick (only one survives the walk to wear it), so
-      // sizing all ticks the same here avoids over-shrinking the run.
+      // Pass 1: walk forward, skipping any candidate whose label would
+      // crash with its predecessor's. The canonical-last candidate is
+      // sized as if suffixed up front so the suffix-promotion case is
+      // typically resolved here — the second pass below is reserved
+      // for the rare edge case where the first pass drops the suffix-
+      // wearing tick.
+      const lastCandidatePos =
+        allMajors.length > 0 ? allMajors[allMajors.length - 1]!.rulerPos : null;
       const majors: TickRow[] = [];
       let lastBaselineX = -Infinity;
       let lastHalfWidth = 0;
       for (const t of allMajors) {
-        const half = halfWidthOf(t.rulerPos, false);
+        const wearsSuffix =
+          unitSuffix === 'last' && t.rulerPos === lastCandidatePos;
+        const half = halfWidthOf(t.rulerPos, wearsSuffix);
         if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadPx) {
           continue;
         }
@@ -216,6 +252,14 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                   unit,
                   unitSuffix === 'last' && isLast,
                 );
+                // The counter-scale wrap neutralises the exon group's
+                // scaleX so the text inside renders at natural size.
+                // For rotated labels the SVG `transform` attribute on
+                // the text element rotates inside the counter-scaled
+                // frame — the rotation composes with the cancel-out
+                // scaling so the text stays at natural font height +
+                // width regardless of zoom.
+                const rotated = labelRotation === 90;
                 return (
                   <g
                     key={`scale-label-wrap-${t.rulerPos}`}
@@ -230,8 +274,9 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                     <text
                       x={0}
                       y={labelY}
-                      textAnchor="middle"
-                      dominantBaseline="auto"
+                      textAnchor={rotated ? 'start' : 'middle'}
+                      dominantBaseline={rotated ? 'middle' : 'auto'}
+                      transform={rotated ? `rotate(-90 0 ${labelY})` : undefined}
                       fontSize={labelFontSize}
                       fill={labelFill}
                       className="vv-scale-label"

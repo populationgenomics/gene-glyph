@@ -216,6 +216,58 @@ describe('scaleTrack', () => {
     expect(container.querySelectorAll('.vv-scale-tick-major').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('label rotation: 90 sets the SVG transform on the text element', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const t = scaleTrack({ labelRotation: 90 });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 60 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const labels = container.querySelectorAll<SVGTextElement>('.vv-scale-label');
+    expect(labels.length).toBeGreaterThan(0);
+    for (const l of labels) {
+      expect(l.getAttribute('transform')).toMatch(/^rotate\(-90 /);
+      expect(l.getAttribute('text-anchor')).toBe('start');
+      expect(l.getAttribute('dominant-baseline')).toBe('middle');
+    }
+  });
+
+  it('label rotation: 0 omits the rotate transform (legacy horizontal labels)', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const t = scaleTrack({});
+    const { container } = render(
+      <svg>
+        {t.render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 18 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const labels = container.querySelectorAll<SVGTextElement>('.vv-scale-label');
+    for (const l of labels) {
+      expect(l.getAttribute('transform')).toBeNull();
+      expect(l.getAttribute('text-anchor')).toBe('middle');
+    }
+  });
+
+  it('label rotation: 90 default track height grows to fit rotated labels', () => {
+    const { viewport } = setup();
+    const t = scaleTrack({ labelRotation: 90 });
+    expect(t.height({ data: null, viewport, hint: { maxPx: 200 } }).px).toBe(60);
+  });
+
   it('renders ticks inside per-exon `<g>` wrappers so they ride exon transforms', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = scaleTrack({});
