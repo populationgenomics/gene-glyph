@@ -4,6 +4,8 @@ Gene-level annotation viewer for React with multi-coordinate alignment, pluggabl
 
 > **Status**: pre-1.0. API is shaking out. See [`gene-glyph-design.md`](./docs/design.md) for the architecture, and the [`RD` Jira project](https://cpg-populationanalysis.atlassian.net/browse/RD-1058) for the slice tickets.
 
+**Live playground**: [populationgenomics.github.io/gene-glyph](https://populationgenomics.github.io/gene-glyph/) — built from `main` on every push.
+
 ## Install
 
 ```sh

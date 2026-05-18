@@ -1,0 +1,69 @@
+name: Deploy playground to GitHub Pages
+
+# Build the playground Vite app and publish it to GitHub Pages. The
+# package is built first so the workspace symlink at
+# `apps/playground/node_modules/@populationgenomics/gene-glyph/dist/`
+# resolves to fresh code, matching how the Playwright job in `ci.yml`
+# stages its build. The Pages deploy uses the modern `actions/deploy-
+# pages@v4` flow (artifact upload + a separate deploy job) rather than
+# the legacy `peaceiris/actions-gh-pages` branch push so the deploy
+# inherits the official `github-pages` environment URL on the PR /
+# commit summary.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deploy. `cancel-in-progress: false`
+# lets in-flight deploys finish — cancelling would leave the Pages site
+# in a partial state.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build gene-glyph package
+        run: npm run build --workspace packages/gene-glyph
+
+      - name: Build playground for Pages
+        run: npm run build --workspace apps/playground
+        env:
+          PLAYGROUND_BASE: /gene-glyph/
+
+      - uses: actions/configure-pages@v5
+        with:
+          # Programmatically enable Pages on the repo if it isn't
+          # already. Subsequent runs are a no-op.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/playground/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
