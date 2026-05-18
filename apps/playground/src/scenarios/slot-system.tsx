@@ -3,6 +3,7 @@ import {
   GeneGlyph,
   exonTrack,
   interProTrack,
+  scaleTrack,
   variantRulerPos,
   variantTrack,
   ViewportController,
@@ -85,11 +86,12 @@ export function SlotSystemScenario() {
         transcript={TP53_TRANSCRIPT}
         protein={TP53_PROTEIN}
         tracks={[
+          scaleTrack({}),
           exonTrack({}),
           variantTrack({ id: 'variants', source: TP53_VARIANTS }),
           interProTrack({}),
         ]}
-        trackHeightBudget={240}
+        trackHeightBudget={260}
         mode={mode}
         brushRange={brush}
         onBrushChange={setBrush}
