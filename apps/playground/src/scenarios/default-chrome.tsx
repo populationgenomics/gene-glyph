@@ -114,6 +114,22 @@ export function DefaultChromeScenario() {
   };
   const collapsibleTopLevel = new Set(Object.keys(labels));
 
+  // The first sub-track of each group shares its top y with the group's
+  // chevron+label row (the group label is `flex-start`-anchored, so it
+  // sits at the top of the group's combined extent). If we draw the
+  // nesting bar flush with that row's top, the bar visually extends up
+  // beside the group label — confusing. Mark the first sub-track id of
+  // each group so its render branch can inset the bar downward.
+  const firstSubTrackIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const entry of tracks) {
+      if ('kind' in entry && entry.kind === 'group' && entry.tracks[0]) {
+        out.add(entry.tracks[0].id);
+      }
+    }
+    return out;
+  }, [tracks]);
+
   return (
     <section className="scenario" aria-labelledby="scenario-default-chrome">
       <h2 id="scenario-default-chrome">Default chrome — TP53</h2>
@@ -163,31 +179,46 @@ export function DefaultChromeScenario() {
                 />
               );
             }
-            // Sub-track of a group (e.g. interpro-family). Render with a
-            // left-border quote bar that connects the run of sub-tracks
-            // into a single continuous vertical line — reads as a
-            // blockquote-style nesting indicator without competing with
-            // the chevrons higher up. Detection: any `kind === 'track'`
-            // row that carries a `label` is a sub-track (only entry-
-            // type sub-tracks set one); the bare exon-track row has no
-            // label and falls through to the catch-all.
+            // Sub-track of a group (e.g. interpro-family). Render the
+            // nesting bar as a sibling flex child so its vertical extent
+            // is independent of the label's baseline. The bar of the
+            // *first* sub-track in a group is inset from the row's top so
+            // it doesn't extend up beside the group chevron+label (which
+            // is `flex-start`-anchored on the same row top). Subsequent
+            // sub-tracks let their bar fill the full row, so the segments
+            // touch and read as one continuous line.
             const label = item.label;
             if (item.kind === 'track' && label) {
+              const isFirst = firstSubTrackIds.has(item.id);
               return (
                 <span
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
+                    display: 'flex',
+                    alignItems: 'stretch',
                     height: '100%',
-                    paddingLeft: 12,
                     marginLeft: 6,
-                    borderLeft: '3px solid #475569',
-                    fontSize: '0.8rem',
-                    color: '#64748b',
                   }}
                   title={label}
                 >
-                  {label}
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 3,
+                      background: '#cbd5e1',
+                      marginTop: isFirst ? 20 : 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      paddingLeft: 9,
+                      fontSize: '0.8rem',
+                      color: '#64748b',
+                    }}
+                  >
+                    {label}
+                  </span>
                 </span>
               );
             }
