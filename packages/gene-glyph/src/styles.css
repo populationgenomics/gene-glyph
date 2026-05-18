@@ -631,6 +631,20 @@
   user-select: none;
 }
 
+/* Slice 29: sequence ladders (per-bp + per-aa letters). Letters are
+ * informational — never targets for native text selection — and they
+ * sit directly under the drag-pan surface, so without `user-select:
+ * none` a drag mid-letter starts a text-selection range and overrides
+ * the pan gesture. Pointer-events stay disabled so the letters never
+ * intercept hover / click on the underlying exon ribbon either. */
+.gene-glyph .vv-nt-letter,
+.gene-glyph .vv-aa-letter,
+.gene-glyph .vv-nucleotide-track,
+.gene-glyph .vv-aa-track {
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Slice 17: overlay layer + default hover tooltip. The overlay layer is a
  * sibling of the figure SVG inside .vv-figure-wrap so exportSVG() (Slice 19)
  * can serialise the SVG without dragging overlays in. Layer is non-
