@@ -742,7 +742,7 @@ by a host-supplied palette.
 
 ---
 
-### Slice 31 — Numeric profile track (per-position histogram / heatmap)
+### Slice 31 — Numeric profile track (per-position histogram / heatmap) — **shipped**
 
 **Motivation:**
 Conservation scores and gnomAD variant frequencies are dense numeric
