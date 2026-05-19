@@ -77,6 +77,9 @@ export { isTrackGroup, isDataSource } from './types.js';
 export { createCachedDataSource } from './data-source.js';
 export type { CachedDataSourceOptions } from './data-source.js';
 
+export { leashedRaf, leashedRecursion, createStormDetector } from './debug-leash.js';
+export type { LeashedRafOptions } from './debug-leash.js';
+
 export { exportSvgString, exportPngBlob } from './export.js';
 export type { ExportArgs, PrepareExportInput } from './export.js';
 
