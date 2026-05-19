@@ -86,15 +86,10 @@ export type { ExportArgs, PrepareExportInput } from './export.js';
 export { createCoordinateMapper } from './coordinate-mapper.js';
 export {
   ViewportController,
-  DEFAULT_TRANSITION_MS,
   DEFAULT_MAX_ZOOM,
   VIEWPORT_PAN_PADDING,
 } from './viewport.js';
-export type {
-  ViewportControllerInit,
-  TransitionTarget,
-  TransitionOptions,
-} from './viewport.js';
+export type { ViewportControllerInit } from './viewport.js';
 export { layoutTracks } from './layout-engine.js';
 export type { LayoutEngineArgs, LayoutItem, LayoutResult } from './layout-engine.js';
 export { createSvgPainter } from './painter/svg-painter.js';

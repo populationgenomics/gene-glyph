@@ -12,8 +12,8 @@ import { ViewportController } from '../viewport.js';
 import type { GeneGlyphRef, ViewportInfo } from '../viewer.js';
 
 export interface DefaultMinimapProps {
-  /** Ref handed to `<GeneGlyph>`. The minimap polls `getViewportInfo()`
-   *  every animation frame and writes back via `fitTo`. */
+  /** Ref handed to `<GeneGlyph>`. The minimap subscribes to viewer changes
+   *  and writes pan / zoom back via `fitTo`. */
   viewerRef: RefObject<GeneGlyphRef | null>;
   /** Pixel width of the thumbnail SVG. Default 480. */
   width?: number;
@@ -40,10 +40,8 @@ const HANDLE_PX = 6;
  * two edge handles resize the window, which zooms. Clicking outside the
  * window jumps the viewer to that point.
  *
- * The component reads viewer state through `getViewportInfo()` on a rAF
- * poll and writes back through the imperative `fitTo`. Interactive drags
- * pass `{ animate: false }` so the figure tracks the cursor in real time;
- * click-to-jump uses the default animated transition.
+ * Subscribes to the viewer's committed range / mode changes via
+ * `viewerRef.current.subscribe()` (Slice 33 retired the rAF poll).
  *
  * Built using only the public API.
  */
@@ -53,23 +51,22 @@ export function DefaultMinimap({
   height = 28,
   className,
 }: DefaultMinimapProps) {
-  const [info, setInfo] = useState<ViewportInfo | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // rAF poll: the viewer's interpolated range moves under animation; polling
-  // on every frame keeps the window rect locked to the same easing curve the
-  // user sees on the figure. Cheaper than wiring an event subscription and
-  // matches the cadence of the existing slot-system scenario.
+  // Mirror the viewer's committed range / mode into local state via the
+  // imperative subscribe() hook. Re-fires on every committed mutation so the
+  // window rectangle stays locked to whatever the figure is showing without
+  // polling.
+  const [info, setInfo] = useState<ViewportInfo | null>(null);
   useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const v = viewerRef.current;
-      if (v) setInfo(v.getViewportInfo());
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const v = viewerRef.current;
+    if (!v) return;
+    setInfo(v.getViewportInfo());
+    return v.subscribe(() => {
+      const live = viewerRef.current;
+      if (live) setInfo(live.getViewportInfo());
+    });
   }, [viewerRef]);
 
   // Mini viewport for coordinate mapping. Re-created when the transcript or
@@ -184,7 +181,7 @@ export function DefaultMinimap({
         const newLo = xToRuler(xLo + dx);
         const newHi = xToRuler(xHi + dx);
         const next = clamp([newLo, newHi]);
-        v.fitTo({ kind: 'range', range: next }, { animate: false });
+        v.fitTo({ kind: 'range', range: next });
         return;
       }
       if (drag.kind === 'resize-left') {
@@ -195,7 +192,7 @@ export function DefaultMinimap({
         const newLo = xToRuler(xLoNew);
         const newHi = drag.startRange[1];
         const next = clamp([Math.min(newLo, newHi - 1), newHi]);
-        v.fitTo({ kind: 'range', range: next }, { animate: false });
+        v.fitTo({ kind: 'range', range: next });
         return;
       }
       if (drag.kind === 'resize-right') {
@@ -206,7 +203,7 @@ export function DefaultMinimap({
         const newHi = xToRuler(xHiNew);
         const newLo = drag.startRange[0];
         const next = clamp([newLo, Math.max(newHi, newLo + 1)]);
-        v.fitTo({ kind: 'range', range: next }, { animate: false });
+        v.fitTo({ kind: 'range', range: next });
         return;
       }
     },
@@ -219,10 +216,7 @@ export function DefaultMinimap({
     }
   }, []);
 
-  // Background click: jump to that location, centred on the click. Animated —
-  // this is a discrete navigation, not a continuous gesture, so it should
-  // ride the same easing the rest of the public fitTo flows use. CSS handles
-  // reduced-motion (transition-duration → 0) without any branch here.
+  // Background click: jump to that location, centred on the click.
   const onBackgroundPointerDown = useCallback(
     (e: ReactPointerEvent<SVGRectElement>) => {
       if (!info || !mini) return;

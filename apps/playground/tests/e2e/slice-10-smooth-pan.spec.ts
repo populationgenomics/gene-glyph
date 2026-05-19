@@ -81,16 +81,13 @@ test.describe('Slice 10 — smooth pan internals (RD-1084)', () => {
     expect(anyOffFigure).toBe(true);
   });
 
-  test('keyboard pan does not toggle vv-no-transition (Slice 10 lets the animation run)', async ({ page }) => {
+  test('keyboard pan never adds the legacy vv-no-transition class (Slice 33 retired the animation system)', async ({ page }) => {
     await page.goto('/');
     const container = page.locator(
       'section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]',
     );
     await container.focus();
     await page.keyboard.press('ArrowRight');
-    // Slice 9 set vv-no-transition during keyboard pan to dodge the
-    // children-snap-mid-animation bug. Slice 10 fixes that bug at the source
-    // (baseline geometry), so the override should be gone.
     const cls = await container.getAttribute('class');
     expect(cls ?? '').not.toContain('vv-no-transition');
   });

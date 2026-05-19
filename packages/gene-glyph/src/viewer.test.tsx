@@ -35,10 +35,11 @@ async function flushTrackLoads() {
   });
 }
 
-async function waitForTransition(ms = 400) {
-  // `getViewportInfo()` returns interpolated values while a transition is in
-  // flight; tests that assert against the final state wait the transition
-  // duration first.
+async function waitForTransition(ms = 0) {
+  // Slice 33 retired the figure's CSS animation, so `getViewportInfo()` now
+  // returns the committed range immediately. The helper is kept as a thin
+  // `act` flush so existing tests don't need to be rewritten; callers can
+  // pass `ms = 0` (default) for the synchronous path.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, ms));
   });
@@ -92,21 +93,19 @@ describe('GeneGlyph', () => {
       expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('0');
     });
 
-    it('toggles .vv-mode-transitioning on the root for the duration of the curve', async () => {
+    it('updates data-vv-mode synchronously when the controlled mode prop changes', async () => {
       const { container, rerender } = render(
         <GeneGlyph transcript={transcript} mode="cds-with-introns" width={720} />,
       );
       await flushTrackLoads();
       const root = container.querySelector('[data-testid="gene-glyph"]')!;
-      expect(root.classList.contains('vv-mode-transitioning')).toBe(false);
+      expect(root.getAttribute('data-vv-mode')).toBe('cds-with-introns');
       await act(async () => {
         rerender(<GeneGlyph transcript={transcript} mode="protein" width={720} />);
       });
-      expect(root.classList.contains('vv-mode-transitioning')).toBe(true);
       expect(root.getAttribute('data-vv-mode')).toBe('protein');
-      // The class clears after the 450ms transition + 16ms slack.
-      await waitForTransition(500);
-      expect(root.classList.contains('vv-mode-transitioning')).toBe(false);
+      // Slice 33: no transition class — `vv-mode-transitioning` is gone.
+      expect(root.className).not.toContain('vv-mode-transitioning');
     });
 
     it('fires onModeChange after every committed mode change', async () => {
@@ -214,7 +213,7 @@ describe('GeneGlyph', () => {
       expect(info.layout.length).toBeGreaterThan(0);
     });
 
-    it('fitTo({kind: feature}) narrows the range around the feature and toggles vv-transitioning', async () => {
+    it('fitTo({kind: feature}) narrows the range around the feature synchronously', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
         <GeneGlyph
@@ -227,15 +226,14 @@ describe('GeneGlyph', () => {
       await act(async () => {
         ref.current!.fitTo({ kind: 'feature', trackId: 'variants', featureId: 'v2' });
       });
+      // Slice 33: no transition class — `vv-transitioning` is gone.
       const root = container.querySelector('[data-testid="gene-glyph"]');
-      expect(root?.classList.contains('vv-transitioning')).toBe(true);
-      await waitForTransition();
+      expect(root?.className).not.toContain('vv-transitioning');
       const after = ref.current!.getViewportInfo();
       expect(after.range[1] - after.range[0]).toBeLessThan(transcript.cdsLength);
       // v2 is at cPos 150; the new range should bracket it.
       expect(after.range[0]).toBeLessThanOrEqual(150);
       expect(after.range[1]).toBeGreaterThanOrEqual(150);
-      expect(root?.classList.contains('vv-transitioning')).toBe(false);
     });
 
     it('fitTo({kind: gene}) restores the full natural range', async () => {

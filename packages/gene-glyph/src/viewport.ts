@@ -1,3 +1,4 @@
+import { createStormDetector } from './debug-leash.js';
 import type {
   AnchorTarget,
   BaselineGeometry,
@@ -25,25 +26,6 @@ export interface ViewportControllerInit {
   intronScale?: number;
 }
 
-export interface TransitionTarget {
-  range?: readonly [number, number];
-}
-
-export interface TransitionOptions {
-  duration?: number;
-}
-
-/** Default duration for programmatic viewport transitions, in milliseconds.
- *  Matches the CSS `transition` on `.vv-exon-group` (350ms). */
-export const DEFAULT_TRANSITION_MS = 350;
-
-/** Duration of the CDS ↔ spliced ↔ protein mode transition, in milliseconds.
- *  Matches the `.vv-mode-transitioning` override applied to exon-group and
- *  intron-decoration transitions. Per design §8, the mode-change curve is
- *  slower and symmetrical (ease-in-out-quart) compared to the pan/zoom curve
- *  (ease-out-quart). */
-export const MODE_TRANSITION_MS = 450;
-
 /** Fraction of the natural range used as soft padding for pan clamping
  *  (design §7: "pan clamps hard to gene bounds + ~5% padding"). The same
  *  padding governs the most zoomed-out state — `minZoom` defaults to the
@@ -54,13 +36,6 @@ export const VIEWPORT_PAN_PADDING = 0.05;
  *  on typical-width figures without over-tuning per mode; hosts can override
  *  via the `maxZoom` prop on `<GeneGlyph>`. */
 export const DEFAULT_MAX_ZOOM = 200;
-
-interface TransitionSchedule {
-  fromRange: [number, number];
-  toRange: [number, number];
-  startTime: number;
-  duration: number;
-}
 
 interface CssTarget {
   style: CSSStyleDeclaration;
@@ -109,9 +84,10 @@ export class ViewportController implements Viewport {
   private _width: number;
   private _intronScale: number;
   private _attached: CssTarget | null = null;
-  private _transition: TransitionSchedule | null = null;
   private _baseline: BaselineGeometry | null = null;
   private _baselineKey: string | null = null;
+  private _publishStorm = createStormDetector('ViewportController.publish');
+  private _listeners = new Set<() => void>();
   readonly mapper: CoordinateMapper;
 
   constructor(init: ViewportControllerInit) {
@@ -151,15 +127,32 @@ export class ViewportController implements Viewport {
     // range endpoints through the mapper. Numeric range values differ between
     // rulers (CDS bp vs aa); the biological window the user sees should not.
     this._range = reprojectRange(this._range, prevMode, mode, this.mapper);
-    this._transition = null;
     this.invalidateBaseline();
     this.publish();
+    this.notify();
   }
 
   setRange(range: readonly [number, number]): void {
+    if (this._range[0] === range[0] && this._range[1] === range[1]) return;
     this._range = [range[0], range[1]];
-    this._transition = null;
     this.publish();
+    this.notify();
+  }
+
+  /** Subscribe to committed range / mode / width changes. Called synchronously
+   *  after the relevant mutator publishes new CSS variables. Returns an
+   *  unsubscribe function — pair with React's `useSyncExternalStore` (or any
+   *  framework's external-store hook) to keep auxiliary chrome in step with
+   *  the figure without polling. */
+  subscribe(listener: () => void): () => void {
+    this._listeners.add(listener);
+    return () => {
+      this._listeners.delete(listener);
+    };
+  }
+
+  private notify(): void {
+    for (const listener of this._listeners) listener();
   }
 
   /** Natural fit-gene range for the active mode (1..cdsLength, or 1..aaLength
@@ -232,55 +225,19 @@ export class ViewportController implements Viewport {
     return [lo, hi];
   }
 
-  /** Mutates state to the target and records a transition schedule so that
-   *  `getInterpolatedRange()` can report intermediate values during animation.
-   *  CSS transitions on `.vv-exon-group` and `.vv-intron-decoration` provide
-   *  the visual interpolation; this method only sets the new CSS-variable
-   *  targets and records the schedule for host queries. */
-  transitionTo(target: TransitionTarget, options?: TransitionOptions): void {
-    const duration = options?.duration ?? DEFAULT_TRANSITION_MS;
-    if (target.range) {
-      const fromRange: [number, number] = [this._range[0], this._range[1]];
-      const toRange: [number, number] = [target.range[0], target.range[1]];
-      this._transition = { fromRange, toRange, startTime: now(), duration };
-      this._range = toRange;
-    }
-    this.publish();
-  }
-
-  /** Range as it would be at the current animation timestamp — interpolated
-   *  through the in-flight transition curve, or the committed range if no
-   *  transition is active or the transition has elapsed. */
-  getInterpolatedRange(): readonly [number, number] {
-    const t = this._transition;
-    if (!t) return this._range;
-    const elapsed = now() - t.startTime;
-    if (elapsed >= t.duration) {
-      this._transition = null;
-      return this._range;
-    }
-    const eased = easeOutQuart(Math.max(0, elapsed / t.duration));
-    const a = t.fromRange[0] + (t.toRange[0] - t.fromRange[0]) * eased;
-    const b = t.fromRange[1] + (t.toRange[1] - t.fromRange[1]) * eased;
-    return [a, b];
-  }
-
-  /** Whether a programmatic transition is currently in flight. */
-  isTransitioning(): boolean {
-    if (!this._transition) return false;
-    return now() - this._transition.startTime < this._transition.duration;
-  }
-
   setWidth(width: number): void {
     if (this._width === width) return;
     this._width = width;
     this.invalidateBaseline();
     this.publish();
+    this.notify();
   }
 
   setIntronScale(scale: number): void {
+    if (this._intronScale === scale) return;
     this._intronScale = scale;
     this.publish();
+    this.notify();
   }
 
   // ---- Baseline geometry -------------------------------------------------
@@ -549,6 +506,7 @@ export class ViewportController implements Viewport {
 
   publish(): void {
     if (!this._attached) return;
+    this._publishStorm();
     const s = this._attached.style;
     s.setProperty('--vv-zoom', this.zoom().toString());
     s.setProperty('--vv-pan-x', '0px');
@@ -991,21 +949,6 @@ export class ViewportController implements Viewport {
 
 function clampOrdered(a: number, b: number): [number, number] {
   return a <= b ? [a, b] : [b, a];
-}
-
-function now(): number {
-  // performance.now() is monotonic and present in JSDOM + browsers; fall back
-  // to Date.now() in the unlikely case it isn't.
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
-}
-
-/** Polynomial approximation of cubic-bezier(0.22, 1, 0.36, 1) — the ease-out-
- *  quart curve used for programmatic viewport transitions per design §8. */
-function easeOutQuart(t: number): number {
-  const u = 1 - t;
-  return 1 - u * u * u * u;
 }
 
 /** Snap the last exon's right edge to the figure width to eliminate the

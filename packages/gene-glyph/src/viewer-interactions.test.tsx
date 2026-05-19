@@ -176,10 +176,9 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(mid[1]).toBeGreaterThan(220);
       expect(mid[0]).toBeLessThan(mid[1]);
       fireEvent.pointerUp(window, { pointerId: 1, clientX: 400 });
-      // After release, the no-transition flag should be off so future
-      // programmatic moves animate again.
+      // Slice 33: no transition class — `vv-no-transition` is gone.
       const root = container.querySelector('[data-testid="gene-glyph"]');
-      expect(root?.classList.contains('vv-no-transition')).toBe(false);
+      expect(root?.className).not.toContain('vv-no-transition');
     });
 
     it('moves the gene by the cursor distance at any zoom level (no acceleration)', async () => {
@@ -352,7 +351,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(afterS.zoom).toBeLessThan(afterA.zoom);
     });
 
-    it('keyboard pan/zoom animates (no vv-no-transition) — Slice 10 baseline geometry keeps children stable across the animation', async () => {
+    it('keyboard pan/zoom never adds the legacy vv-no-transition class (Slice 33 retired the animation system)', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
         <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
@@ -360,11 +359,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       await flushTrackLoads();
       const root = container.querySelector<HTMLElement>('[data-testid="gene-glyph"]')!;
       fireEvent.keyDown(root, { key: 'ArrowRight' });
-      // With baseline geometry the children's SVG attributes don't change on
-      // pan / zoom — only the wrapping `<g>`'s `transform` CSS variable. That
-      // means keyboard pan can ride the same CSS transition as `fitTo`; we
-      // assert the gesture-level "skip CSS easing" flag is *not* set.
-      expect(root.classList.contains('vv-no-transition')).toBe(false);
+      expect(root.className).not.toContain('vv-no-transition');
     });
   });
 

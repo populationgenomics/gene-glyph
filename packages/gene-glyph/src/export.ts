@@ -89,7 +89,7 @@ export function exportSvgString(input: PrepareExportInput): string {
     'position:absolute;left:-99999px;top:-99999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
   if (theme === 'print') outer.setAttribute('data-vv-print', '');
   const wrap = doc.createElement('div');
-  wrap.className = 'gene-glyph vv-no-transition';
+  wrap.className = 'gene-glyph';
   outer.appendChild(wrap);
   wrap.appendChild(clone);
   doc.body.appendChild(outer);

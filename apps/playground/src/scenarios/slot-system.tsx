@@ -30,7 +30,6 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.j
 export function SlotSystemScenario() {
   const [mode, setMode] = useState<ViewMode>('cds-with-introns');
   const ref = useRef<GeneGlyphRef | null>(null);
-  const [info, setInfo] = useState<ViewportInfo | null>(null);
   const [hiddenClick, setHiddenClick] = useState<{ trackId: string; featureId: string } | null>(
     null,
   );
@@ -54,19 +53,17 @@ export function SlotSystemScenario() {
     return n;
   }, [brush, mode]);
 
-  // The readout polls via rAF: `getViewportInfo()` returns the *interpolated*
-  // range during a transition, so reading it immediately after each button
-  // click would always lag one operation behind (t=0 of the new transition
-  // equals the previous target). A 60Hz tick keeps the value synced and lets
-  // the host see the same easing curve the user sees on screen.
+  // Mirror the viewer's committed state into local state via subscribe()
+  // (Slice 33 retired the rAF poll along with the animation system).
+  const [info, setInfo] = useState<ViewportInfo | null>(null);
   useEffect(() => {
-    let rafId = 0;
-    const tick = () => {
-      if (ref.current) setInfo(ref.current.getViewportInfo());
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    const v = ref.current;
+    if (!v) return;
+    setInfo(v.getViewportInfo());
+    return v.subscribe(() => {
+      const live = ref.current;
+      if (live) setInfo(live.getViewportInfo());
+    });
   }, []);
 
   const focusVariant = TP53_VARIANTS[0]?.id ?? null;

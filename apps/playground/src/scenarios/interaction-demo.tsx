@@ -35,15 +35,14 @@ export function InteractionDemoScenario() {
   const [range, setRange] = useState<readonly [number, number]>([1, TP53_TRANSCRIPT.cdsLength]);
   const [lastReason, setLastReason] = useState<ViewportChangeReason | null>(null);
   const [info, setInfo] = useState<ViewportInfo | null>(null);
-
   useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      if (ref.current) setInfo(ref.current.getViewportInfo());
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const v = ref.current;
+    if (!v) return;
+    setInfo(v.getViewportInfo());
+    return v.subscribe(() => {
+      const live = ref.current;
+      if (live) setInfo(live.getViewportInfo());
+    });
   }, []);
 
   return (

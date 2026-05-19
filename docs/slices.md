@@ -836,6 +836,111 @@ adjacent thin rows above the gene body.
 
 ---
 
+### Slice 33 — Remove the animation system (event-driven redraws only) — **shipped**
+
+**Motivation:**
+Animation is concentrated in three files (`viewer.tsx`,
+`use-viewport-interactions.ts`, `viewport.ts`) plus a handful of CSS
+rules, but the *bugs* it produces have outpaced the *value* it adds.
+The recent week shipped the infinite-loop-on-spliced-mode crash, the
+intron-gap-shrinks-with-zoom regression, the off-by-K ribbon shift in
+`cds-with-introns` deep zoom, and the rAF leash / storm-detector
+machinery (Slice 33 retires its callers, so the leash itself can stay
+as quiet diagnostics infrastructure). Every one of those bugs is in
+the interpolated-state-vs-committed-state seam.
+
+A read of the actual coupling (file:line audit) shows the animation
+layer is loosely attached: the public `GeneGlyphRef` exposes zero
+animation concepts, `getInterpolatedRange` isn't exported,
+`reprojectRange` is pure coord math (mode switches don't need
+animation to be *correct*), the layout engine + gesture interactions
+never read transitioning state, and tests touch only CSS class toggles
+or easing curve math — no semantic behaviour is gated on animation.
+The single non-trivial dependency is overview-track's rAF poller,
+which reads the interpolated range so the minimap window eases in
+step with the figure; without animation, that window updates per
+React render instead, which is one frame behind at 60 fps (visually
+imperceptible).
+
+Removing the animation layer first, then *considering* re-adding it
+as a thin CSS-only opt-in later, is a meaningful simplification —
+not a vibes-based "let's start over". The visual losses are pure
+cosmetics that can be re-added in isolation.
+
+**In scope (deletions):**
+- `viewport.ts` — collapse `transitionTo()` into `setRange()`, drop
+  `getInterpolatedRange()`, drop `_transition` / `TransitionSchedule`,
+  drop `DEFAULT_TRANSITION_MS` / `MODE_TRANSITION_MS` exports
+- `viewer.tsx` — drop `transitioning`, `modeTransitioning`,
+  `noTransition` states + their timers / refs / cleanup; drop
+  `bumpTick` (the layout `useMemo` keys on `viewportRange` /
+  `mode` directly); collapse the mode-transition `useLayoutEffect`
+  to a synchronous `viewport.setMode(mode)`
+- `use-viewport-interactions.ts` — drop every `setNoTransition` call
+  (drag, wheel, keyboard, fitTo) and the prop itself
+- `styles.css` — delete `.vv-no-transition` rule cluster, delete
+  `.vv-mode-transitioning` overrides, delete the always-on
+  `transition` rules on `.vv-exon-group` / `.vv-intron-decoration`
+  (the rules they override remain, just without the trigger)
+- rAF pollers retire: `overview-track.tsx`, `default-minimap.tsx`,
+  `slot-system.tsx`, `interaction-demo.tsx` — each replaces its
+  `leashedRaf(...)` block with a `useSyncExternalStore` (or simpler:
+  a `viewport.subscribe`-style hook) that re-renders on committed
+  range / mode change. The `debug-leash.ts` helper module *stays* —
+  it's diagnostics infrastructure for any future tight-loop hot
+  spots, with no callers post-slice
+- `viewer.tooltip-anchor` rAF retires similarly: tooltip position
+  recomputes on the same React render cycle that produces the
+  committed viewport state
+
+**In scope (test updates):**
+- `viewer.test.tsx`: drop the `vv-mode-transitioning` /
+  `vv-transitioning` class-toggle assertions (5 tests)
+- `viewer-interactions.test.tsx`: drop the "keyboard pan/zoom
+  animates" expectation (one assertion: `vv-no-transition` absence)
+- `viewport.test.ts`: drop the `transitionTo` interpolation tests
+  (2 tests: "snaps committed range and reports interpolated
+  values", "transitionTo can be interrupted")
+- Playwright: any e2e that waited `await page.waitForTimeout(500)`
+  for transitions to settle can drop the wait — the figure jumps
+  instantly to the new state
+
+**Out of scope (left for a follow-up if wanted):**
+- Re-adding the `fitTo` smooth-zoom curve as a CSS-only transition
+  on `.vv-exon-group` (no JS state, no rAF — just a `transition`
+  rule that the publish() naturally rides on)
+- Re-adding the mode-transition cross-fade with the 450ms
+  ease-in-out-quart curve (same shape — one extra CSS class
+  toggled via `useLayoutEffect`, no JS interpolation)
+- Whichever of the above gets re-added must keep the rAF pollers
+  out — the chrome reads committed state only, with the visual
+  smoothness coming from the browser, not from JS
+
+**Definition of done:**
+- `git grep -i transition` in `packages/gene-glyph/src/` returns
+  zero references to the deleted symbols (`transitionTo`,
+  `getInterpolatedRange`, `modeTransitioning`, `noTransition`,
+  `bumpTick`, `MODE_TRANSITION_MS`, `DEFAULT_TRANSITION_MS`,
+  `vv-no-transition`, `vv-mode-transitioning`, `vv-transitioning`)
+- Zero `requestAnimationFrame` calls in the published package
+  outside `debug-leash.ts` (which has no callers but remains as
+  diagnostics infrastructure)
+- `GeneGlyphRef` surface unchanged — hosts that called `fitTo` /
+  `zoomBy` see the figure jump instead of ease, but the API
+  contract is identical (no version bump required for hosts)
+- Every existing e2e test passes after dropping its
+  `waitForTimeout` for transition settle; new e2e asserts
+  fitTo lands the committed range synchronously
+- LOC delta in `packages/gene-glyph/src/`: net ≥ 300 lines deleted
+  (the audit identifies ~67 unique references across the deletions
+  above; each is typically a 2–5 line stanza)
+- Hand-test: pan + zoom + mode switch in every playground
+  scenario without console warnings, the spliced-CDS-deep-zoom
+  crash from this week stays not-reproducible, intron geometry
+  stays stable across zoom
+
+---
+
 ## Cross-cutting work (not slice-specific)
 
 ### Documentation

@@ -52,28 +52,18 @@ test.describe('Slice 14 — mode transitions (CDS ↔ spliced ↔ protein)', () 
     expect(intron0After).toBe('0');
   });
 
-  test('.vv-mode-transitioning carries the 450ms ease-in-out-quart curve', async ({ page }) => {
+  test('mode switch never adds .vv-mode-transitioning or a transition-duration (Slice 33 retired the animation)', async ({ page }) => {
     const s = await scenario(page);
     const root = s.locator('[data-testid="gene-glyph"]');
 
     await s.locator('select').first().selectOption('cds-spliced');
-    await expect(root).toHaveClass(/vv-mode-transitioning/);
+    await expect(root).not.toHaveClass(/vv-mode-transitioning/);
 
     const exonGroup = s.locator('.vv-exon-group').first();
     const dur = await exonGroup.evaluate(
       (el) => getComputedStyle(el).transitionDuration,
     );
-    // computed transition-duration may report the longest of stacked
-    // transitions; 450ms shows up as "0.45s" first in the list.
-    expect(dur.startsWith('0.45s')).toBe(true);
-
-    // After ~500ms the class clears and the duration drops back to the
-    // pan/zoom 350ms curve.
-    await page.waitForTimeout(550);
-    await expect(root).not.toHaveClass(/vv-mode-transitioning/);
-    const durAfter = await exonGroup.evaluate(
-      (el) => getComputedStyle(el).transitionDuration,
-    );
-    expect(durAfter.startsWith('0.35s')).toBe(true);
+    // No transition on the exon group anymore — computed value is "0s".
+    expect(dur).toBe('0s');
   });
 });

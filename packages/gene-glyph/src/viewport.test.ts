@@ -211,46 +211,31 @@ describe('ViewportController — range projection', () => {
   });
 });
 
-describe('ViewportController — programmatic transitions', () => {
-  it('transitionTo snaps the committed range to the target and reports interpolated values until the duration elapses', () => {
+describe('ViewportController — programmatic range updates', () => {
+  it('setRange snaps the committed range to the target and notifies subscribers', () => {
     const vp = fitGene('cds-spliced');
-    const startRange: readonly [number, number] = [...vp.range] as readonly [number, number];
-    const target: readonly [number, number] = [100, 200];
-
-    const t0 = performance.now();
-    vp.transitionTo({ range: target }, { duration: 200 });
-
-    // Committed range jumps to target so CSS variables publish target values;
-    // CSS transitions handle the visual interpolation.
-    expect(vp.range[0]).toBe(target[0]);
-    expect(vp.range[1]).toBe(target[1]);
-    expect(vp.isTransitioning()).toBe(true);
-
-    // Interpolated range sits between the from and to range while in flight.
-    const mid = vp.getInterpolatedRange();
-    expect(mid[0]).toBeGreaterThan(Math.min(startRange[0], target[0]) - 0.001);
-    expect(mid[0]).toBeLessThan(target[0] + 0.001);
-
-    // After the duration elapses, getInterpolatedRange returns the committed
-    // range and isTransitioning flips false.
-    const elapsed = performance.now() - t0;
-    const wait = Math.max(0, 250 - elapsed);
-    // Spin until the duration has passed without using async sleep.
-    const until = performance.now() + wait;
-    while (performance.now() < until) {
-      /* spin */
-    }
-    expect(vp.getInterpolatedRange()).toEqual(target);
-    expect(vp.isTransitioning()).toBe(false);
+    const observed: Array<readonly [number, number]> = [];
+    const unsubscribe = vp.subscribe(() => {
+      observed.push([vp.range[0], vp.range[1]]);
+    });
+    vp.setRange([100, 200]);
+    expect(vp.range[0]).toBe(100);
+    expect(vp.range[1]).toBe(200);
+    expect(observed).toEqual([[100, 200]]);
+    unsubscribe();
+    vp.setRange([1, 360]);
+    expect(observed).toEqual([[100, 200]]);
   });
 
-  it('setRange clears any in-flight transition', () => {
+  it('setRange skips notification when the range is unchanged', () => {
     const vp = fitGene('cds-spliced');
-    vp.transitionTo({ range: [50, 150] }, { duration: 500 });
-    expect(vp.isTransitioning()).toBe(true);
-    vp.setRange([200, 300]);
-    expect(vp.isTransitioning()).toBe(false);
-    expect(vp.getInterpolatedRange()).toEqual([200, 300]);
+    vp.setRange([50, 150]);
+    let calls = 0;
+    vp.subscribe(() => {
+      calls += 1;
+    });
+    vp.setRange([50, 150]);
+    expect(calls).toBe(0);
   });
 
   it('naturalRange returns the fit-gene span for the active mode', () => {

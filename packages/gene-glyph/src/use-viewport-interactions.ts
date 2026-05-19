@@ -20,8 +20,7 @@ export interface UseViewportInteractionsArgs {
    *  call `preventDefault()` on wheel events (React's synthetic wheel handler
    *  is passive in modern React). */
   svgRef: { current: SVGSVGElement | null };
-  /** Container div carrying the `.vv-no-transition` class flag and consuming
-   *  keyboard events. */
+  /** Container div consuming keyboard events. */
   containerRef: { current: HTMLElement | null };
   mode: InteractionMode;
   /** Min/max zoom scalars relative to fit-gene. */
@@ -31,9 +30,6 @@ export interface UseViewportInteractionsArgs {
    *  mutate `viewport` — we only fire `onChange` and let the host re-render
    *  with the new prop. */
   controlled: boolean;
-  /** Bumped after every committed range mutation in uncontrolled mode so the
-   *  React tree re-runs layout against the new range. */
-  bumpTick: () => void;
   /** Called for every committed range mutation. In uncontrolled mode the
    *  viewport has already been updated; in controlled mode the callback is
    *  the only effect of the gesture. */
@@ -46,12 +42,6 @@ export interface UseViewportInteractionsArgs {
    *  Slice 16: viewers wire this onto their brush state (controlled or local)
    *  and pass the result back via `interaction.brushRange`. */
   onBrush: (range: readonly [number, number] | null) => void;
-  /** Cancel any in-flight programmatic transition before applying a gesture
-   *  update — direct manipulation supersedes a transition immediately. */
-  cancelTransition: () => void;
-  /** Toggle the `.vv-no-transition` class on the root so per-exon transforms
-   *  follow the gesture without CSS easing. */
-  setNoTransition: (value: boolean) => void;
 }
 
 interface PointerInfo {
@@ -108,11 +98,8 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     minZoom,
     maxZoom,
     controlled,
-    bumpTick,
     onChange,
     onBrush,
-    cancelTransition,
-    setNoTransition,
   } = args;
 
   const dragRef = useRef<DragState | null>(null);
@@ -125,14 +112,10 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   const applyRange = useCallback(
     (next: readonly [number, number], reason: ViewportChangeReason) => {
       const clamped = viewport.clampRange(next, clampOpts);
-      cancelTransition();
-      if (!controlled) {
-        viewport.setRange(clamped);
-        bumpTick();
-      }
+      if (!controlled) viewport.setRange(clamped);
       onChange(clamped, reason);
     },
-    [viewport, clampOpts, cancelTransition, controlled, bumpTick, onChange],
+    [viewport, clampOpts, controlled, onChange],
   );
 
   const panByPx = useCallback(
@@ -229,7 +212,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       if (wantsZoom) {
         if (mode === 'embed') return; // host page keeps wheel
         ev.preventDefault();
-        setNoTransition(true);
         const rect = el.getBoundingClientRect();
         const cursorX =
           rect.width > 0 ? ((ev.clientX - rect.left) / rect.width) * viewport.width : 0;
@@ -251,24 +233,21 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const atRightLimit = dxCss > 0 && hi >= pHi - 1e-6;
       if (atLeftLimit || atRightLimit) return;
       ev.preventDefault();
-      setNoTransition(true);
       panByPx(cssDxToViewbox(dxCss), 'wheel');
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [svgRef, viewport, mode, panByPx, zoomAtX, setNoTransition, cssDxToViewbox]);
+  }, [svgRef, viewport, mode, panByPx, zoomAtX, cssDxToViewbox]);
 
   const endDrag = useCallback(() => {
     dragRef.current = null;
-    setNoTransition(false);
     const c = containerRef.current;
     if (c) c.classList.remove('vv-dragging');
-  }, [containerRef, setNoTransition]);
+  }, [containerRef]);
 
   const endPinch = useCallback(() => {
     pinchRef.current = null;
-    setNoTransition(false);
-  }, [setNoTransition]);
+  }, []);
 
   const endBrush = useCallback(() => {
     brushRef.current = null;
@@ -293,7 +272,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         const lo = Math.min(brushSt.anchorRuler, r);
         const hi = Math.max(brushSt.anchorRuler, r);
         onBrush([lo, hi]);
-        bumpTick();
         return;
       }
       // Pinch next — two pointers always overrides drag.
@@ -336,7 +314,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
           const remaining = [...pinch.pointers.values()][0];
           if (remaining) {
             dragRef.current = { pointerId: remaining.id, lastClientX: remaining.clientX };
-            setNoTransition(true);
           }
         }
         return;
@@ -361,8 +338,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     endPinch,
     endBrush,
     onBrush,
-    bumpTick,
-    setNoTransition,
     svgRef,
     viewport,
   ]);
@@ -420,11 +395,10 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         return;
       }
       dragRef.current = { pointerId: e.pointerId, lastClientX: e.clientX };
-      setNoTransition(true);
       const c = containerRef.current;
       if (c) c.classList.add('vv-dragging');
     },
-    [viewport, svgRef, containerRef, setNoTransition, clientXToRuler, endDrag],
+    [viewport, svgRef, containerRef, clientXToRuler, endDrag],
   );
 
   const onKeyDown = useCallback(
@@ -432,18 +406,12 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const key = e.key;
       const [lo, hi] = viewport.range;
       const len = hi - lo;
-      // Slice 10: with baseline geometry, exon `<g>` children no longer
-      // re-render at new local coords mid-animation — only the wrapping
-      // group's translate + scale change. That means keyboard pan / zoom can
-      // ride the same CSS transition as `fitTo`, no `vv-no-transition`
-      // override needed.
       switch (key) {
         case '+':
         case '=':
         case 'w':
         case 'W':
           e.preventDefault();
-          setNoTransition(false);
           zoomAtX(2, viewport.width / 2, 'keyboard');
           return;
         case '-':
@@ -451,26 +419,22 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         case 's':
         case 'S':
           e.preventDefault();
-          setNoTransition(false);
           zoomAtX(0.5, viewport.width / 2, 'keyboard');
           return;
         case 'ArrowLeft':
         case 'a':
         case 'A':
           e.preventDefault();
-          setNoTransition(false);
           applyRange([lo - len * KEYBOARD_PAN_STEP, hi - len * KEYBOARD_PAN_STEP], 'keyboard');
           return;
         case 'ArrowRight':
         case 'd':
         case 'D':
           e.preventDefault();
-          setNoTransition(false);
           applyRange([lo + len * KEYBOARD_PAN_STEP, hi + len * KEYBOARD_PAN_STEP], 'keyboard');
           return;
         case '1':
           e.preventDefault();
-          setNoTransition(false);
           applyRange(viewport.naturalRange(), 'keyboard');
           return;
         case 'f':
@@ -479,7 +443,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
           // tracker here in Slice 9; fall back to fit-gene rather than crash,
           // and let hosts wire a richer binding via their own keyboard.
           e.preventDefault();
-          setNoTransition(false);
           applyRange(viewport.naturalRange(), 'keyboard');
           return;
         }
@@ -487,7 +450,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
           return;
       }
     },
-    [viewport, applyRange, zoomAtX, setNoTransition],
+    [viewport, applyRange, zoomAtX],
   );
 
   const onContextMenu = useCallback(

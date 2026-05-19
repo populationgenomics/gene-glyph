@@ -168,12 +168,37 @@ function OverviewTrackImpl({
   const trackTop = rect.yTop;
   const trackHeight = rect.yBottom - rect.yTop;
 
+  // Mirror the live viewer's committed range / natural range into state via
+  // the imperative subscribe() hook. Re-fires on every committed mutation so
+  // the bounds rectangle stays in step with whatever the figure shows.
   const [liveRange, setLiveRange] = useState<readonly [number, number]>(
     () => viewport.range,
   );
   const [naturalRange, setNaturalRange] = useState<readonly [number, number]>(
     () => viewport.naturalRange?.() ?? viewport.range,
   );
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    const sync = () => {
+      const live = viewerRef.current;
+      if (!live) return;
+      const info = live.getViewportInfo();
+      setLiveRange((prev) =>
+        prev[0] === info.range[0] && prev[1] === info.range[1]
+          ? prev
+          : [info.range[0], info.range[1]],
+      );
+      setNaturalRange((prev) =>
+        prev[0] === info.naturalRange[0] && prev[1] === info.naturalRange[1]
+          ? prev
+          : [info.naturalRange[0], info.naturalRange[1]],
+      );
+    };
+    sync();
+    return v.subscribe(sync);
+  }, [viewerRef]);
+
   const dragRef = useRef<DragState | null>(null);
 
   // Mini-viewport pinned to fit-gene at the figure's width. This is the
@@ -197,32 +222,6 @@ function OverviewTrackImpl({
   // variables, so `placeInExonGroup` outputs work in baseline frame
   // (translate(0) scale(1)) — that's exactly what minimap rendering wants.
   const minimapPainter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
-
-  // Poll the live viewport for the visible CDS range and natural range.
-  // Reads `getInterpolatedRange()` so the rectangle eases in step with
-  // the figure's CSS transitions during programmatic `fitTo`.
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const v = viewerRef.current;
-      if (v) {
-        const info = v.getViewportInfo();
-        setLiveRange((prev) =>
-          prev[0] === info.range[0] && prev[1] === info.range[1]
-            ? prev
-            : [info.range[0], info.range[1]],
-        );
-        setNaturalRange((prev) =>
-          prev[0] === info.naturalRange[0] && prev[1] === info.naturalRange[1]
-            ? prev
-            : [info.naturalRange[0], info.naturalRange[1]],
-        );
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [viewerRef]);
 
   // Compose the per-track minimap rows. Each track that opts into
   // `renderMinimap` gets one row of `rowHeight` pixels inside the
