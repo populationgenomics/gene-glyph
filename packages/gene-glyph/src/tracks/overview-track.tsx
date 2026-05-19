@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import { createSvgPainter } from '../painter/svg-painter.js';
+import { ProjectionFrame } from '../projection-frame.js';
 import { ViewportController } from '../viewport.js';
 import type {
   BaselineGeometry,
@@ -291,64 +292,20 @@ function OverviewTrackImpl({
     totalWidth: width,
   };
 
-  // Coord conversion helpers for the scaled minimap frame. Used by the
-  // window-rect math, drag handler, and click-to-jump.
-  const transcriptExons = mapper.transcript.exons;
-  const cdsToMinimapX = (cPos: number): number => {
-    if (transcriptExons.length === 0) return 0;
-    for (let i = 0; i < transcriptExons.length; i++) {
-      const e = transcriptExons[i]!;
-      const se = scaledExons[i]!;
-      if (cPos >= e.cdsStart && cPos <= e.cdsEnd) {
-        const span = Math.max(1, e.cdsEnd - e.cdsStart);
-        return se.xStart + ((cPos - e.cdsStart) / span) * se.width;
-      }
-      if (i < transcriptExons.length - 1) {
-        const next = transcriptExons[i + 1]!;
-        if (cPos > e.cdsEnd && cPos < next.cdsStart) {
-          const denom = Math.max(1, next.cdsStart - e.cdsEnd);
-          return se.xEnd + ((cPos - e.cdsEnd) / denom) * scaledGapPx;
-        }
-      }
-    }
-    // Extrapolate past the gene's ends linearly along the scaled
-    // px-per-bp so drag-pan into the padding zone still produces
-    // sensible positions.
-    const first = transcriptExons[0]!;
-    const last = transcriptExons[transcriptExons.length - 1]!;
-    const sFirst = scaledExons[0]!;
-    const sLast = scaledExons[scaledExons.length - 1]!;
-    if (cPos < first.cdsStart) {
-      return sFirst.xStart - (first.cdsStart - cPos) * scaledPxPerBp;
-    }
-    return sLast.xEnd + (cPos - last.cdsEnd) * scaledPxPerBp;
-  };
-  const minimapXToCds = (x: number): number => {
-    if (transcriptExons.length === 0) return 0;
-    for (let i = 0; i < transcriptExons.length; i++) {
-      const e = transcriptExons[i]!;
-      const se = scaledExons[i]!;
-      if (x >= se.xStart && x <= se.xEnd) {
-        const span = Math.max(1, e.cdsEnd - e.cdsStart);
-        return e.cdsStart + ((x - se.xStart) / Math.max(1e-6, se.width)) * span;
-      }
-      if (i < transcriptExons.length - 1) {
-        const next = transcriptExons[i + 1]!;
-        if (x > se.xEnd && x < scaledExons[i + 1]!.xStart) {
-          const t = (x - se.xEnd) / Math.max(1e-6, scaledGapPx);
-          return e.cdsEnd + t * (next.cdsStart - e.cdsEnd);
-        }
-      }
-    }
-    const first = transcriptExons[0]!;
-    const last = transcriptExons[transcriptExons.length - 1]!;
-    const sFirst = scaledExons[0]!;
-    const sLast = scaledExons[scaledExons.length - 1]!;
-    if (x < sFirst.xStart) {
-      return first.cdsStart - (sFirst.xStart - x) / Math.max(1e-6, scaledPxPerBp);
-    }
-    return last.cdsEnd + (x - sLast.xEnd) / Math.max(1e-6, scaledPxPerBp);
-  };
+  // The minimap's coord conversion is the same ruler / baseline math the
+  // figure uses, just driven by the rescaled-to-minimap-width baseline.
+  // Reusing `ProjectionFrame` keeps the per-exon walk, gap interpolation,
+  // and protein-mode ruler semantics in one place — the live figure and
+  // the minimap stay numerically aligned without parallel implementations.
+  const minimapFrame = new ProjectionFrame({
+    baseline: scaledGeom,
+    range: naturalRange,
+    width,
+    mode: viewport.mode,
+    exons: mapper.transcript.exons,
+  });
+  const cdsToMinimapX = (cPos: number): number => minimapFrame.rulerToBaselineX(cPos);
+  const minimapXToCds = (x: number): number => minimapFrame.baselineXToRuler(x);
 
   // Bounds rectangle: drive the window endpoints off the figure's
   // *actually-visible* baseline range (screenToBaselineX(0..width))
@@ -521,24 +478,16 @@ function OverviewTrackImpl({
   // returns the *scaled* (zoom-tracking) geometry, not the fit-gene
   // baseline. exonTrack.renderMinimap reads only `baselineGeometry()`
   // off the viewport; the Proxy delegates everything else to the
-  // original mini-viewport so tracks that consume other Viewport
-  // methods continue to work. (The scaled geometry's totalWidth is
+  // original mini-viewport. (The scaled geometry's totalWidth is
   // already the minimap's `width`, so width = miniViewport.width.)
   const scaledMinimapViewport = useMemo<Viewport>(() => {
     return new Proxy(miniViewport, {
       get(target, prop, receiver) {
         if (prop === 'baselineGeometry') return () => scaledGeom;
-        if (prop === 'cdsToBaselineX') return cdsToMinimapX;
-        if (prop === 'baselineXToRuler') return minimapXToCds;
         return Reflect.get(target, prop, receiver);
       },
     });
-    // The proxy closes over scaledGeom / coord helpers, which are
-    // recomputed on every render — the memo gates on those identities
-    // so renderMinimap consumers see a fresh geometry per figure-zoom
-    // change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [miniViewport, scaledGeom, cdsToMinimapX, minimapXToCds]);
+  }, [miniViewport, scaledGeom]);
 
   // Lay rows out top-to-bottom inside the overview's vertical band.
   const contentTop = trackTop + verticalPadding;
