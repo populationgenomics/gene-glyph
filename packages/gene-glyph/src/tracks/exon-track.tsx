@@ -76,30 +76,44 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // scale; the figure SVG's `overflow: hidden` clips edge exons that
       // slide off-figure during pan / zoom.
       //
-      // Extend the ribbon visually by half a bp-slot on each side so per-bp
-      // markers (nt/aa letters, variant lollipops, ruler ticks) sit *inside*
-      // the ribbon at the 5′/3′ exon boundaries. `cdsToBaselineX` returns the
-      // bp's centre point — without the half-slot pad, the bp at cdsStart /
-      // cdsEnd anchors at the ribbon's hard edge and its glyph hangs into the
-      // padding zone or gap.
-      const halfSlot = geom.pxPerBp * 0.5;
+      // Extend the ribbon visually by a constant `overhangPx` of *screen*
+      // pixels on each side so per-bp markers (nt/aa letters, variant
+      // lollipops, ruler ticks) sit inside the ribbon at the 5′/3′ exon
+      // boundaries. `cdsToBaselineX` returns the bp's centre point —
+      // without the pad, the bp at cdsStart / cdsEnd anchors at the ribbon's
+      // hard edge and its 12-px-wide letter glyph hangs half off into the
+      // padding zone / intron gap.
+      //
+      // The pad lives inside the exon group's `scaleX(exon-scale)` transform,
+      // so we counter-scale via CSS `calc(... / var(--vv-exon-scale-x-N))`.
+      // That keeps the screen-pixel overhang constant across zoom — a
+      // baseline-units pad would grow linearly with zoom and swallow the
+      // inter-exon gap whole at deep zoom (no zigzag visible past ~30×).
+      const overhangPx = 6;
       for (const eb of geom.exons) {
+        const scaleVar = `var(--vv-exon-scale-x-${eb.exonIdx}, 1)`;
+        const rectStyle = {
+          // SVG2: x / width as CSS properties so we can use calc with the
+          // live exon-scale CSS var. Browser support is Chrome 88+, Firefox
+          // 76+, Safari 14+ — all the targets the rest of the viewer assumes.
+          x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
+          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
+        } as unknown as CSSProperties;
         exonRects.push(
           painter.placeInExonGroup(
             eb.exonIdx,
             <Fragment key={`exon-${eb.exonIdx}`}>
-              {painter.drawRect({
-                key: `exon-rect-${eb.exonIdx}`,
-                x: -halfSlot,
-                y: exonY,
-                width: eb.width + halfSlot * 2,
-                height: exonH,
-                fill: painter.color('vv-color-exon-fill', '#94a3b8'),
-                stroke: painter.color('vv-color-exon-stroke', '#475569'),
-                strokeWidth: 1,
-                vectorEffect: 'non-scaling-stroke',
-                className: 'vv-exon-rect',
-              })}
+              <rect
+                key={`exon-rect-${eb.exonIdx}`}
+                y={exonY}
+                height={exonH}
+                fill={painter.color('vv-color-exon-fill', '#94a3b8')}
+                stroke={painter.color('vv-color-exon-stroke', '#475569')}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+                className="vv-exon-rect"
+                style={rectStyle}
+              />
             </Fragment>,
           ),
         );
@@ -116,36 +130,44 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // rectangles (which now overhang the baseline gap by `halfSlot` on
       // each side per the half-slot ribbon extension above).
       for (const gap of geom.gaps) {
-        const visibleGap = gap.width - halfSlot * 2;
-        if (visibleGap <= 0) continue;
-        const flank = Math.min(flankPx, visibleGap / 3);
-        const left = halfSlot;
-        const right = gap.width - halfSlot;
-        const donorEnd = left + flank;
-        const acceptorStart = right - flank;
-        const peakX = (left + right) / 2;
-        const peakY = intronY - chevronLift;
-        const stroke = painter.color('vv-color-intron-line', '#475569');
-        const points = `${left},${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${right},${intronY}`;
-        intronDecorations.push(
-          painter.placeInInterExon(
-            gap.exonIdxA,
-            gap.exonIdxB,
-            <Fragment key={`intron-${gap.exonIdxA}-${gap.exonIdxB}`}>
-              <polyline
-                key={`intron-line-${gap.exonIdxA}`}
-                points={points}
-                fill="none"
-                stroke={stroke}
-                strokeWidth={1.5}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-                className="vv-intron-polyline"
-              />
-            </Fragment>,
-          ),
-        );
+        // The exon ribbons each overhang the gap by `overhangPx` of screen
+        // pixels (a constant — the inter-exon `<g>` doesn't scale with zoom
+        // in cds-with-introns, so we can shave that overhang off as a flat
+        // pixel value here too). The hidden-feature mark below renders
+        // independently so it stays available in spliced / protein modes
+        // (gap collapses but the mark fades in via the existing
+        // `1 - var(--vv-intron-scale)` opacity calc).
+        const visibleGap = gap.width - overhangPx * 2;
+        if (visibleGap > 0) {
+          const flank = Math.min(flankPx, visibleGap / 3);
+          const left = overhangPx;
+          const right = gap.width - overhangPx;
+          const donorEnd = left + flank;
+          const acceptorStart = right - flank;
+          const peakX = (left + right) / 2;
+          const peakY = intronY - chevronLift;
+          const stroke = painter.color('vv-color-intron-line', '#475569');
+          const points = `${left},${intronY} ${donorEnd},${intronY} ${peakX},${peakY} ${acceptorStart},${intronY} ${right},${intronY}`;
+          intronDecorations.push(
+            painter.placeInInterExon(
+              gap.exonIdxA,
+              gap.exonIdxB,
+              <Fragment key={`intron-${gap.exonIdxA}-${gap.exonIdxB}`}>
+                <polyline
+                  key={`intron-line-${gap.exonIdxA}`}
+                  points={points}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={1.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-intron-polyline"
+                />
+              </Fragment>,
+            ),
+          );
+        }
 
         // Slice 15: hidden-feature indicator sits at the gap's *current* screen
         // position (centre, accounting for the gap's collapsed width in
