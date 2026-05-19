@@ -343,3 +343,60 @@ describe('ViewportController — clampRange + paddedBounds', () => {
     expect(protein.rulerAtScreen(720)).toBeCloseTo(120, 5);
   });
 });
+
+describe('ViewportController — Position-based projection', () => {
+  it('toBaselineX agrees across coord systems for the same biological position', () => {
+    const vp = fitGene('cds-spliced');
+    // cPos 4 = aa 2 (first base of codon 2) = genomic 1003 (exon 1, strand +).
+    const fromCds = vp.toBaselineX({ kind: 'cds', cPos: 4, offset: 0 });
+    const fromProtein = vp.toBaselineX({ kind: 'protein', aa: 2 });
+    const fromGenomic = vp.toBaselineX({ kind: 'genomic', chr: 'chr1', pos: 1003 });
+    expect(fromCds).not.toBeNull();
+    expect(fromProtein).toBeCloseTo(fromCds!, 5);
+    expect(fromGenomic).toBeCloseTo(fromCds!, 5);
+  });
+
+  it('toBaselineX returns null for intronic CDS positions and off-transcript genomic positions', () => {
+    const vp = fitGene('cds-spliced');
+    expect(vp.toBaselineX({ kind: 'cds', cPos: 100, offset: 5 })).toBeNull();
+    expect(vp.toBaselineX({ kind: 'genomic', chr: 'chr1', pos: 5000 })).toBeNull();
+    expect(vp.toBaselineX({ kind: 'genomic', chr: 'chr2', pos: 1050 })).toBeNull();
+  });
+
+  it('toScreen handles a CDS position in protein mode (no callsite-level mode branch)', () => {
+    // The legacy `cdsToScreen` returns null in protein mode, forcing callers
+    // to branch on viewport.mode. `toScreen` does the right thing — convert
+    // cPos to its containing aa and project — so feature placement works in
+    // any mode regardless of the variant's coord kind.
+    const protein = fitGene('protein');
+    const x = protein.toScreen({ kind: 'cds', cPos: 4, offset: 0 });
+    const xAa = protein.toScreen({ kind: 'protein', aa: 2 });
+    expect(x).not.toBeNull();
+    expect(x).toBeCloseTo(xAa!, 5);
+  });
+
+  it('toScreen returns null for positions panned out of the visible range', () => {
+    const vp = fitGene('cds-spliced');
+    vp.setRange([1, 50]);
+    expect(vp.toScreen({ kind: 'cds', cPos: 200, offset: 0 })).toBeNull();
+    expect(vp.toScreen({ kind: 'cds', cPos: 10, offset: 0 })).not.toBeNull();
+  });
+
+  it('mapper.resolveCds reduces every Position kind to (cPos, offset)', () => {
+    const mapper = createCoordinateMapper(transcript);
+    expect(mapper.resolveCds({ kind: 'cds', cPos: 42, offset: 3 })).toEqual({
+      cPos: 42,
+      offset: 3,
+    });
+    expect(mapper.resolveCds({ kind: 'protein', aa: 5 })).toEqual({
+      cPos: 13,
+      offset: 0,
+    });
+    expect(
+      mapper.resolveCds({ kind: 'genomic', chr: 'chr1', pos: 1003 }),
+    ).toEqual({ cPos: 4, offset: 0 });
+    expect(
+      mapper.resolveCds({ kind: 'genomic', chr: 'chrX', pos: 9999 }),
+    ).toBeNull();
+  });
+});

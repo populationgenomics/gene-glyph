@@ -3,6 +3,7 @@ import type {
   CoordinateMapper,
   Exon,
   GenomicPosition,
+  Position,
   Transcript,
 } from './types.js';
 
@@ -115,6 +116,17 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     return (aa - 1) * 3 + 1;
   }
 
+  function resolveCds(pos: Position): CdsPosition | null {
+    switch (pos.kind) {
+      case 'cds':
+        return { cPos: pos.cPos, offset: pos.offset };
+      case 'protein':
+        return { cPos: proteinToCds(pos.aa), offset: 0 };
+      case 'genomic':
+        return genomicToCds(pos.chr, pos.pos);
+    }
+  }
+
   return {
     transcript,
     genomicToCds,
@@ -123,5 +135,6 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     proteinToCds,
     findExonByCds,
     findExonByGenomic,
+    resolveCds,
   };
 }

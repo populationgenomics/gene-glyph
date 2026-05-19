@@ -66,10 +66,21 @@ export type VariantCategory =
   | 'other'
   | 'unknown';
 
-export type VariantCoord =
+/** A position in one of the three biological coordinate systems. The
+ *  tagged union lets callers hand any-coord-typed data straight to the
+ *  viewport's projection methods without a `(viewport.mode, coordSystem)`
+ *  branch on the caller side — the dispatch happens once inside
+ *  {@link Viewport.toScreen} / {@link Viewport.toBaselineX}, not at every
+ *  callsite that needs to place a feature. */
+export type Position =
   | { kind: 'cds'; cPos: number; offset: number }
   | { kind: 'protein'; aa: number }
   | { kind: 'genomic'; chr: string; pos: number };
+
+/** Coord payload carried by ViewerVariant. Same shape as {@link Position}
+ *  by design — host data adapters produce variants in any coord system,
+ *  and tracks hand them straight to the viewport without translation. */
+export type VariantCoord = Position;
 
 export interface ViewerVariant {
   id: string;
@@ -220,6 +231,12 @@ export interface CoordinateMapper {
   proteinToCds(aa: number): number;
   findExonByCds(cPos: number): { exonIdx: number } | null;
   findExonByGenomic(chr: string, pos: number): { exonIdx: number } | null;
+  /** Reduce a {@link Position} (any coord system) to a CDS `(cPos, offset)`
+   *  pair. Returns `null` for genomic positions that don't land on the
+   *  transcript. Lets callers stop hand-rolling the same
+   *  `switch (coord.kind)` reduction at every site that needs a unified
+   *  CDS view of a tagged coord. */
+  resolveCds(pos: Position): CdsPosition | null;
 }
 
 /** Per-exon rectangle in baseline screen-x. Exposed to tracks via
@@ -258,6 +275,20 @@ export interface Viewport {
    *  modes, aa in protein mode. Stable until the mode or transcript
    *  changes; chrome / minimap code uses it as the thumbnail span. */
   naturalRange(): readonly [number, number];
+
+  /** Project a {@link Position} (any coord system) onto current screen-x.
+   *  Returns `null` when the position can't be placed in the active mode
+   *  — intronic offsets, genomic positions outside any exon, or positions
+   *  panned out of the current viewport. The single entry point replaces
+   *  the three-door `cdsToScreen` / `proteinToScreen` / `genomicToScreen`
+   *  trio for callers that carry tagged coords. */
+  toScreen(pos: Position): number | null;
+  /** Project a {@link Position} onto fit-gene baseline-x. Same null
+   *  contract as {@link toScreen}, but never returns null because of
+   *  out-of-viewport — only for unplaceable coords (intronic offsets,
+   *  off-transcript genomic positions). Tracks rendering against the
+   *  baseline-x frame use this to anchor features. */
+  toBaselineX(pos: Position): number | null;
 
   cdsToScreen(cPos: number, offset: number): number | null;
   proteinToScreen(aa: number): number | null;

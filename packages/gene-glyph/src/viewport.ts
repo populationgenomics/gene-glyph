@@ -10,6 +10,7 @@ import type {
   ExonBaseline,
   GapBaseline,
   GenomicPosition,
+  Position,
   RangeProjection,
   RangeSegment,
   ScreenPoint,
@@ -496,6 +497,49 @@ export class ViewportController implements Viewport {
 
   // ---- Point projection --------------------------------------------------
 
+  /**
+   * Project a {@link Position} (any coord system) onto fit-gene baseline-x.
+   * Single entry point — the mode-dependent ruler conversion happens once
+   * here instead of at every callsite. Returns `null` for unplaceable
+   * coords: intronic CDS positions (`offset !== 0`), genomic positions
+   * off the transcript, and protein positions whose codon is outside the
+   * CDS.
+   */
+  toBaselineX(pos: Position): number | null {
+    switch (pos.kind) {
+      case 'cds': {
+        if (pos.offset !== 0) return null;
+        // The frame's ruler is mode-dependent (CDS bp in CDS modes, aa
+        // in protein mode). Convert once at the boundary so callers
+        // never need a `(mode, coordSystem)` branch.
+        if (this._mode === 'protein') {
+          const aa = this.mapper.cdsToProtein(pos.cPos);
+          if (aa === null) return null;
+          return this.cdsToBaselineX(aa);
+        }
+        return this.cdsToBaselineX(pos.cPos);
+      }
+      case 'protein': {
+        const ruler =
+          this._mode === 'protein' ? pos.aa : this.mapper.proteinToCds(pos.aa);
+        return this.cdsToBaselineX(ruler);
+      }
+      case 'genomic': {
+        const cds = this.mapper.genomicToCds(pos.chr, pos.pos);
+        if (!cds) return null;
+        return this.toBaselineX({ kind: 'cds', cPos: cds.cPos, offset: cds.offset });
+      }
+    }
+  }
+
+  /** Project a {@link Position} onto current screen-x. Composes
+   *  {@link toBaselineX} with the live zoom-and-clip mapping. */
+  toScreen(pos: Position): number | null {
+    const baselineX = this.toBaselineX(pos);
+    if (baselineX === null) return null;
+    return this.applyZoomClamped(baselineX);
+  }
+
   cdsToScreen(cPos: number, offset: number): number | null {
     if (offset !== 0) return null;
     if (this._mode === 'protein') return null;
@@ -723,20 +767,12 @@ export class ViewportController implements Viewport {
     cdsHi: number,
     exonIdx: number,
   ): RangeSegment | null {
-    // `projectExonic` matches ranges against exon boundaries in CDS bp space
-    // (because exon.cdsStart/cdsEnd are CDS bp). But baseline-x in protein
-    // mode is linear in aa, not CDS — `cdsToBaselineX` expects aa input there
-    // (see its doc comment "CDS bp in CDS modes, aa in protein mode"). Convert
-    // before lookup so a CDS-coord range projected in protein mode lands at
-    // the right aa positions instead of treating cPos as an aa index.
-    let lo = cdsLo;
-    let hi = cdsHi;
-    if (this._mode === 'protein') {
-      lo = this.mapper.cdsToProtein(cdsLo) ?? lo;
-      hi = this.mapper.cdsToProtein(cdsHi) ?? hi;
-    }
-    const xStart = this.cdsToBaselineX(lo);
-    const xEnd = this.cdsToBaselineX(hi);
+    // `toBaselineX` handles the protein-mode ruler conversion internally
+    // — pass CDS bp positions directly and the right aa index falls out
+    // in protein mode.
+    const xStart = this.toBaselineX({ kind: 'cds', cPos: cdsLo, offset: 0 });
+    const xEnd = this.toBaselineX({ kind: 'cds', cPos: cdsHi, offset: 0 });
+    if (xStart === null || xEnd === null) return null;
     return { xStart, xEnd, exonIdx };
   }
 

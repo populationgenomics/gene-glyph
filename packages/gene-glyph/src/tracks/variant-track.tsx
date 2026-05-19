@@ -133,24 +133,14 @@ export function variantIntronGap(
   v: ViewerVariant,
   mapper: CoordinateMapper,
 ): { exonIdxA: number; exonIdxB: number } | null {
-  let cPos: number;
-  let offset: number;
-  switch (v.coord.kind) {
-    case 'protein':
-      return null;
-    case 'cds':
-      cPos = v.coord.cPos;
-      offset = v.coord.offset;
-      break;
-    case 'genomic': {
-      const g = mapper.genomicToCds(v.coord.chr, v.coord.pos);
-      if (!g) return null;
-      cPos = g.cPos;
-      offset = g.offset;
-      break;
-    }
-  }
-  if (offset === 0) return null;
+  // Protein coords are always exonic (a residue is one codon's worth of
+  // bp, which lives inside an exon by definition) — short-circuit so the
+  // resolveCds call doesn't get asked an answerable-but-meaningless
+  // question.
+  if (v.coord.kind === 'protein') return null;
+  const cds = mapper.resolveCds(v.coord);
+  if (!cds || cds.offset === 0) return null;
+  const { cPos, offset } = cds;
   const exonHit = mapper.findExonByCds(cPos);
   if (!exonHit) return null;
   const lastIdx = mapper.transcript.exons.length - 1;
@@ -196,28 +186,9 @@ export function variantRulerPos(
   viewport: Viewport,
   mapper: CoordinateMapper,
 ): number | null {
-  let cPos: number;
-  let offset = 0;
-  switch (v.coord.kind) {
-    case 'cds':
-      cPos = v.coord.cPos;
-      offset = v.coord.offset;
-      break;
-    case 'protein':
-      if (viewport.mode === 'protein') return v.coord.aa;
-      cPos = mapper.proteinToCds(v.coord.aa);
-      break;
-    case 'genomic': {
-      const g = mapper.genomicToCds(v.coord.chr, v.coord.pos);
-      if (!g) return null;
-      cPos = g.cPos;
-      offset = g.offset;
-      break;
-    }
-  }
-  if (offset !== 0) return null;
-  if (viewport.mode === 'protein') return mapper.cdsToProtein(cPos);
-  return cPos;
+  const cds = mapper.resolveCds(v.coord);
+  if (!cds || cds.offset !== 0) return null;
+  return viewport.mode === 'protein' ? mapper.cdsToProtein(cds.cPos) : cds.cPos;
 }
 
 function placeVariant(
@@ -225,30 +196,12 @@ function placeVariant(
   viewport: Viewport,
   mapper: CoordinateMapper,
 ): VariantPlacement | null {
-  let cPos: number;
-  let offset: number;
-  switch (v.coord.kind) {
-    case 'cds':
-      cPos = v.coord.cPos;
-      offset = v.coord.offset;
-      break;
-    case 'protein':
-      cPos = mapper.proteinToCds(v.coord.aa);
-      offset = 0;
-      break;
-    case 'genomic': {
-      const g = mapper.genomicToCds(v.coord.chr, v.coord.pos);
-      if (!g) return null;
-      cPos = g.cPos;
-      offset = g.offset;
-      break;
-    }
-  }
+  const cds = mapper.resolveCds(v.coord);
   // Intronic offsets land in the unplaced bucket; Slice 10 keeps the same
   // contract (intronic features bubble into the bottom track) until Slice 15
   // teaches the exon track to draw hidden-feature indicators in the gap.
-  if (offset !== 0) return null;
-  const exonHit = mapper.findExonByCds(cPos);
+  if (!cds || cds.offset !== 0) return null;
+  const exonHit = mapper.findExonByCds(cds.cPos);
   if (!exonHit) return null;
   const baseline = viewport.baselineGeometry();
   const eb = baseline.exons[exonHit.exonIdx];
@@ -256,8 +209,11 @@ function placeVariant(
   // Baseline localX: the variant's position within its exon's fit-gene frame.
   // The exon `<g>` carries the live translate + scale; the figure SVG clips
   // off-figure renderings so the variant stays in the DOM even when its
-  // current screen position is outside [0, width].
-  const variantBaselineX = viewport.cdsToBaselineX(cPos);
+  // current screen position is outside [0, width]. `toBaselineX` handles
+  // the protein-mode ruler conversion internally so handing it the raw
+  // VariantCoord works in every viewport mode.
+  const variantBaselineX = viewport.toBaselineX(v.coord);
+  if (variantBaselineX === null) return null;
   return { variant: v, exonIdx: exonHit.exonIdx, localX: variantBaselineX - eb.xStart };
 }
 
