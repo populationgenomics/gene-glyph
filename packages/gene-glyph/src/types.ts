@@ -294,6 +294,11 @@ export interface Viewport {
   proteinToScreen(aa: number): number | null;
   genomicToScreen(chr: string, pos: number): number | null;
 
+  /** Project a current screen-x back into a {@link Position} of the
+   *  requested coord system. Inverse of {@link toScreen}; the two paths
+   *  share the same ruler conversion so the round-trip can't diverge.
+   *  Returns `null` for off-figure x or unresolvable positions. */
+  screenToPosition(x: number, kind: 'cds' | 'protein' | 'genomic'): Position | null;
   screenToCds(x: number): CdsPosition | null;
   screenToProtein(x: number): number | null;
   screenToGenomic(x: number): GenomicPosition | null;

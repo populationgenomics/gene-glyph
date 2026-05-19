@@ -582,27 +582,54 @@ export class ViewportController implements Viewport {
     return this.frame().currentToBaseline(currentX) ?? 0;
   }
 
-  screenToCds(x: number): CdsPosition | null {
+  /**
+   * Inverse of {@link toScreen}: project a current screen-x back into a
+   * {@link Position} of the requested coord system. Returns `null` when
+   * `x` falls outside the visible range or the resulting position can't
+   * be expressed in the requested kind (e.g., genomic coords for a gap
+   * position with no transcript-bp it corresponds to).
+   *
+   * Round-trip property: `screenToPosition(toScreen(p)!, p.kind)` recovers
+   * `p` up to the active mode's precision (sub-codon detail is lost in
+   * protein mode for `kind: 'cds'`, since three CDS bp share one aa).
+   * The forward and inverse paths share the same ruler conversion, so
+   * the two directions can't diverge.
+   */
+  screenToPosition(x: number, kind: 'cds' | 'protein' | 'genomic'): Position | null {
     if (x < 0 || x > this._width) return null;
-    if (this._mode === 'protein') return null;
-    const ruler = this.screenToRulerBaseline(x);
-    return { cPos: Math.round(ruler), offset: 0 };
+    const ruler = Math.round(this.screenToRulerBaseline(x));
+    switch (kind) {
+      case 'cds': {
+        const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
+        return { kind: 'cds', cPos, offset: 0 };
+      }
+      case 'protein': {
+        const aa = this._mode === 'protein' ? ruler : this.mapper.cdsToProtein(ruler);
+        if (aa === null) return null;
+        return { kind: 'protein', aa };
+      }
+      case 'genomic': {
+        const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
+        const g = this.mapper.cdsToGenomic(cPos, 0);
+        if (!g) return null;
+        return { kind: 'genomic', chr: g.chr, pos: g.pos };
+      }
+    }
+  }
+
+  screenToCds(x: number): CdsPosition | null {
+    const pos = this.screenToPosition(x, 'cds');
+    return pos === null ? null : { cPos: pos.cPos, offset: pos.offset };
   }
 
   screenToProtein(x: number): number | null {
-    if (this._mode === 'protein') {
-      if (x < 0 || x > this._width) return null;
-      return Math.round(this.screenToRulerBaseline(x));
-    }
-    const cds = this.screenToCds(x);
-    if (!cds) return null;
-    return this.mapper.cdsToProtein(cds.cPos);
+    const pos = this.screenToPosition(x, 'protein');
+    return pos === null ? null : pos.aa;
   }
 
   screenToGenomic(x: number): GenomicPosition | null {
-    const cds = this.screenToCds(x);
-    if (!cds) return null;
-    return this.mapper.cdsToGenomic(cds.cPos, cds.offset);
+    const pos = this.screenToPosition(x, 'genomic');
+    return pos === null ? null : { chr: pos.chr, pos: pos.pos };
   }
 
   /** Ruler coordinate (CDS bp in CDS modes, aa in protein mode) at the given

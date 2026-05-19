@@ -707,19 +707,11 @@ function GeneGlyphInner(
       });
       const point = track.resolveAnchor(data, target.featureId, tempViewport);
       if (!point) return;
-      const cds = tempViewport.screenToCds(point.x);
-      if (!cds) return;
+      const center = tempViewport.rulerAtScreen(point.x);
+      if (center === null) return;
       const natural = viewport.naturalRange();
       const naturalLen = natural[1] - natural[0];
       const window = Math.max(1, naturalLen / 10);
-      let center: number;
-      if (viewport.mode === 'protein') {
-        const aa = mapper.cdsToProtein(cds.cPos);
-        if (aa === null) return;
-        center = aa;
-      } else {
-        center = cds.cPos;
-      }
       let lo = center - window / 2;
       let hi = center + window / 2;
       if (lo < natural[0]) {

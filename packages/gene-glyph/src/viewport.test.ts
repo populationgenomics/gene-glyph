@@ -382,6 +382,36 @@ describe('ViewportController — Position-based projection', () => {
     expect(vp.toScreen({ kind: 'cds', cPos: 10, offset: 0 })).not.toBeNull();
   });
 
+  it('screenToPosition round-trips toScreen for each Position kind in CDS modes', () => {
+    const vp = fitGene('cds-spliced');
+    const cases: Array<{ kind: 'cds' | 'protein' | 'genomic'; build: () => import('./types.js').Position }> = [
+      { kind: 'cds', build: () => ({ kind: 'cds', cPos: 31, offset: 0 }) },
+      { kind: 'protein', build: () => ({ kind: 'protein', aa: 11 }) },
+      { kind: 'genomic', build: () => ({ kind: 'genomic', chr: 'chr1', pos: 1030 }) },
+    ];
+    for (const { kind, build } of cases) {
+      const pos = build();
+      const x = vp.toScreen(pos)!;
+      const back = vp.screenToPosition(x, kind);
+      expect(back).not.toBeNull();
+      expect(back!.kind).toBe(kind);
+      // Forward path then inverse path lands at the same biological point.
+      expect(vp.toScreen(back!)).toBeCloseTo(x, 4);
+    }
+  });
+
+  it('screenToPosition unifies the protein-mode inverse — screenToCds no longer returns null there', () => {
+    // Pre-refactor `screenToCds` was hard-coded to return null in protein
+    // mode, forcing every caller to branch on viewport.mode. The unified
+    // shim now returns the cPos of the codon at that screen-x (a sensible
+    // answer at the active mode's precision).
+    const protein = fitGene('protein');
+    const x = protein.toScreen({ kind: 'protein', aa: 5 })!;
+    const cds = protein.screenToCds(x);
+    expect(cds).not.toBeNull();
+    expect(cds!.cPos).toBe(13); // first base of codon 5
+  });
+
   it('mapper.resolveCds reduces every Position kind to (cPos, offset)', () => {
     const mapper = createCoordinateMapper(transcript);
     expect(mapper.resolveCds({ kind: 'cds', cPos: 42, offset: 3 })).toEqual({
