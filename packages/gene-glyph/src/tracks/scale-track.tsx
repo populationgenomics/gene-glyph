@@ -49,6 +49,13 @@ export interface ScaleTrackConfig {
    *  When rotated, the track defaults to a taller `height` to fit the
    *  rotated text vertically. The host can override `height` directly. */
   labelRotation?: 0 | 90;
+  /** Coordinate label format. `'c-notation'` (default) renders
+   *  positions in HGVS c. coords (`c.100`, `c.1,000 bp`). `'genomic'`
+   *  resolves each label through `mapper.cdsToGenomic` and renders
+   *  the chromosomal position (`chr1:1,234,567`). The option applies
+   *  in `genome` and `transcript` modes; `protein` mode is unaffected
+   *  (always shows aa). Phase 4. */
+  labelFormat?: 'c-notation' | 'genomic';
 }
 
 interface ScaleTrackData {
@@ -96,6 +103,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
   const labelFontSize = config.labelFontSize ?? DEFAULT_LABEL_FONT;
   const unitSuffix = config.unitSuffix ?? 'last';
   const labelPadPx = config.labelPadPx ?? DEFAULT_LABEL_PAD_PX;
+  const labelFormat = config.labelFormat ?? 'c-notation';
 
   return {
     id,
@@ -148,7 +156,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
           // horizontally, so `withSuffix` is irrelevant here.
           return labelFontSize / 2;
         }
-        return (formatLabel(rulerPos, unit, withSuffix).length * charPx) / 2;
+        return (formatLabel(rulerPos, unit, withSuffix, labelFormat, mapper).length * charPx) / 2;
       };
       const allMajors = collectTicks(viewport, mapper, majorStep);
 
@@ -249,6 +257,8 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                   t.rulerPos,
                   unit,
                   showSuffix && isLast,
+                  labelFormat,
+                  mapper,
                 );
                 // The counter-scale wrap neutralises the exon group's
                 // scaleX so the text inside renders at natural size.
@@ -400,15 +410,32 @@ function exonForRulerPos(
   return hit?.exonIdx ?? null;
 }
 
-function formatLabel(pos: number, unit: 'bp' | 'aa', withSuffix: boolean): string {
+function formatLabel(
+  pos: number,
+  unit: 'bp' | 'aa',
+  withSuffix: boolean,
+  labelFormat: 'c-notation' | 'genomic',
+  mapper: CoordinateMapper,
+): string {
   const formatted = Math.round(pos).toLocaleString('en-US');
   if (unit === 'aa') {
     return withSuffix ? `${formatted} aa` : formatted;
   }
-  // Genome and transcript modes label positions in HGVS c. coords. The
-  // ruler is CDS bp under the hood (or genomic, when the host opts in
-  // — Phase 4); the `c.` prefix signals which addressing system the
-  // number refers to. The bp suffix on the rightmost label is kept for
-  // its visual "unit hint" role but reads "bp" rather than "c. bp".
+  if (labelFormat === 'genomic') {
+    // Resolve the CDS bp position to its genomic counterpart. The label
+    // omits a unit suffix — the `chrN:` prefix already signals "this is
+    // a chromosomal address". Fallback to HGVS c. when the position
+    // can't be resolved (e.g., positions in padding past the gene's
+    // 3' end have no genomic equivalent).
+    const g = mapper.cdsToGenomic(Math.round(pos), 0);
+    if (g) {
+      return `${g.chr}:${g.pos.toLocaleString('en-US')}`;
+    }
+  }
+  // Genome and transcript modes default to HGVS c. coords. The ruler
+  // is CDS bp under the hood; the `c.` prefix signals which addressing
+  // system the number refers to. The bp suffix on the rightmost label
+  // is kept for its visual "unit hint" role but reads "bp" rather than
+  // "c. bp".
   return withSuffix ? `c.${formatted} bp` : `c.${formatted}`;
 }

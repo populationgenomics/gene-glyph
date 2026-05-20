@@ -172,6 +172,58 @@ describe('scaleTrack', () => {
     expect(labels.filter((l) => /\baa$/.test(l)).length).toBe(0);
   });
 
+  it("labelFormat='genomic' renders chr:position labels via mapper.cdsToGenomic", () => {
+    // Phase 4: the genomic label format resolves each tick's CDS bp through
+    // mapper.cdsToGenomic and renders the chromosomal address. The TP53
+    // fixture's first exon sits at genomic 1000..2181 on chr1; cPos 50 →
+    // genomic 1049 (strand +), cPos 100 → 1099, etc. Sample the rendered
+    // labels for the `chr1:` prefix and a few exact positions.
+    const { mapper, viewport, painter, interaction } = setup();
+    const t = scaleTrack({ labelFormat: 'genomic' });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 18 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const labels = [
+      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
+    ].map((n) => n.textContent ?? '');
+    expect(labels.length).toBeGreaterThan(0);
+    // Every label starts with the `chrN:` prefix; none have the c. prefix.
+    expect(labels.every((l) => /^chr1:/.test(l))).toBe(true);
+    expect(labels.every((l) => !/^c\./.test(l))).toBe(true);
+  });
+
+  it("labelFormat='genomic' keeps protein-mode labels as aa (unaffected)", () => {
+    const { mapper, painter, interaction } = setup();
+    const proteinVp = new ViewportController({ mapper, width: 720, mode: 'protein' });
+    const t = scaleTrack({ labelFormat: 'genomic' });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 18 },
+          viewport: proteinVp,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const labels = [
+      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
+    ].map((n) => n.textContent ?? '');
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.every((l) => !/^chr/.test(l))).toBe(true);
+  });
+
   it("emits no suffix when unitSuffix='never'", () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = scaleTrack({ unitSuffix: 'never' });

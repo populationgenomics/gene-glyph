@@ -375,6 +375,20 @@
   cursor: pointer;
 }
 
+/* Phase 4: hard-collapse marks (`//` scale-break symbol) sit at each collapsed
+ * intron's centre. Hidden by default; transcript mode reveals them as the
+ * intron-decoration polyline collapses. Genome mode shows the polyline
+ * instead; protein follows the no-marks rule. */
+.gene-glyph .vv-hard-collapse-mark {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  opacity: 0;
+}
+
+.gene-glyph[data-vv-mode='transcript'] .vv-hard-collapse-mark {
+  opacity: calc(1 - var(--vv-intron-scale));
+}
+
 .gene-glyph .vv-hidden-feature-mark:focus {
   outline: none;
 }

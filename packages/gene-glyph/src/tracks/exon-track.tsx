@@ -69,6 +69,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
 
       const exonRects: ReactNode[] = [];
       const intronDecorations: ReactNode[] = [];
+      const hardCollapseMarks: ReactNode[] = [];
       const hiddenMarks: ReactNode[] = [];
 
       // Every exon renders at its baseline width — never recomputed against
@@ -169,6 +170,54 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
           );
         }
 
+        // Phase 4: hard-collapse mark — a `//` scale-break symbol that
+        // marks the position of a collapsed intron in transcript mode.
+        // Fades in as `--vv-intron-scale → 0` so it appears as the
+        // intron-decoration polyline collapses. CSS scopes it to
+        // `[data-vv-mode="transcript"]` (genome mode shows the polyline
+        // instead; protein mode follows the "no marks" rule).
+        const markWrapperStyle: CSSProperties = {
+          transform:
+            `translateX(calc(var(--vv-intron-x-${gap.exonIdxA}, 0px)` +
+            ` + var(--vv-intron-w-${gap.exonIdxA}, 0px)` +
+            ` * var(--vv-intron-scale-x-${gap.exonIdxA}, 1) / 2))`,
+          transformOrigin: '0 0',
+        };
+        const markStroke = painter.color('vv-color-intron-line', '#475569');
+        const slashHalfLen = 4;
+        const slashOffset = 2;
+        hardCollapseMarks.push(
+          <g
+            key={`hard-collapse-${gap.exonIdxA}-${gap.exonIdxB}`}
+            className="vv-hard-collapse-mark"
+            data-vv-intron-from={gap.exonIdxA}
+            data-vv-intron-to={gap.exonIdxB}
+            style={markWrapperStyle}
+            pointerEvents="none"
+          >
+            <line
+              x1={-slashOffset - slashHalfLen / 2}
+              y1={intronY + slashHalfLen}
+              x2={-slashOffset + slashHalfLen / 2}
+              y2={intronY - slashHalfLen}
+              stroke={markStroke}
+              strokeWidth={1.25}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+            <line
+              x1={slashOffset - slashHalfLen / 2}
+              y1={intronY + slashHalfLen}
+              x2={slashOffset + slashHalfLen / 2}
+              y2={intronY - slashHalfLen}
+              stroke={markStroke}
+              strokeWidth={1.25}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>,
+        );
+
         // Slice 15: hidden-feature indicator sits at the gap's *current* screen
         // position (centre, accounting for the gap's collapsed width in
         // spliced / protein modes) and fades opposite to --vv-intron-scale so
@@ -234,6 +283,11 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         <g className="vv-exon-track" data-vv-track-id={id} key={id}>
           {intronDecorations}
           {exonRects}
+          {hardCollapseMarks.length > 0 && (
+            <g className="vv-hard-collapse-marks" key="hard-collapse-marks">
+              {hardCollapseMarks}
+            </g>
+          )}
           {hiddenMarks.length > 0 && (
             <g className="vv-hidden-feature-marks" key="hidden-marks">
               {hiddenMarks}
