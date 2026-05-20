@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCoordinateMapper } from './coordinate-mapper.js';
+import { createCoordinateMapper, defaultCollapsedRegions } from './coordinate-mapper.js';
 import type { Transcript } from './types.js';
 
 // Three-exon transcript on the '+' strand.
@@ -139,5 +139,37 @@ describe('CoordinateMapper — genomic <-> CDS round trip', () => {
     expect(mapper.genomicToCds('chr1', 500)).toBeNull(); // before transcript
     expect(mapper.genomicToCds('chr1', 5000)).toBeNull(); // after transcript
     expect(mapper.genomicToCds('chrX', 1050)).toBeNull(); // wrong chromosome
+  });
+});
+
+describe('defaultCollapsedRegions — Phase 3 soft-collapse spec', () => {
+  it('emits one region per intron with HGVS c. offsets `+(flankBp+1) .. -(flankBp+1)`', () => {
+    const regions = defaultCollapsedRegions(plusTranscript);
+    expect(regions).toHaveLength(2); // 3 exons → 2 introns
+    expect(regions[0]).toEqual({
+      start: { cPos: 100, offset: 11 },  // c.100+11 — first bulk bp
+      end: { cPos: 101, offset: -11 },   // c.101-11 — last bulk bp
+    });
+    expect(regions[1]).toEqual({
+      start: { cPos: 250, offset: 11 },
+      end: { cPos: 251, offset: -11 },
+    });
+  });
+
+  it('respects a custom flankBp (used for tests / hosts that want a different splice-site window)', () => {
+    const regions = defaultCollapsedRegions(plusTranscript, 20);
+    expect(regions[0]!.start.offset).toBe(21);
+    expect(regions[0]!.end.offset).toBe(-21);
+  });
+
+  it('returns an empty array for single-exon transcripts (no introns to compress)', () => {
+    const oneExon: Transcript = {
+      geneSymbol: 'X',
+      transcriptId: 'X.1',
+      cdsLength: 9,
+      strand: '+',
+      exons: [{ number: 1, cdsStart: 1, cdsEnd: 9, genomicStart: 1, genomicEnd: 9, chr: 'chr1' }],
+    };
+    expect(defaultCollapsedRegions(oneExon)).toEqual([]);
   });
 });

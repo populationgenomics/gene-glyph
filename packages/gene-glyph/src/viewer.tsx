@@ -23,6 +23,7 @@ import { createSvgPainter } from './painter/svg-painter.js';
 import { exonTrack } from './tracks/exon-track.js';
 import {
   isTrackGroup,
+  type CollapsedRegion,
   type HiddenFeatureBucket,
   type InteractionMode,
   type InteractionState,
@@ -36,6 +37,7 @@ import {
   type ViewMode,
   type ViewportChangeReason,
 } from './types.js';
+import { defaultCollapsedRegions } from './coordinate-mapper.js';
 import {
   DEFAULT_MAX_ZOOM,
   ViewportController,
@@ -128,6 +130,17 @@ export interface GeneGlyphProps {
   minZoom?: number;
   /** Most zoomed-in state. Defaults to `DEFAULT_MAX_ZOOM` (200×). */
   maxZoom?: number;
+  /** Soft-collapse spec: regions of the gene rendered at a fixed pixel
+   *  budget while the surrounding linear regions scale with zoom. The
+   *  default is `defaultCollapsedRegions(transcript)` — one region per
+   *  intron compressing everything except the 10bp splice-site flanks
+   *  on each side, which gives the out-of-box `genome` mode its
+   *  splice-site-aware zoom behaviour. Hosts override to expand
+   *  specific deep-intronic regions (omit the range from the spec) or
+   *  compress UTRs (add a range covering exonic UTR bp). Effective in
+   *  `genome` mode; in `transcript` and `protein` modes intronic
+   *  entries are subsumed by hard collapse. */
+  collapsedRegions?: CollapsedRegion[];
   className?: string;
   /** Compound-component slots: `GeneGlyph.Header`, `GeneGlyph.Footer`,
    *  `GeneGlyph.LeftGutter`, `GeneGlyph.RightGutter`. Slots are rendered as
@@ -346,6 +359,7 @@ function GeneGlyphInner(
     onViewportChange,
     minZoom,
     maxZoom = DEFAULT_MAX_ZOOM,
+    collapsedRegions: collapsedRegionsProp,
     className,
     children,
   }: GeneGlyphProps,
@@ -370,9 +384,16 @@ function GeneGlyphInner(
   const flatTracks = useMemo(() => flattenTracks(trackList), [trackList]);
   const mapper = useMemo(() => createCoordinateMapper(transcript), [transcript]);
   const initialRange = viewportRange ?? defaultViewportRange;
-  // Construct the viewport once per (mapper, width). Mode changes are
-  // applied via `setMode` on the existing instance so its subscribers see
-  // each change as one committed mutation rather than a fresh controller.
+  const collapsedRegions = useMemo(
+    () => collapsedRegionsProp ?? defaultCollapsedRegions(transcript),
+    [collapsedRegionsProp, transcript],
+  );
+  // Construct the viewport once per (mapper, width, collapsedRegions). Mode
+  // changes are applied via `setMode` on the existing instance so its
+  // subscribers see each change as one committed mutation rather than a
+  // fresh controller. The soft-collapse spec is also a baseline input
+  // (Phase 3) — it drives flank widths and intron-bulk pixel budgets — so
+  // the viewport rebuilds when the host hands a new spec.
   const viewport = useMemo(
     () =>
       new ViewportController({
@@ -380,11 +401,12 @@ function GeneGlyphInner(
         width,
         mode,
         range: initialRange,
+        collapsedRegions,
       }),
     // `mode` and `initialRange` only seed construction; later changes reach
     // the viewport via the prop-sync effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mapper, width],
+    [mapper, width, collapsedRegions],
   );
   const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
 

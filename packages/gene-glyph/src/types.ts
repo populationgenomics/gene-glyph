@@ -157,6 +157,27 @@ export interface CdsPosition {
   offset: number;
 }
 
+/** A region of the gene marked for *soft* (display-only) collapse. The
+ *  endpoints are given in HGVS c. coordinates — `cPos` is the bracketing
+ *  exonic CDS bp, and `offset` is the intronic offset (`+N` past an exon's
+ *  3' end, `-N` before an exon's 5' end; `0` for exonic positions). Soft
+ *  collapse renders the named range at a fixed pixel budget while leaving
+ *  the surrounding linear regions to scale with zoom — that's what
+ *  produces the splice-site-aware genome view.
+ *
+ *  Spec semantics:
+ *  - In `genome` mode, every region in the spec becomes a fixed-budget
+ *    intron-bulk segment. Linear flanks around it (the bp between an
+ *    exon edge and the spec's nearest collapse boundary) scale with zoom.
+ *  - In `transcript` / `protein` modes, intronic spec entries are
+ *    subsumed by the mode's hard collapse and don't affect rendering.
+ *  - Endpoints are inclusive: `start` is the first compressed bp,
+ *    `end` is the last. */
+export interface CollapsedRegion {
+  start: CdsPosition;
+  end: CdsPosition;
+}
+
 export interface GenomicPosition {
   chr: string;
   pos: number;
@@ -256,11 +277,41 @@ export interface GapBaseline {
   xStart: number;
   xEnd: number;
   width: number;
+  /** Phase 3: scale behaviour of this gap under zoom. `'fixed-budget'`
+   *  means the gap stays at its baseline pixel width regardless of
+   *  zoom (the soft-collapsed bulk-intron case). `'linear'` means it
+   *  scales with the surrounding exon content (transcript mode's 1bp
+   *  transition; protein mode's zero-width gap). Optional for
+   *  backwards compat — buildSegments falls back to inferring from
+   *  the global `gapPx` when unset. */
+  scaleRule?: 'linear' | 'fixed-budget';
+}
+
+/** Phase 3: per-intron flank piece — the linear-scale region of an
+ *  intron immediately adjacent to its bracketing exons. Donor flanks
+ *  sit on the upstream-exon side of the intron (5' end); acceptor
+ *  flanks on the downstream-exon side (3' end). Each flank carries
+ *  the bp count it covers so {@link buildSegments} can map ruler
+ *  positions through it. */
+export interface FlankBaseline {
+  intronIdx: number;
+  side: 'donor' | 'acceptor';
+  bp: number;
+  xStart: number;
+  xEnd: number;
+  width: number;
 }
 
 export interface BaselineGeometry {
   exons: ExonBaseline[];
   gaps: GapBaseline[];
+  /** Phase 3: per-intron linear-scale flank pieces. Empty (or
+   *  undefined) when no soft-collapse spec is in effect. In genome
+   *  mode with the default spec, each intron contributes a donor and
+   *  acceptor flank so the 10bp splice-site sequence scales with the
+   *  surrounding exon content while the bulk between them stays at a
+   *  fixed pixel budget. */
+  flanks?: FlankBaseline[];
   pxPerBp: number;
   gapPx: number;
   totalWidth: number;

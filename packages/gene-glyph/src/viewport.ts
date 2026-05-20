@@ -4,10 +4,12 @@ import type {
   AnchorTarget,
   BaselineGeometry,
   CdsPosition,
+  CollapsedRegion,
   CoordinateMapper,
   DroppedRange,
   Exon,
   ExonBaseline,
+  FlankBaseline,
   GapBaseline,
   GenomicPosition,
   Position,
@@ -26,6 +28,12 @@ export interface ViewportControllerInit {
   mode?: ViewMode;
   range?: readonly [number, number];
   intronScale?: number;
+  /** Phase 3 soft-collapse spec — drives per-intron flank widths in
+   *  `genome` mode. `[]` (empty) leaves every intron fully linear at the
+   *  baseline `pxPerBp` (the "raw genome" view); `undefined` lets the
+   *  controller fall back to no-spec behaviour (each intron is one
+   *  fixed-budget segment, matching pre-Phase-3 layout). */
+  collapsedRegions?: readonly CollapsedRegion[];
 }
 
 /** Fraction of the natural range used as soft padding for pan clamping
@@ -89,6 +97,7 @@ export class ViewportController implements Viewport {
   private _baseline: BaselineGeometry | null = null;
   private _baselineKey: string | null = null;
   private _frame: ProjectionFrame | null = null;
+  private _collapsedRegions: readonly CollapsedRegion[];
   private _publishStorm = createStormDetector('ViewportController.publish');
   private _listeners = new Set<() => void>();
   readonly mapper: CoordinateMapper;
@@ -99,6 +108,7 @@ export class ViewportController implements Viewport {
     this._range = [...(init.range ?? defaultRangeFor(this._mode, this.mapper))] as [number, number];
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
+    this._collapsedRegions = init.collapsedRegions ?? [];
   }
 
   // ---- Read-only state ---------------------------------------------------
@@ -301,28 +311,60 @@ export class ViewportController implements Viewport {
       return this.computeProteinBaseline(exons);
     }
 
-    // CDS modes: piecewise per-exon with a visible gap (genome) or
-    // a single-bp transition interval that gets absorbed into the linear
-    // pxPerBp (transcript). Counting `cdsEnd - cdsStart` as the bp-within
-    // each exon makes the inter-exon transition explicit; modelling it as
-    // either `naturalGapPx` or `1 × pxPerBp` keeps the total = `width`.
-    let sumBpWithin = 0;
-    for (const e of exons) sumBpWithin += e.cdsEnd - e.cdsStart;
+    // Resolve per-intron flank widths from the soft-collapse spec. In
+    // genome mode each spec'd intron contributes a donor + acceptor
+    // flank (bp count from the region's intronic offsets) which take
+    // their own linear-scale baseline pixels; the bulk between them
+    // takes the fixed-budget `naturalGapPx`. Introns not covered by
+    // the spec keep the legacy single-gap shape (one fixed-budget
+    // segment, no flanks). In transcript mode the spec is subsumed by
+    // hard collapse, so flank widths fall back to 0.
+    const flankWidths =
+      this._mode === 'genome'
+        ? this.resolveFlankWidths()
+        : new Array<{ donorBp: number; acceptorBp: number }>(nGaps).fill({
+            donorBp: 0,
+            acceptorBp: 0,
+          });
+
+    // Linear bp = exon body + every flank's bp count. Fixed budget pixels
+    // = sum of bulk allotments (one `naturalGapPx` per spec'd intron in
+    // genome mode; transcript mode has no fixed-budget pixels because
+    // its gaps are 1-bp transitions that absorb into pxPerBp).
+    let linearBp = 0;
+    for (const e of exons) linearBp += e.cdsEnd - e.cdsStart;
+    let fixedBudgetPx = 0;
+    let nLegacyGaps = 0; // introns with no flanks → legacy gap shape
+    for (const fw of flankWidths) {
+      linearBp += fw.donorBp + fw.acceptorBp;
+      if (fw.donorBp > 0 || fw.acceptorBp > 0) {
+        fixedBudgetPx += naturalGapPx; // bulk for this spec'd intron
+      } else {
+        nLegacyGaps += 1;
+      }
+    }
 
     let pxPerBp: number;
     let transitionPx: number;
     if (this._mode === 'genome') {
       transitionPx = naturalGapPx;
-      const exonPx = Math.max(0, this._width - nGaps * transitionPx);
-      pxPerBp = sumBpWithin > 0 ? exonPx / sumBpWithin : 0;
+      // Legacy (un-spec'd) gaps also consume the fixed-budget pool so
+      // a pre-Phase-3-style empty spec degenerates to the historical
+      // layout exactly.
+      const totalFixed = fixedBudgetPx + nLegacyGaps * naturalGapPx;
+      const linearPx = Math.max(0, this._width - totalFixed);
+      pxPerBp = linearBp > 0 ? linearPx / linearBp : 0;
     } else {
-      const intervalBp = sumBpWithin + nGaps;
+      // transcript mode: 1-bp transition between exons, linear scale.
+      // No flanks contribute (flankWidths is all-zero here).
+      const intervalBp = linearBp + nGaps;
       pxPerBp = intervalBp > 0 ? this._width / intervalBp : 0;
       transitionPx = pxPerBp;
     }
 
     const exonRects: ExonBaseline[] = [];
     const gapRects: GapBaseline[] = [];
+    const flankRects: FlankBaseline[] = [];
     let x = 0;
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
@@ -332,14 +374,60 @@ export class ViewportController implements Viewport {
       exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
       x = xEnd;
       if (i < exons.length - 1) {
-        gapRects.push({
-          exonIdxA: i,
-          exonIdxB: i + 1,
-          xStart: x,
-          xEnd: x + transitionPx,
-          width: transitionPx,
-        });
-        x += transitionPx;
+        const fw = flankWidths[i] ?? { donorBp: 0, acceptorBp: 0 };
+        const hasFlanks = fw.donorBp > 0 || fw.acceptorBp > 0;
+        if (hasFlanks && this._mode === 'genome') {
+          // Phase 3: the gap spans the WHOLE intron in baseline-x, with
+          // the donor/acceptor flanks stored separately so per-segment
+          // layout can apply linear scale to them while leaving the
+          // central bulk (transitionPx) at its fixed pixel budget. The
+          // ruler walk only sees the gap (not the flanks) — that keeps
+          // exon-boundary ruler positions unambiguous.
+          const donorWidth = fw.donorBp * pxPerBp;
+          const acceptorWidth = fw.acceptorBp * pxPerBp;
+          const gapXStart = x;
+          if (fw.donorBp > 0) {
+            flankRects.push({
+              intronIdx: i,
+              side: 'donor',
+              bp: fw.donorBp,
+              xStart: x,
+              xEnd: x + donorWidth,
+              width: donorWidth,
+            });
+          }
+          x += donorWidth + transitionPx;
+          if (fw.acceptorBp > 0) {
+            flankRects.push({
+              intronIdx: i,
+              side: 'acceptor',
+              bp: fw.acceptorBp,
+              xStart: x,
+              xEnd: x + acceptorWidth,
+              width: acceptorWidth,
+            });
+          }
+          x += acceptorWidth;
+          gapRects.push({
+            exonIdxA: i,
+            exonIdxB: i + 1,
+            xStart: gapXStart,
+            xEnd: x,
+            width: x - gapXStart,
+            scaleRule: 'fixed-budget',
+          });
+        } else {
+          gapRects.push({
+            exonIdxA: i,
+            exonIdxB: i + 1,
+            xStart: x,
+            xEnd: x + transitionPx,
+            width: transitionPx,
+            scaleRule:
+              this._mode === 'genome' ? 'fixed-budget' : 'linear',
+          });
+          x += transitionPx;
+        }
       }
     }
     snapRightEdge(exonRects, this._width);
@@ -347,10 +435,46 @@ export class ViewportController implements Viewport {
     return {
       exons: exonRects,
       gaps: gapRects,
+      flanks: flankRects,
       pxPerBp,
       gapPx: this._mode === 'genome' ? naturalGapPx : 0,
       totalWidth: this._width,
     };
+  }
+
+  /** Resolve per-intron flank widths from the active soft-collapse spec.
+   *  A region anchored on `upstream.cdsEnd` with positive offset is
+   *  treated as the start of the bulk; the donor flank covers the bp
+   *  between the exon's 3' end and the bulk start (i.e., the first
+   *  `start.offset - 1` intronic bp). Likewise for the acceptor flank
+   *  on the downstream-exon side. Introns with no matching region
+   *  fall back to the legacy "single fixed-budget gap, no flanks"
+   *  layout via the caller's `nLegacyGaps` counter. */
+  private resolveFlankWidths(): Array<{ donorBp: number; acceptorBp: number }> {
+    const exons = this.mapper.transcript.exons;
+    const result: Array<{ donorBp: number; acceptorBp: number }> = [];
+    for (let i = 0; i < exons.length - 1; i++) {
+      const upstream = exons[i]!;
+      const downstream = exons[i + 1]!;
+      let donorBp = 0;
+      let acceptorBp = 0;
+      for (const region of this._collapsedRegions) {
+        if (
+          region.start.cPos === upstream.cdsEnd &&
+          region.start.offset > 0
+        ) {
+          donorBp = Math.max(donorBp, region.start.offset - 1);
+        }
+        if (
+          region.end.cPos === downstream.cdsStart &&
+          region.end.offset < 0
+        ) {
+          acceptorBp = Math.max(acceptorBp, -region.end.offset - 1);
+        }
+      }
+      result.push({ donorBp, acceptorBp });
+    }
+    return result;
   }
 
   private computeProteinBaseline(exons: readonly Exon[]): BaselineGeometry {
@@ -468,14 +592,30 @@ export class ViewportController implements Viewport {
       s.setProperty(`--vv-exon-w-${eb.exonIdx}`, `${eb.width}px`);
     }
 
-    // Per-gap current-x sits at the upstream exon's `currentXEnd`; scale-x
-    // folds in `intronScale` so collapsed modes (transcript, protein) shrink
-    // the gap-content to zero width without affecting the gap's screen
-    // width — that's controlled by `exonScale` only applying to exon content.
+    // Per-gap current-x is the bulk's screen position. In Phase 3 the
+    // gap covers the whole intron in baseline-x (donor flank + bulk +
+    // acceptor flank), but the intron-decoration `<g>` should sit on
+    // the bulk only — the polyline, soft-collapse marks, etc. all
+    // belong inside the compressed region, with the flanks living
+    // inside the adjacent exon groups (rendered separately by
+    // exon-track). Lookup flanks-by-intron so we can offset the
+    // publication into the bulk.
+    const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
+    for (const flank of geom.flanks ?? []) {
+      const cur = flanksByIntron.get(flank.intronIdx) ?? { donor: 0, acceptor: 0 };
+      if (flank.side === 'donor') cur.donor = flank.width;
+      else cur.acceptor = flank.width;
+      flanksByIntron.set(flank.intronIdx, cur);
+    }
     for (const gap of geom.gaps) {
-      const aEb = geom.exons[gap.exonIdxA]!;
-      const aXEnd = layout.exonCurrentX[gap.exonIdxA]! + aEb.width * exonScale;
-      s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${aXEnd}px`);
+      const flanks = flanksByIntron.get(gap.exonIdxA) ?? { donor: 0, acceptor: 0 };
+      const bulkBaselineStart = gap.xStart + flanks.donor;
+      const bulkBaselineWidth = Math.max(
+        0,
+        gap.width - flanks.donor - flanks.acceptor,
+      );
+      const gapCurrentX = frame.baselineToCurrent(bulkBaselineStart) ?? 0;
+      s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${gapCurrentX}px`);
       // intron scale-x = intronScale (not multiplied by zoom): the inter-exon
       // `<g>` carries the polyline at baseline gap width; in transcript or
       // protein modes intronScale = 0 collapses it to zero.
@@ -483,7 +623,7 @@ export class ViewportController implements Viewport {
         `--vv-intron-scale-x-${gap.exonIdxA}`,
         this._intronScale.toString(),
       );
-      s.setProperty(`--vv-intron-w-${gap.exonIdxA}`, `${gap.width}px`);
+      s.setProperty(`--vv-intron-w-${gap.exonIdxA}`, `${bulkBaselineWidth}px`);
     }
   }
 

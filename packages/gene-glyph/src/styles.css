@@ -375,6 +375,15 @@
   cursor: pointer;
 }
 
+/* Phase 3: splice-site flanks sit inside the adjacent exon group and ride
+ * its `--vv-exon-scale-x` transform. They're biologically intronic, so they
+ * cross-fade with the intron polyline: visible in genome mode (intronScale
+ * = 1), collapsed in transcript / protein (intronScale = 0) where the
+ * mode's hard collapse subsumes the soft-collapse split. */
+.gene-glyph .vv-exon-flank {
+  opacity: var(--vv-intron-scale);
+}
+
 /* Phase 4: hard-collapse marks (`//` scale-break symbol) sit at each collapsed
  * intron's centre. Hidden by default; transcript mode reveals them as the
  * intron-decoration polyline collapses. Genome mode shows the polyline

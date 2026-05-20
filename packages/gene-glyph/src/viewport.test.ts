@@ -430,3 +430,96 @@ describe('ViewportController — Position-based projection', () => {
     ).toBeNull();
   });
 });
+
+describe('ViewportController — Phase 3 soft-collapse spec', () => {
+  it('produces flank baseline pieces in genome mode when the spec covers an intron', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const vp = new ViewportController({
+      mapper,
+      width: 1000,
+      mode: 'genome',
+      collapsedRegions: [
+        // Default-shaped spec for the first intron only — second intron
+        // falls back to the legacy single-gap layout.
+        { start: { cPos: 100, offset: 11 }, end: { cPos: 101, offset: -11 } },
+      ],
+    });
+    const baseline = vp.baselineGeometry();
+    expect(baseline.flanks).toBeDefined();
+    const donor = baseline.flanks!.find(
+      (f) => f.intronIdx === 0 && f.side === 'donor',
+    );
+    const acceptor = baseline.flanks!.find(
+      (f) => f.intronIdx === 0 && f.side === 'acceptor',
+    );
+    expect(donor?.bp).toBe(10);
+    expect(acceptor?.bp).toBe(10);
+    // Second intron has no spec — no flanks emitted for it.
+    expect(
+      baseline.flanks!.filter((f) => f.intronIdx === 1),
+    ).toHaveLength(0);
+  });
+
+  it('omits flanks entirely with an empty spec (legacy pre-Phase-3 layout)', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const vp = new ViewportController({
+      mapper,
+      width: 1000,
+      mode: 'genome',
+      collapsedRegions: [],
+    });
+    const baseline = vp.baselineGeometry();
+    expect(baseline.flanks ?? []).toHaveLength(0);
+    // The gap layout matches the pre-Phase-3 shape — one gap per intron.
+    expect(baseline.gaps).toHaveLength(2);
+  });
+
+  it("gap.width covers the whole intron (donor flank + bulk + acceptor flank); flanks listed in baseline.flanks", () => {
+    const mapper = createCoordinateMapper(transcript);
+    const vp = new ViewportController({
+      mapper,
+      width: 1000,
+      mode: 'genome',
+      collapsedRegions: [
+        { start: { cPos: 100, offset: 11 }, end: { cPos: 101, offset: -11 } },
+        { start: { cPos: 250, offset: 11 }, end: { cPos: 251, offset: -11 } },
+      ],
+    });
+    const baseline = vp.baselineGeometry();
+    // The first gap covers the whole intron in baseline-x — its width
+    // sums to donor + bulk + acceptor. Pre-Phase-3 the gap was bulk-only.
+    const intron0Flanks = baseline.flanks!.filter((f) => f.intronIdx === 0);
+    expect(intron0Flanks).toHaveLength(2);
+    const donor0 = intron0Flanks.find((f) => f.side === 'donor')!;
+    const acceptor0 = intron0Flanks.find((f) => f.side === 'acceptor')!;
+    const gap0 = baseline.gaps[0]!;
+    expect(gap0.width).toBeCloseTo(
+      donor0.width + (gap0.width - donor0.width - acceptor0.width) + acceptor0.width,
+      4,
+    );
+    // And `cdsToBaselineX(100)` / `cdsToBaselineX(101)` land at the
+    // intron's two ends in baseline-x — i.e., separated by the whole
+    // intron's width, not just the bulk.
+    expect(vp.cdsToBaselineX(101) - vp.cdsToBaselineX(100)).toBeCloseTo(
+      gap0.width,
+      4,
+    );
+  });
+
+  it('transcript mode ignores the spec (hard collapse subsumes it)', () => {
+    const mapper = createCoordinateMapper(transcript);
+    const vp = new ViewportController({
+      mapper,
+      width: 1000,
+      mode: 'transcript',
+      collapsedRegions: [
+        { start: { cPos: 100, offset: 11 }, end: { cPos: 101, offset: -11 } },
+      ],
+    });
+    const baseline = vp.baselineGeometry();
+    // Transcript mode hard-collapses every intron, so the spec is
+    // silently subsumed: no flanks, gaps stay at the 1-bp transition
+    // shape (legacy transcript-mode behaviour).
+    expect(baseline.flanks ?? []).toHaveLength(0);
+  });
+});

@@ -129,23 +129,16 @@ export class ProjectionFrame {
     const first = segments[0]!;
     if (baselineX < first.xStart) {
       // Padding before segment 0 — extrapolate using `linearScale`.
-      // (Today's controller's `applyZoomClamped` rejects positions
-      // outside `[0, width]`, so this branch only fires for callers
-      // that go through `baselineToCurrent` directly.)
       return layout.segmentCurrentX[0]! - (first.xStart - baselineX) * scale;
     }
     for (const seg of segments) {
       if (baselineX <= seg.xEnd) {
-        const cur = layout.segmentCurrentX[seg.index]!;
-        const localBaseline = baselineX - seg.xStart;
-        return seg.scaleRule === 'linear'
-          ? cur + localBaseline * scale
-          : cur + localBaseline;
+        return baselineToCurrentInSegment(seg, layout.segmentCurrentX[seg.index]!, baselineX, scale);
       }
     }
     const last = segments[segments.length - 1]!;
     const lastCurrent = layout.segmentCurrentX[last.index]!;
-    const lastWidth = last.scaleRule === 'linear' ? last.width * scale : last.width;
+    const lastWidth = segmentScreenWidth(last, scale);
     return lastCurrent + lastWidth + (baselineX - last.xEnd) * scale;
   }
 
@@ -166,19 +159,16 @@ export class ProjectionFrame {
     }
     for (const seg of segments) {
       const cur = layout.segmentCurrentX[seg.index]!;
-      const segScreenWidth = seg.scaleRule === 'linear' ? seg.width * scale : seg.width;
-      const curEnd = cur + segScreenWidth;
+      const segScreen = segmentScreenWidth(seg, scale);
+      const curEnd = cur + segScreen;
       if (currentX <= curEnd) {
-        if (segScreenWidth <= 0) return seg.xStart;
-        const localScreen = currentX - cur;
-        return seg.scaleRule === 'linear'
-          ? seg.xStart + localScreen / scale
-          : seg.xStart + localScreen;
+        if (segScreen <= 0) return seg.xStart;
+        return currentToBaselineInSegment(seg, cur, currentX, scale);
       }
     }
     const last = segments[segments.length - 1]!;
     const lastCurrent = layout.segmentCurrentX[last.index]!;
-    const lastWidth = last.scaleRule === 'linear' ? last.width * scale : last.width;
+    const lastWidth = segmentScreenWidth(last, scale);
     const lastEnd = lastCurrent + lastWidth;
     return last.xEnd + (currentX - lastEnd) / scale;
   }
@@ -230,4 +220,91 @@ export class ProjectionFrame {
     this._S_hi = this.rulerToBaselineX(this.range[1]);
     return { S_lo: this._S_lo, S_hi: this._S_hi };
   }
+}
+
+/** Effective screen width of a segment at the given linear scale. For
+ *  fixed-budget intron segments with embedded flanks, the donor and
+ *  acceptor flanks scale linearly while the bulk between them stays at
+ *  its baseline pixel budget. */
+function segmentScreenWidth(seg: Segment, linearScale: number): number {
+  if (seg.scaleRule === 'linear') return seg.width * linearScale;
+  const donor = seg.donorFlankWidth ?? 0;
+  const acceptor = seg.acceptorFlankWidth ?? 0;
+  const bulkWidth = Math.max(0, seg.width - donor - acceptor);
+  return (donor + acceptor) * linearScale + bulkWidth;
+}
+
+/** Map a baseline-x inside a segment to its live screen-x. Splits the
+ *  fixed-budget gap with embedded flanks into three zones: donor
+ *  (linear), bulk (fixed), acceptor (linear). */
+function baselineToCurrentInSegment(
+  seg: Segment,
+  segCurrentX: number,
+  baselineX: number,
+  linearScale: number,
+): number {
+  if (seg.scaleRule === 'linear') {
+    return segCurrentX + (baselineX - seg.xStart) * linearScale;
+  }
+  const donor = seg.donorFlankWidth ?? 0;
+  const acceptor = seg.acceptorFlankWidth ?? 0;
+  if (donor === 0 && acceptor === 0) {
+    // Pure fixed-budget — no flanks. Linear within the segment in
+    // baseline units (i.e., 1:1 baseline → screen).
+    return segCurrentX + (baselineX - seg.xStart);
+  }
+  const local = baselineX - seg.xStart;
+  if (local <= donor) {
+    return segCurrentX + local * linearScale;
+  }
+  const bulkBaselineStart = donor;
+  const bulkBaselineEnd = seg.width - acceptor;
+  if (local <= bulkBaselineEnd) {
+    return (
+      segCurrentX +
+      donor * linearScale +
+      (local - bulkBaselineStart)
+    );
+  }
+  const bulkWidth = bulkBaselineEnd - bulkBaselineStart;
+  return (
+    segCurrentX +
+    donor * linearScale +
+    bulkWidth +
+    (local - bulkBaselineEnd) * linearScale
+  );
+}
+
+/** Inverse of {@link baselineToCurrentInSegment}: map a live screen-x
+ *  inside a segment back to its baseline-x. */
+function currentToBaselineInSegment(
+  seg: Segment,
+  segCurrentX: number,
+  currentX: number,
+  linearScale: number,
+): number {
+  if (seg.scaleRule === 'linear') {
+    return seg.xStart + (currentX - segCurrentX) / linearScale;
+  }
+  const donor = seg.donorFlankWidth ?? 0;
+  const acceptor = seg.acceptorFlankWidth ?? 0;
+  if (donor === 0 && acceptor === 0) {
+    return seg.xStart + (currentX - segCurrentX);
+  }
+  const local = currentX - segCurrentX;
+  const donorScreen = donor * linearScale;
+  if (local <= donorScreen) {
+    return seg.xStart + local / linearScale;
+  }
+  const bulkWidth = seg.width - donor - acceptor;
+  const bulkScreenEnd = donorScreen + bulkWidth;
+  if (local <= bulkScreenEnd) {
+    return seg.xStart + donor + (local - donorScreen);
+  }
+  return (
+    seg.xStart +
+    seg.width -
+    acceptor +
+    (local - bulkScreenEnd) / linearScale
+  );
 }

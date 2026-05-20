@@ -91,6 +91,22 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // baseline-units pad would grow linearly with zoom and swallow the
       // inter-exon gap whole at deep zoom (no zigzag visible past ~30×).
       const overhangPx = 6;
+      // Phase 3: index flanks by adjacent exon so each exon group can
+      // render its splice-site decorations. The donor flank sits on the
+      // exon's 3' side (intron i.donor for exon i); the acceptor flank
+      // on the 5' side (intron (i-1).acceptor for exon i).
+      const flankByExonAndSide = new Map<string, number>();
+      for (const flank of geom.flanks ?? []) {
+        if (flank.side === 'donor') {
+          flankByExonAndSide.set(`${flank.intronIdx}:donor`, flank.width);
+        } else {
+          flankByExonAndSide.set(`${flank.intronIdx + 1}:acceptor`, flank.width);
+        }
+      }
+      const flankFill = painter.color('vv-color-exon-fill', '#94a3b8');
+      const flankStroke = painter.color('vv-color-exon-stroke', '#475569');
+      const flankH = Math.max(2, Math.floor(exonH / 2));
+      const flankY = (exonY + exonH / 2) - flankH / 2;
       for (const eb of geom.exons) {
         const scaleVar = `var(--vv-exon-scale-x-${eb.exonIdx}, 1)`;
         const rectStyle = {
@@ -100,10 +116,47 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
           x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
           width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
         } as unknown as CSSProperties;
+        const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
+        const acceptorWidth =
+          flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
         exonRects.push(
           painter.placeInExonGroup(
             eb.exonIdx,
             <Fragment key={`exon-${eb.exonIdx}`}>
+              {acceptorWidth > 0 && (
+                <rect
+                  key={`flank-acceptor-${eb.exonIdx}`}
+                  x={-acceptorWidth}
+                  y={flankY}
+                  width={acceptorWidth}
+                  height={flankH}
+                  fill={flankFill}
+                  stroke={flankStroke}
+                  strokeWidth={1}
+                  strokeOpacity={0.6}
+                  fillOpacity={0.35}
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-exon-flank vv-exon-flank-acceptor"
+                  data-vv-intron-idx={eb.exonIdx - 1}
+                />
+              )}
+              {donorWidth > 0 && (
+                <rect
+                  key={`flank-donor-${eb.exonIdx}`}
+                  x={eb.width}
+                  y={flankY}
+                  width={donorWidth}
+                  height={flankH}
+                  fill={flankFill}
+                  stroke={flankStroke}
+                  strokeWidth={1}
+                  strokeOpacity={0.6}
+                  fillOpacity={0.35}
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-exon-flank vv-exon-flank-donor"
+                  data-vv-intron-idx={eb.exonIdx}
+                />
+              )}
               <rect
                 key={`exon-rect-${eb.exonIdx}`}
                 y={exonY}
@@ -138,11 +191,24 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         // independently so it stays available in spliced / protein modes
         // (gap collapses but the mark fades in via the existing
         // `1 - var(--vv-intron-scale)` opacity calc).
-        const visibleGap = gap.width - overhangPx * 2;
+        // Phase 3: with the soft-collapse spec, `gap.width` covers the
+        // whole intron (flanks + bulk). The polyline renders inside the
+        // inter-exon `<g>` which is positioned on the bulk only, so we
+        // size against the bulk's width (gap.width minus per-side flank
+        // widths) rather than the full intron baseline.
+        const intronDonorWidth =
+          flankByExonAndSide.get(`${gap.exonIdxA + 1}:acceptor`) ?? 0;
+        const intronAcceptorWidth =
+          flankByExonAndSide.get(`${gap.exonIdxA}:donor`) ?? 0;
+        const bulkWidth = Math.max(
+          0,
+          gap.width - intronDonorWidth - intronAcceptorWidth,
+        );
+        const visibleGap = bulkWidth - overhangPx * 2;
         if (visibleGap > 0) {
           const flank = Math.min(flankPx, visibleGap / 3);
           const left = overhangPx;
-          const right = gap.width - overhangPx;
+          const right = bulkWidth - overhangPx;
           const donorEnd = left + flank;
           const acceptorStart = right - flank;
           const peakX = (left + right) / 2;

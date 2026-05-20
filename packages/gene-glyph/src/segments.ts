@@ -32,13 +32,30 @@ export interface Segment {
   /** Position in the segment array. Stable for the lifetime of the
    *  baseline; the layout math indexes by this. */
   index: number;
-  kind: 'exon' | 'intron-collapsed';
+  /** Segment kind. `exon` is an exon body. `intron-collapsed` is the
+   *  inter-exon gap (today's intron-decoration target). `intron-flank`
+   *  is a Phase 3 splice-site-preservation piece — linear-scale bp
+   *  adjacent to an exon's 3' or 5' end, biologically intronic. */
+  kind: 'exon' | 'intron-collapsed' | 'intron-flank';
   /** For exon segments, the exon's index in the transcript. For intron-
    *  collapsed segments, undefined. */
   exonIdx?: number;
   /** For intron-collapsed segments, the bracketing exon indices. */
   exonIdxA?: number;
   exonIdxB?: number;
+  /** For intron-flank segments, which side of the intron this piece
+   *  lives on. `donor` sits at the upstream (5') end; `acceptor` at the
+   *  downstream (3') end. */
+  flankSide?: 'donor' | 'acceptor';
+  /** For `intron-collapsed` segments with Phase 3 splice-site flanks:
+   *  the baseline width of the donor flank (on the upstream side of
+   *  the intron) and the acceptor flank (downstream side). The bulk
+   *  sits between them. Donor and acceptor portions scale with the
+   *  live linear scale; the bulk remains at its fixed pixel budget.
+   *  Both default to 0 for legacy / non-flank segments — the whole
+   *  width then follows `scaleRule`. */
+  donorFlankWidth?: number;
+  acceptorFlankWidth?: number;
   /** Ruler endpoints in active-mode units. Exon segments cover their
    *  exonic CDS bp range (CDS modes) or their aa range (protein). Intron-
    *  collapsed segments interpolate ruler position linearly from upstream
@@ -93,6 +110,12 @@ export function buildSegments(
   // linear ruler with the surrounding exons.
   const gapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
 
+  // Phase 3: each intron is one ruler-walk segment covering the whole
+  // intron in both ruler and baseline-x. The flank/bulk substructure
+  // lives in baseline.flanks (a parallel array) and is used by the
+  // layout math + rendering — not by the ruler walk, which would suffer
+  // synthetic-ruler ambiguity at exon boundaries if flanks were
+  // separate segments.
   let idx = 0;
   for (let i = 0; i < baseline.exons.length; i++) {
     const eb = baseline.exons[i]!;
@@ -112,6 +135,18 @@ export function buildSegments(
       const gap = baseline.gaps[i]!;
       const [, upstreamRulerEnd] = exonRuler(i);
       const [downstreamRulerStart] = exonRuler(i + 1);
+      const perGapScale: SegmentScaleRule = gap.scaleRule ?? gapScale;
+      // Per-side flank widths embedded inside this gap (Phase 3). When
+      // present, the gap's `scaleRule === 'fixed-budget'` applies only
+      // to the bulk between the flanks; each flank portion scales with
+      // `linearScale` via the layout math.
+      let donorFlankWidth = 0;
+      let acceptorFlankWidth = 0;
+      for (const flank of baseline.flanks ?? []) {
+        if (flank.intronIdx !== i) continue;
+        if (flank.side === 'donor') donorFlankWidth = flank.width;
+        else acceptorFlankWidth = flank.width;
+      }
       segments.push({
         index: idx++,
         kind: 'intron-collapsed',
@@ -122,7 +157,10 @@ export function buildSegments(
         xStart: gap.xStart,
         xEnd: gap.xEnd,
         width: gap.width,
-        scaleRule: gapScale,
+        scaleRule: perGapScale,
+        donorFlankWidth: donorFlankWidth > 0 ? donorFlankWidth : undefined,
+        acceptorFlankWidth:
+          acceptorFlankWidth > 0 ? acceptorFlankWidth : undefined,
       });
     }
   }
@@ -174,15 +212,26 @@ export function computeSegmentLayout(
   const out = new Array<number>(segments.length).fill(0);
   if (segments.length === 0) return { linearScale: 1, segmentCurrentX: out };
 
+  // Internal sub-region bounds for a fixed-budget intron segment. The
+  // bulk sits in the middle, flanked by donor (upstream) and acceptor
+  // (downstream) flank pixels. For non-flank segments, donor/acceptor
+  // are both 0 and the bulk spans the whole segment.
+  const bulkRange = (seg: Segment): { start: number; end: number } => {
+    const donor = seg.donorFlankWidth ?? 0;
+    const acceptor = seg.acceptorFlankWidth ?? 0;
+    return { start: seg.xStart + donor, end: seg.xEnd - acceptor };
+  };
+
   let visibleFixedBaseline = 0;
   let anyFixed = false;
   for (const seg of segments) {
-    if (seg.scaleRule === 'fixed-budget') {
-      anyFixed = true;
-      const lo = Math.max(seg.xStart, S_lo);
-      const hi = Math.min(seg.xEnd, S_hi);
-      if (hi > lo) visibleFixedBaseline += hi - lo;
-    }
+    if (seg.scaleRule !== 'fixed-budget') continue;
+    const bulk = bulkRange(seg);
+    if (bulk.end <= bulk.start) continue;
+    anyFixed = true;
+    const lo = Math.max(bulk.start, S_lo);
+    const hi = Math.min(bulk.end, S_hi);
+    if (hi > lo) visibleFixedBaseline += hi - lo;
   }
   const visibleScalingBaseline = Math.max(
     1e-9,
@@ -193,8 +242,15 @@ export function computeSegmentLayout(
     (width - visibleFixedBaseline) / visibleScalingBaseline,
   );
 
-  const segmentScreenWidth = (seg: Segment): number =>
-    seg.scaleRule === 'linear' ? seg.width * linearScale : seg.width;
+  const segmentScreenWidth = (seg: Segment): number => {
+    if (seg.scaleRule === 'linear') return seg.width * linearScale;
+    // Fixed-budget with optional embedded flanks: bulk stays at fixed
+    // pixels, flanks scale linearly.
+    const donor = seg.donorFlankWidth ?? 0;
+    const acceptor = seg.acceptorFlankWidth ?? 0;
+    const bulkWidth = Math.max(0, seg.width - donor - acceptor);
+    return (donor + acceptor) * linearScale + bulkWidth;
+  };
 
   const pivotIdx = pivotSegmentIdx(segments, S_lo);
   const pivot = segments[pivotIdx]!;

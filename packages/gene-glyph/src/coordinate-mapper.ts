@@ -1,11 +1,39 @@
 import type {
   CdsPosition,
+  CollapsedRegion,
   CoordinateMapper,
   Exon,
   GenomicPosition,
   Position,
   Transcript,
 } from './types.js';
+
+/** Default soft-collapse spec — one region per intron, compressing
+ *  everything except the first `flankBp` and last `flankBp` of each
+ *  intron. The 10bp default matches the conventional "splice-site
+ *  preservation" window so the donor / acceptor consensus sequences
+ *  stay linear under zoom while the deep-intron bulk stays at a
+ *  fixed pixel budget. Hosts can pass their own
+ *  `collapsedRegions` prop to override this — leaving an intronic
+ *  range out of the spec keeps it linear (i.e., expanded); adding a
+ *  range covering exonic bp compresses that too. */
+export function defaultCollapsedRegions(
+  transcript: Transcript,
+  flankBp = 10,
+): CollapsedRegion[] {
+  const regions: CollapsedRegion[] = [];
+  for (let i = 0; i < transcript.exons.length - 1; i++) {
+    const upstream = transcript.exons[i]!;
+    const downstream = transcript.exons[i + 1]!;
+    regions.push({
+      // c.{upstream.cdsEnd}+(flankBp+1) — first bp past the donor flank.
+      start: { cPos: upstream.cdsEnd, offset: flankBp + 1 },
+      // c.{downstream.cdsStart}-(flankBp+1) — last bp before the acceptor flank.
+      end: { cPos: downstream.cdsStart, offset: -(flankBp + 1) },
+    });
+  }
+  return regions;
+}
 
 export function createCoordinateMapper(transcript: Transcript): CoordinateMapper {
   const exons = transcript.exons;
