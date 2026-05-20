@@ -122,10 +122,24 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       const { rect, viewport, mapper, painter } = args;
       const unit = unitForMode(viewport.mode);
       const rulerLength = rulerLengthForMode(viewport);
-      const pxPerUnit = baselinePxPerUnit(viewport);
+      // Zoom-sensitive tick density: pick the step against the *live*
+      // px-per-ruler-unit so the average on-screen spacing between major
+      // ticks stays near `minLabelSpacingPx` regardless of zoom. As the
+      // user zooms in, livePxPerUnit grows and the auto-step picker
+      // drops to a finer ladder rung — so ticks stay roughly the same
+      // density on screen instead of spreading further apart.
+      //
+      // The legacy behaviour (step picked against the fit-gene baseline
+      // and kept stable across zoom) is still available by passing an
+      // explicit `majorStep` number rather than 'auto'.
+      const visibleRulerSpan = Math.max(
+        1,
+        viewport.range[1] - viewport.range[0],
+      );
+      const livePxPerUnit = viewport.width / visibleRulerSpan;
       const majorStep =
         majorStepConfig === 'auto'
-          ? pickAutoStep(pxPerUnit, minLabelSpacingPx, rulerLength)
+          ? pickAutoStep(livePxPerUnit, minLabelSpacingPx, rulerLength)
           : Math.max(1, majorStepConfig);
       const minorStep =
         minorSubdivisions > 0 ? majorStep / minorSubdivisions : 0;
@@ -139,13 +153,17 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
 
       // Skip-on-crash: walk the candidate majors forward and drop any
       // whose label would visually run into the previously-emitted
-      // label. The crash check works in baseline-x (matches screen-x at
-      // fit-gene; per-exon transforms only spread labels further apart
-      // at higher zoom, so this is also a conservative check there).
-      // Label width estimate is character-count × `labelFontSize × 0.6`
-      // — close enough for the digits / commas / `bp` / `aa` glyphs we
-      // emit. Tick mark + label drop together: the user shouldn't see
-      // a tick stuck next to a labelled one with no label of its own.
+      // label. The crash check works in baseline-x; label widths
+      // (computed in screen px from character count × font size) are
+      // converted back to baseline-px equivalents by dividing by the
+      // live "screen per baseline" scale factor. That makes the check
+      // accurate at any zoom — at fit-gene `liveScale === 1` and the
+      // conversion is a no-op; at deep zoom the baseline-spacing
+      // between consecutive ticks (which doesn't change with zoom)
+      // is correctly compared against label widths in the same units.
+      const baselinePxPerUnit_ = baselinePxPerUnit(viewport);
+      const liveScale =
+        baselinePxPerUnit_ > 0 ? livePxPerUnit / baselinePxPerUnit_ : 1;
       const charPx = labelFontSize * 0.6;
       const halfWidthOf = (rulerPos: number, withSuffix: boolean): number => {
         if (labelRotation === 90) {
@@ -154,9 +172,14 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
           // of character count. The suffix only widens the rotated
           // label *vertically* (which the track height handles), not
           // horizontally, so `withSuffix` is irrelevant here.
-          return labelFontSize / 2;
+          return labelFontSize / 2 / liveScale;
         }
-        return (formatLabel(rulerPos, unit, withSuffix, labelFormat, mapper).length * charPx) / 2;
+        return (
+          (formatLabel(rulerPos, unit, withSuffix, labelFormat, mapper).length *
+            charPx) /
+          2 /
+          liveScale
+        );
       };
       const allMajors = collectTicks(viewport, mapper, majorStep);
 
