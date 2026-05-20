@@ -181,42 +181,6 @@ describe('exonTrack', () => {
     expect(clicks).toEqual(['__hidden_intron_0_1']);
   });
 
-  it('renders one hard-collapse `//` mark per intron, positioned via the gap CSS vars', () => {
-    // Phase 4: every collapsed-intron segment gets a `vv-hard-collapse-mark`
-    // wrapper. The marks are always emitted; CSS scopes their visibility to
-    // transcript mode so the unit-test environment exercises the rendering
-    // surface independent of mode (jsdom doesn't apply the cascade).
-    const { mapper, viewport, painter, interaction } = setup();
-    const t = exonTrack();
-    function Probe() {
-      return (
-        <svg>
-          {t.render({
-            data: { ready: true },
-            rect: { yTop: 0, yBottom: 24 },
-            viewport,
-            mapper,
-            interaction,
-            painter,
-          })}
-        </svg>
-      );
-    }
-    const { container } = render(<Probe />);
-    const marks = container.querySelectorAll<SVGGElement>('.vv-hard-collapse-mark');
-    expect(marks).toHaveLength(2); // 3 exons → 2 introns
-    expect(marks[0]!.getAttribute('data-vv-intron-from')).toBe('0');
-    expect(marks[0]!.getAttribute('data-vv-intron-to')).toBe('1');
-    // Each mark contains two `<line>` elements forming the `//` symbol.
-    expect(marks[0]!.querySelectorAll('line')).toHaveLength(2);
-    // Position transform references the gap's CSS variables so the mark
-    // sits at the gap's live screen midpoint, including when the gap
-    // collapses to zero width in transcript / protein modes.
-    const transform = (marks[0]!.getAttribute('style') ?? '');
-    expect(transform).toContain('--vv-intron-x-0');
-    expect(transform).toContain('--vv-intron-scale-x-0');
-  });
-
   it('omits hidden-feature marks when no track contributed counts', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = exonTrack();

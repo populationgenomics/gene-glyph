@@ -69,7 +69,6 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
 
       const exonRects: ReactNode[] = [];
       const intronDecorations: ReactNode[] = [];
-      const hardCollapseMarks: ReactNode[] = [];
       const hiddenMarks: ReactNode[] = [];
 
       // Every exon renders at its baseline width — never recomputed against
@@ -91,6 +90,15 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // baseline-units pad would grow linearly with zoom and swallow the
       // inter-exon gap whole at deep zoom (no zigzag visible past ~30×).
       const overhangPx = 6;
+      // Phase 3 polish: in transcript mode the inter-exon "gap" is a
+      // 1-bp transition that becomes visible at deep zoom (pxPerBp ×
+      // zoom). Extend each exon rect by half a bp on each side in
+      // baseline units so the half-bp overhangs from adjacent exons
+      // meet at the boundary instead of leaving a visible empty slot.
+      // Skipped in genome mode (the flank rects fill that role) and
+      // protein mode (the codon-snap already makes consecutive exons
+      // adjacent in baseline-x — adding overhang would just overlap them).
+      const halfBpOverhang = viewport.mode === 'transcript' ? geom.pxPerBp / 2 : 0;
       // Phase 3: index flanks by adjacent exon so each exon group can
       // render its splice-site decorations. The donor flank sits on the
       // exon's 3' side (intron i.donor for exon i); the acceptor flank
@@ -113,8 +121,8 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
           // SVG2: x / width as CSS properties so we can use calc with the
           // live exon-scale CSS var. Browser support is Chrome 88+, Firefox
           // 76+, Safari 14+ — all the targets the rest of the viewer assumes.
-          x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
-          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
+          x: `calc(-1 * ${overhangPx}px / ${scaleVar} - ${halfBpOverhang}px)`,
+          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar} + 2 * ${halfBpOverhang}px)`,
         } as unknown as CSSProperties;
         const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
         const acceptorWidth =
@@ -184,13 +192,6 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // rectangles (which now overhang the baseline gap by `halfSlot` on
       // each side per the half-slot ribbon extension above).
       for (const gap of geom.gaps) {
-        // The exon ribbons each overhang the gap by `overhangPx` of screen
-        // pixels (a constant — the inter-exon `<g>` doesn't scale with zoom
-        // in genome, so we can shave that overhang off as a flat
-        // pixel value here too). The hidden-feature mark below renders
-        // independently so it stays available in spliced / protein modes
-        // (gap collapses but the mark fades in via the existing
-        // `1 - var(--vv-intron-scale)` opacity calc).
         // Phase 3: with the soft-collapse spec, `gap.width` covers the
         // whole intron (flanks + bulk). The polyline renders inside the
         // inter-exon `<g>` which is positioned on the bulk only, so we
@@ -204,11 +205,16 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
           0,
           gap.width - intronDonorWidth - intronAcceptorWidth,
         );
-        const visibleGap = bulkWidth - overhangPx * 2;
-        if (visibleGap > 0) {
-          const flank = Math.min(flankPx, visibleGap / 3);
-          const left = overhangPx;
-          const right = bulkWidth - overhangPx;
+        // Polyline spans the FULL bulk width, meeting the flank rects
+        // (or, in modes without flanks, the exon ribbons) cleanly. The
+        // legacy `overhangPx` inset existed when the inter-exon <g>
+        // covered the whole intron and the polyline needed to stay
+        // clear of overhanging exon ribbons; Phase 3 moves the
+        // exon-rect overhang out of the bulk's <g> entirely.
+        if (bulkWidth > 0) {
+          const flank = Math.min(flankPx, bulkWidth / 3);
+          const left = 0;
+          const right = bulkWidth;
           const donorEnd = left + flank;
           const acceptorStart = right - flank;
           const peakX = (left + right) / 2;
@@ -235,54 +241,6 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
             ),
           );
         }
-
-        // Phase 4: hard-collapse mark — a `//` scale-break symbol that
-        // marks the position of a collapsed intron in transcript mode.
-        // Fades in as `--vv-intron-scale → 0` so it appears as the
-        // intron-decoration polyline collapses. CSS scopes it to
-        // `[data-vv-mode="transcript"]` (genome mode shows the polyline
-        // instead; protein mode follows the "no marks" rule).
-        const markWrapperStyle: CSSProperties = {
-          transform:
-            `translateX(calc(var(--vv-intron-x-${gap.exonIdxA}, 0px)` +
-            ` + var(--vv-intron-w-${gap.exonIdxA}, 0px)` +
-            ` * var(--vv-intron-scale-x-${gap.exonIdxA}, 1) / 2))`,
-          transformOrigin: '0 0',
-        };
-        const markStroke = painter.color('vv-color-intron-line', '#475569');
-        const slashHalfLen = 4;
-        const slashOffset = 2;
-        hardCollapseMarks.push(
-          <g
-            key={`hard-collapse-${gap.exonIdxA}-${gap.exonIdxB}`}
-            className="vv-hard-collapse-mark"
-            data-vv-intron-from={gap.exonIdxA}
-            data-vv-intron-to={gap.exonIdxB}
-            style={markWrapperStyle}
-            pointerEvents="none"
-          >
-            <line
-              x1={-slashOffset - slashHalfLen / 2}
-              y1={intronY + slashHalfLen}
-              x2={-slashOffset + slashHalfLen / 2}
-              y2={intronY - slashHalfLen}
-              stroke={markStroke}
-              strokeWidth={1.25}
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            <line
-              x1={slashOffset - slashHalfLen / 2}
-              y1={intronY + slashHalfLen}
-              x2={slashOffset + slashHalfLen / 2}
-              y2={intronY - slashHalfLen}
-              stroke={markStroke}
-              strokeWidth={1.25}
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </g>,
-        );
 
         // Slice 15: hidden-feature indicator sits at the gap's *current* screen
         // position (centre, accounting for the gap's collapsed width in
@@ -349,11 +307,6 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         <g className="vv-exon-track" data-vv-track-id={id} key={id}>
           {intronDecorations}
           {exonRects}
-          {hardCollapseMarks.length > 0 && (
-            <g className="vv-hard-collapse-marks" key="hard-collapse-marks">
-              {hardCollapseMarks}
-            </g>
-          )}
           {hiddenMarks.length > 0 && (
             <g className="vv-hidden-feature-marks" key="hidden-marks">
               {hiddenMarks}
