@@ -1,0 +1,248 @@
+import type { BaselineGeometry, ViewMode } from './types.js';
+import type { FrameExon } from './projection-frame.js';
+
+/** Display behaviour of a segment under live zoom.
+ *
+ *  - **`linear`**: the segment's screen width scales with the live zoom
+ *    factor. Exon bodies in every mode use this. Intronic regions in
+ *    `cds-spliced` and `protein` also use this — they collapse to a
+ *    one-bp transition that scales with the surrounding exon content.
+ *  - **`fixed-budget`**: the segment's screen width stays constant under
+ *    zoom. The inter-exon gap in `cds-with-introns` is fixed-budget so
+ *    Pfam / InterPro segments in adjacent exons stay visually close at
+ *    deep zoom; the gap content (dashed-intron polyline + breathing
+ *    room) is allotted a constant pixel budget regardless of how zoomed
+ *    in the user is. */
+export type SegmentScaleRule = 'linear' | 'fixed-budget';
+
+/** One linear or collapsed display segment, ordered 5'→3' across the
+ *  figure. Each segment owns:
+ *  - a baseline-x interval `[xStart, xEnd]` (fit-gene screen pixels),
+ *  - a ruler interval `[rulerStart, rulerEnd]` in the active mode's
+ *    coords (CDS bp in CDS modes, aa in protein mode),
+ *  - a {@link SegmentScaleRule} that controls how the screen width
+ *    behaves under zoom.
+ *
+ *  Segments are the geometry primitive the {@link ProjectionFrame}'s
+ *  math operates on; today there are two kinds (`exon`, `intron-
+ *  collapsed`), but the type is designed to admit richer kinds in
+ *  future phases (`splice-site`, `expanded-intron`, etc.) without
+ *  reshaping the layout math. */
+export interface Segment {
+  /** Position in the segment array. Stable for the lifetime of the
+   *  baseline; the layout math indexes by this. */
+  index: number;
+  kind: 'exon' | 'intron-collapsed';
+  /** For exon segments, the exon's index in the transcript. For intron-
+   *  collapsed segments, undefined. */
+  exonIdx?: number;
+  /** For intron-collapsed segments, the bracketing exon indices. */
+  exonIdxA?: number;
+  exonIdxB?: number;
+  /** Ruler endpoints in active-mode units. Exon segments cover their
+   *  exonic CDS bp range (CDS modes) or their aa range (protein). Intron-
+   *  collapsed segments interpolate ruler position linearly from upstream
+   *  exon's ruler end to downstream exon's ruler start — the fictitious
+   *  ruler that powers pan-animation continuity through the gap. */
+  rulerStart: number;
+  rulerEnd: number;
+  /** Baseline (fit-gene) screen-x interval. */
+  xStart: number;
+  xEnd: number;
+  width: number;
+  scaleRule: SegmentScaleRule;
+}
+
+/** Derive the segment array for a precomputed baseline. Today's baseline
+ *  carries `exons[]` and `gaps[]` separately; this folds them into a
+ *  single ordered sequence with explicit scale rules. The frame's math
+ *  works uniformly over the result regardless of mode — protein-mode's
+ *  zero-width gap segments degenerate cleanly under the segment walk
+ *  rather than needing a separate code path.
+ *
+ *  `mode` decides how ruler endpoints are sourced:
+ *  - CDS modes: rulerStart/rulerEnd come from `FrameExon.cdsStart/cdsEnd`
+ *    for exon segments; for intron-collapsed segments they're the
+ *    bracketing exons' bounds.
+ *  - protein: rulerStart/rulerEnd are derived from each exon's
+ *    `xStart / pxPerBp + 1` (aa equivalent) so segment-walk arithmetic
+ *    matches today's `(rulerPos - 1) * pxPerBp` linear formula. */
+export function buildSegments(
+  baseline: BaselineGeometry,
+  exons: readonly FrameExon[],
+  mode: ViewMode,
+): Segment[] {
+  const segments: Segment[] = [];
+  if (baseline.exons.length === 0) return segments;
+
+  const exonRuler = (i: number): readonly [number, number] => {
+    if (mode === 'protein') {
+      const eb = baseline.exons[i]!;
+      const pxPerAa = baseline.pxPerBp;
+      // Protein-mode baseline is linear in aa: xStart = (aaStart - 1) *
+      // pxPerAa. Invert to recover aaStart / aaEnd for the segment.
+      const denom = pxPerAa > 0 ? pxPerAa : 1;
+      return [eb.xStart / denom + 1, eb.xEnd / denom + 1];
+    }
+    const e = exons[i]!;
+    return [e.cdsStart, e.cdsEnd];
+  };
+
+  // Gaps are fixed-budget when the baseline reserves explicit gap pixels
+  // (cds-with-introns); in cds-spliced and protein the gap shares the
+  // linear ruler with the surrounding exons.
+  const gapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
+
+  let idx = 0;
+  for (let i = 0; i < baseline.exons.length; i++) {
+    const eb = baseline.exons[i]!;
+    const [rulerStart, rulerEnd] = exonRuler(i);
+    segments.push({
+      index: idx++,
+      kind: 'exon',
+      exonIdx: eb.exonIdx,
+      rulerStart,
+      rulerEnd,
+      xStart: eb.xStart,
+      xEnd: eb.xEnd,
+      width: eb.width,
+      scaleRule: 'linear',
+    });
+    if (i < baseline.exons.length - 1) {
+      const gap = baseline.gaps[i]!;
+      const [, upstreamRulerEnd] = exonRuler(i);
+      const [downstreamRulerStart] = exonRuler(i + 1);
+      segments.push({
+        index: idx++,
+        kind: 'intron-collapsed',
+        exonIdxA: gap.exonIdxA,
+        exonIdxB: gap.exonIdxB,
+        rulerStart: upstreamRulerEnd,
+        rulerEnd: downstreamRulerStart,
+        xStart: gap.xStart,
+        xEnd: gap.xEnd,
+        width: gap.width,
+        scaleRule: gapScale,
+      });
+    }
+  }
+  return segments;
+}
+
+/** Per-render screen-space placement derived from `(segments, S_lo, S_hi,
+ *  width)`. Mirrors today's {@link ExonLayout}: a single shared
+ *  `linearScale` applied to segments with `scaleRule === 'linear'`, plus
+ *  per-segment current-frame screen-x. Fixed-budget segments stay at
+ *  baseline width. */
+export interface SegmentLayout {
+  /** Shared scale factor for `linear` segments. Equivalent to today's
+   *  `exonLayout.exonScale`. Renamed because intron-collapsed segments
+   *  also use it in cds-spliced / protein modes. */
+  readonly linearScale: number;
+  /** Per-segment screen-x of the segment's left edge. Indexed by
+   *  {@link Segment.index}. */
+  readonly segmentCurrentX: readonly number[];
+}
+
+/** Map a visible baseline range `[S_lo, S_hi]` to per-segment screen-x
+ *  positions such that:
+ *
+ *    1. S_lo lands at screen-x = 0.
+ *    2. S_hi lands at screen-x = width.
+ *    3. Every visible `fixed-budget` segment occupies exactly its
+ *       baseline width on screen (so the gap content stays at a constant
+ *       pixel budget regardless of zoom — same load-bearing property as
+ *       today's `gapsScale === false` branch).
+ *
+ *  Partitions the visible baseline into "linear" (always scales) +
+ *  "fixed-budget" (frozen). Reserves the fixed pixels in screen space
+ *  and solves for the `linearScale` that makes the linear content fill
+ *  the remainder. Walks left + right from a pivot segment so per-segment
+ *  positions stay stable as the user pans across a gap.
+ *
+ *  Padding outside the gene's segments uses the same rule as
+ *  `fixed-budget` gaps when any are present, preserving today's
+ *  `gapPx === 0 ? * exonScale : direct` asymmetry exactly. (Phase 1
+ *  keeps current behaviour bit-for-bit; later phases can revisit the
+ *  padding rule explicitly.) */
+export function computeSegmentLayout(
+  segments: readonly Segment[],
+  S_lo: number,
+  S_hi: number,
+  width: number,
+): SegmentLayout {
+  const out = new Array<number>(segments.length).fill(0);
+  if (segments.length === 0) return { linearScale: 1, segmentCurrentX: out };
+
+  let visibleFixedBaseline = 0;
+  let anyFixed = false;
+  for (const seg of segments) {
+    if (seg.scaleRule === 'fixed-budget') {
+      anyFixed = true;
+      const lo = Math.max(seg.xStart, S_lo);
+      const hi = Math.min(seg.xEnd, S_hi);
+      if (hi > lo) visibleFixedBaseline += hi - lo;
+    }
+  }
+  const visibleScalingBaseline = Math.max(
+    1e-9,
+    S_hi - S_lo - visibleFixedBaseline,
+  );
+  const linearScale = Math.max(
+    1e-9,
+    (width - visibleFixedBaseline) / visibleScalingBaseline,
+  );
+
+  const segmentScreenWidth = (seg: Segment): number =>
+    seg.scaleRule === 'linear' ? seg.width * linearScale : seg.width;
+
+  const pivotIdx = pivotSegmentIdx(segments, S_lo);
+  const pivot = segments[pivotIdx]!;
+  let pivotCurrentX: number;
+  if (S_lo >= pivot.xStart) {
+    // S_lo inside pivot segment — anchor pivot.xStart at
+    // `-(S_lo - pivot.xStart) × segment-scale` so that the visible part
+    // of the pivot starts at screen-x = 0.
+    pivotCurrentX =
+      pivot.scaleRule === 'linear'
+        ? -(S_lo - pivot.xStart) * linearScale
+        : -(S_lo - pivot.xStart);
+  } else {
+    // S_lo upstream of the pivot — this only happens when S_lo is in
+    // the padding zone before segment 0 (every gap is a real segment,
+    // so a gap-position S_lo lands inside *that* gap segment, not
+    // upstream of the first exon). Padding extrapolation rule matches
+    // today's: scale with linearScale when no fixed-budget segments
+    // exist (cds-spliced / protein), unscaled otherwise (cds-with-
+    // introns). The asymmetry is load-bearing for the existing
+    // overview-track window-rect math; Phase 1 preserves it exactly.
+    const baselineUpstream = pivot.xStart - S_lo;
+    pivotCurrentX = anyFixed ? baselineUpstream : baselineUpstream * linearScale;
+  }
+  out[pivot.index] = pivotCurrentX;
+
+  let cursor = pivotCurrentX + segmentScreenWidth(pivot);
+  for (let i = pivotIdx + 1; i < segments.length; i++) {
+    out[i] = cursor;
+    cursor += segmentScreenWidth(segments[i]!);
+  }
+  cursor = pivotCurrentX;
+  for (let i = pivotIdx - 1; i >= 0; i--) {
+    cursor -= segmentScreenWidth(segments[i]!);
+    out[i] = cursor;
+  }
+
+  return { linearScale, segmentCurrentX: out };
+}
+
+/** Find the segment containing `baselineX`, or the first segment whose
+ *  right edge is at or past it if `baselineX` precedes every segment.
+ *  Falls through to the last segment when `baselineX` lies past the
+ *  3' end. */
+function pivotSegmentIdx(segments: readonly Segment[], baselineX: number): number {
+  if (segments.length === 0) return 0;
+  for (let i = 0; i < segments.length; i++) {
+    if (baselineX <= segments[i]!.xEnd) return i;
+  }
+  return segments.length - 1;
+}
