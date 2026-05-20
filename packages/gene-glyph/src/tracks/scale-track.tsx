@@ -169,11 +169,26 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // conversion is a no-op; at deep zoom the baseline-spacing
       // between consecutive ticks (which doesn't change with zoom)
       // is correctly compared against label widths in the same units.
-      const baselinePxPerUnit_ = baselinePxPerUnit(viewport);
-      const liveScale =
-        baselinePxPerUnit_ > 0 ? livePxPerUnit / baselinePxPerUnit_ : 1;
+      // `liveScale` is the screen-px-per-baseline-px factor inside
+      // exonic regions at the current zoom. At fit-gene it's 1; at
+      // deep zoom it grows so 1 bp of exonic baseline maps to many
+      // screen pixels. Used to convert label widths and padding
+      // (originally in screen px) to baseline-equivalents for the
+      // crash check, which operates on baseline-x distances between
+      // ticks. Approximated by the ruler-length ratio (naturalLen /
+      // currentLen) — exact in transcript / protein modes; slightly
+      // overestimates exonic-only scale in genome mode with bulks
+      // (close enough; the alternative would be exposing the
+      // internal `exonScale` on the public Viewport interface).
+      const naturalRangeForScale = viewport.naturalRange();
+      const naturalLen = naturalRangeForScale[1] - naturalRangeForScale[0];
+      const liveScale = visibleRulerSpan > 0 ? naturalLen / visibleRulerSpan : 1;
+      // labelPadPx is a screen-px constant ("12 px of breathing room
+      // between adjacent labels"); convert to baseline-equivalent to
+      // compare against tick baseline-x distances at any zoom.
+      const labelPadBaseline = labelPadPx / liveScale;
       const charPx = labelFontSize * 0.6;
-      const halfWidthOf = (rulerPos: number, withSuffix: boolean): number => {
+      const halfWidthOf = (tick: TickRow, withSuffix: boolean): number => {
         if (labelRotation === 90) {
           // Rotated labels stand vertically — their on-screen horizontal
           // footprint is the font height (≈ labelFontSize), independent
@@ -183,23 +198,27 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
           return labelFontSize / 2 / liveScale;
         }
         return (
-          (formatLabel(rulerPos, unit, withSuffix, labelFormat, mapper).length *
+          (formatLabel(tick, unit, withSuffix, labelFormat, mapper).length *
             charPx) /
           2 /
           liveScale
         );
       };
       // Merge step-divisible candidates with exon-edge anchor ticks
-      // (sorted by baseline-x, de-duplicated by ruler position). The
-      // anchors are pinned to each exon's 5'/3' boundaries so a deep
-      // zoom that misses every step tick still surfaces the boundary
-      // explicitly.
+      // and intronic-flank ticks (sorted by baseline-x, de-duplicated
+      // by ruler position). Anchors are pinned to each exon's 5'/3'
+      // boundaries so a deep zoom that misses every step tick still
+      // surfaces the boundary explicitly; intronic ticks fill in the
+      // donor / acceptor flank zones so the c. ruler stays evenly
+      // spaced across exon boundaries.
       const stepMajors = collectTicks(viewport, mapper, majorStep);
       const anchorMajors = collectAnchorTicks(viewport, mapper);
+      const intronicMajors = collectIntronicTicks(viewport, mapper);
       const anchorPositions = new Set(anchorMajors.map((t) => t.rulerPos));
       const allMajors: TickRow[] = [
         ...anchorMajors,
         ...stepMajors.filter((t) => !anchorPositions.has(t.rulerPos)),
+        ...intronicMajors,
       ].sort((a, b) => a.baselineX - b.baselineX);
 
       // Walk forward, skipping any candidate whose label would crash
@@ -214,8 +233,8 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       let lastBaselineX = -Infinity;
       let lastHalfWidth = 0;
       for (const t of allMajors) {
-        const half = halfWidthOf(t.rulerPos, false);
-        if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadPx) {
+        const half = halfWidthOf(t, false);
+        if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadBaseline) {
           // Collision. Anchor wins over step.
           const prev = majors[majors.length - 1];
           if (t.anchor && prev && !prev.anchor) {
@@ -223,7 +242,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
             const beforePrev = majors[majors.length - 1];
             lastBaselineX = beforePrev?.baselineX ?? -Infinity;
             lastHalfWidth = beforePrev
-              ? halfWidthOf(beforePrev.rulerPos, false)
+              ? halfWidthOf(beforePrev, false)
               : 0;
             // Fall through to the emit logic below.
           } else {
@@ -303,7 +322,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                 const localX = t.baselineX - exon.xStart;
                 const isLast = lastMajorPos === t.rulerPos;
                 const label = formatLabel(
-                  t.rulerPos,
+                  t,
                   unit,
                   showSuffix && isLast,
                   labelFormat,
@@ -384,6 +403,11 @@ interface TickRow {
    *  anchor. Two anchors that collide with each other fall through to
    *  the default "keep the leftmost" rule. */
   anchor?: boolean;
+  /** Intronic ticks live inside donor / acceptor flank zones at HGVS c.
+   *  offsets. Their `rulerPos` is synthetic (cPos + offset on the same
+   *  ruler axis, used only for crash-walk ordering); the label uses
+   *  this struct to render as `c.N+M` or `c.N-K`. */
+  intronic?: { cPos: number; offset: number };
 }
 
 function unitForMode(mode: ViewMode): 'bp' | 'aa' {
@@ -393,15 +417,6 @@ function unitForMode(mode: ViewMode): 'bp' | 'aa' {
 function rulerLengthForMode(viewport: Viewport): number {
   const [lo, hi] = viewport.naturalRange();
   return Math.max(0, hi - lo);
-}
-
-/** Baseline (fit-gene) pixels per ruler unit. Stable under pan/zoom
- *  because `baselineGeometry()` returns fit-gene coords. In protein
- *  mode `pxPerBp` already encodes px-per-aa (computed against aaLen,
- *  not cdsLength) so the same accessor works for both unit systems. */
-function baselinePxPerUnit(viewport: Viewport): number {
-  const geom = viewport.baselineGeometry();
-  return geom.pxPerBp;
 }
 
 /** Pick the smallest ladder step whose label spacing meets the
@@ -441,6 +456,58 @@ function collectTicks(
     rows.push({ rulerPos: pos, baselineX, exonIdx });
   }
   return rows;
+}
+
+/** Intronic ticks pinned to every bp inside each soft-collapse spec's
+ *  donor / acceptor flank zones. At deep zoom the per-bp screen width
+ *  is large enough that intronic positions become individually visible;
+ *  emitting ticks here means the c. ruler stays evenly spaced across
+ *  exon boundaries (c.140 — c.140+1 — c.140+2 — ... — c.141-1 — c.141)
+ *  rather than jumping straight from one exon's cdsEnd to the next
+ *  exon's cdsStart with a wide intronic gap in between. Genome mode
+ *  only; transcript and protein hard-collapse introns so the spec is
+ *  subsumed. The crash walk drops these at lower zoom levels naturally. */
+function collectIntronicTicks(
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+): TickRow[] {
+  if (viewport.mode !== 'genome') return [];
+  const baseline = viewport.baselineGeometry();
+  const flanks = baseline.flanks ?? [];
+  if (flanks.length === 0) return [];
+  const pxPerBp = baseline.pxPerBp;
+  const exons = mapper.transcript.exons;
+  const rows: TickRow[] = [];
+  for (const flank of flanks) {
+    if (flank.side === 'donor') {
+      const upstream = exons[flank.intronIdx];
+      if (!upstream) continue;
+      // Donor flank covers HGVS c.{upstream.cdsEnd}+1 .. +flank.bp.
+      for (let offset = 1; offset <= flank.bp; offset++) {
+        const baselineX = flank.xStart + (offset - 1) * pxPerBp;
+        rows.push({
+          rulerPos: upstream.cdsEnd + offset / (flank.bp + 1),
+          exonIdx: flank.intronIdx,
+          baselineX,
+          intronic: { cPos: upstream.cdsEnd, offset },
+        });
+      }
+    } else {
+      const downstream = exons[flank.intronIdx + 1];
+      if (!downstream) continue;
+      // Acceptor flank covers HGVS c.{downstream.cdsStart}-flank.bp .. -1.
+      for (let k = flank.bp; k >= 1; k--) {
+        const baselineX = flank.xStart + (flank.bp - k) * pxPerBp;
+        rows.push({
+          rulerPos: downstream.cdsStart - k / (flank.bp + 1),
+          exonIdx: flank.intronIdx + 1,
+          baselineX,
+          intronic: { cPos: downstream.cdsStart, offset: -k },
+        });
+      }
+    }
+  }
+  return rows.sort((a, b) => a.baselineX - b.baselineX);
 }
 
 /** Anchor ticks pinned to every exon's 5' and 3' boundaries (in ruler
@@ -503,13 +570,23 @@ function exonForRulerPos(
 }
 
 function formatLabel(
-  pos: number,
+  tick: TickRow,
   unit: 'bp' | 'aa',
   withSuffix: boolean,
   labelFormat: 'c-notation' | 'genomic',
   mapper: CoordinateMapper,
 ): string {
-  const formatted = Math.round(pos).toLocaleString('en-US');
+  // Intronic ticks always render in HGVS c. with explicit offset
+  // (regardless of the host's labelFormat — there's no clean genomic
+  // analogue for `c.N+M` other than the underlying chromosomal bp,
+  // which is what `labelFormat: 'genomic'` already produces for
+  // exonic ticks).
+  if (tick.intronic) {
+    const { cPos, offset } = tick.intronic;
+    const sign = offset > 0 ? '+' : '';
+    return `c.${cPos.toLocaleString('en-US')}${sign}${offset}`;
+  }
+  const formatted = Math.round(tick.rulerPos).toLocaleString('en-US');
   if (unit === 'aa') {
     return withSuffix ? `${formatted} aa` : formatted;
   }
@@ -519,7 +596,7 @@ function formatLabel(
     // a chromosomal address". Fallback to HGVS c. when the position
     // can't be resolved (e.g., positions in padding past the gene's
     // 3' end have no genomic equivalent).
-    const g = mapper.cdsToGenomic(Math.round(pos), 0);
+    const g = mapper.cdsToGenomic(Math.round(tick.rulerPos), 0);
     if (g) {
       return `${g.chr}:${g.pos.toLocaleString('en-US')}`;
     }
