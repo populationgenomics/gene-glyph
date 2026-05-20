@@ -141,8 +141,16 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
         majorStepConfig === 'auto'
           ? pickAutoStep(livePxPerUnit, minLabelSpacingPx, rulerLength)
           : Math.max(1, majorStepConfig);
+      // Minor ticks subdivide the major step. Floor at 1 ruler unit
+      // (a bp in CDS modes, an aa in protein) so deep zoom doesn't draw
+      // sub-nucleotide ticks — there's no addressable position there
+      // and the visual clutter buries the actual bp letters / aa
+      // glyphs. When the major step is already 1, suppress minor
+      // ticks entirely (every position is already a major).
       const minorStep =
-        minorSubdivisions > 0 ? majorStep / minorSubdivisions : 0;
+        minorSubdivisions > 0 && majorStep > 1
+          ? Math.max(1, majorStep / minorSubdivisions)
+          : 0;
 
       // Ruler geometry inside the track band. Ticks hang downward from
       // the band's bottom; labels sit above the major tick height.
