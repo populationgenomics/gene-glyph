@@ -303,10 +303,44 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         );
       }
 
+      // Protein mode: one continuous outline encloses the whole protein
+      // strip. Per-exon fills (rendered without strokes — see strokeWidth
+      // branch above) sit underneath, so the strip reads as a single
+      // filled bar with one continuous border around it. The outline
+      // rides the per-exon CSS variables of the first and last exons so
+      // it tracks pan/zoom without React re-render.
+      let proteinOutline: ReactNode = null;
+      if (viewport.mode === 'protein' && geom.exons.length > 0) {
+        const first = geom.exons[0]!;
+        const last = geom.exons[geom.exons.length - 1]!;
+        const proteinStyle: CSSProperties = {
+          x: `var(--vv-exon-x-${first.exonIdx}, 0px)`,
+          width:
+            `calc(var(--vv-exon-x-${last.exonIdx}, 0px)` +
+            ` + ${last.width}px * var(--vv-exon-scale-x-${last.exonIdx}, 1)` +
+            ` - var(--vv-exon-x-${first.exonIdx}, 0px))`,
+        } as unknown as CSSProperties;
+        proteinOutline = (
+          <rect
+            key="protein-outline"
+            className="vv-protein-outline"
+            y={exonY}
+            height={exonH}
+            fill="none"
+            stroke={painter.color('vv-color-exon-stroke', '#475569')}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+            style={proteinStyle}
+          />
+        );
+      }
+
       return (
         <g className="vv-exon-track" data-vv-track-id={id} key={id}>
           {intronDecorations}
           {exonRects}
+          {proteinOutline}
           {hiddenMarks.length > 0 && (
             <g className="vv-hidden-feature-marks" key="hidden-marks">
               {hiddenMarks}
