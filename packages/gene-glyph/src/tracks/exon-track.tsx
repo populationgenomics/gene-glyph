@@ -171,7 +171,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
                 height={exonH}
                 fill={painter.color('vv-color-exon-fill', '#94a3b8')}
                 stroke={painter.color('vv-color-exon-stroke', '#475569')}
-                strokeWidth={1}
+                strokeWidth={viewport.mode === 'protein' ? 0 : 1}
                 vectorEffect="non-scaling-stroke"
                 className="vv-exon-rect"
                 style={rectStyle}
