@@ -347,13 +347,40 @@ describe('ViewportController — clampRange + paddedBounds', () => {
 describe('ViewportController — Position-based projection', () => {
   it('toBaselineX agrees across coord systems for the same biological position', () => {
     const vp = fitGene('transcript');
-    // cPos 4 = aa 2 (first base of codon 2) = genomic 1003 (exon 1, strand +).
-    const fromCds = vp.toBaselineX({ kind: 'cds', cPos: 4, offset: 0 });
+    // Codon 2 spans c.4-6; its centre is c.5, which in exon 1 (+strand)
+    // sits at genomic 1004. Aa 2 anchors to the codon centre so all three
+    // coord adapters land at the same baseline-x.
+    const fromCds = vp.toBaselineX({ kind: 'cds', cPos: 5, offset: 0 });
     const fromProtein = vp.toBaselineX({ kind: 'protein', aa: 2 });
-    const fromGenomic = vp.toBaselineX({ kind: 'genomic', chr: 'chr1', pos: 1003 });
+    const fromGenomic = vp.toBaselineX({ kind: 'genomic', chr: 'chr1', pos: 1004 });
     expect(fromCds).not.toBeNull();
     expect(fromProtein).toBeCloseTo(fromCds!, 5);
     expect(fromGenomic).toBeCloseTo(fromCds!, 5);
+  });
+
+  it('aa N projects to codon-centre bp 3N-1 across every aa-aware API', () => {
+    // INV-5 (modified): aa N's canonical position is bp 3N-1, the codon's
+    // middle bp. proteinToScreen, resolveAnchor, and screenToPosition
+    // (cds/genomic inverses in protein mode) must all land on that anchor
+    // so a {kind:'protein',aa:N} variant co-locates with the aa-track
+    // letter glyph (which renders at 3N-1) and with a scale tick there.
+    const cds = fitGene('transcript');
+    const aa = 17;
+    const centerCpos = 3 * aa - 1; // = 50
+    const expectedX = cds.cdsToScreen(centerCpos, 0)!;
+    expect(cds.proteinToScreen(aa)).toBeCloseTo(expectedX, 5);
+    expect(cds.toScreen({ kind: 'protein', aa })).toBeCloseTo(expectedX, 5);
+    const anchor = cds.resolveAnchor({ kind: 'protein-aa', aa });
+    expect(anchor!.x).toBeCloseTo(expectedX, 5);
+
+    // Inverse direction: a screen click at aa N's rendered position in
+    // protein mode round-trips back to bp 3N-1 (not 3N-2).
+    const protein = fitGene('protein');
+    const x = protein.proteinToScreen(aa)!;
+    expect(protein.screenToCds(x)!.cPos).toBe(centerCpos);
+    // Genomic inverse picks up the corresponding genomic bp; exon 1 is
+    // +strand starting at genomic 1000, so bp 50 → genomic 1049.
+    expect(protein.screenToGenomic(x)!.pos).toBe(1049);
   });
 
   it('toBaselineX returns null for intronic CDS positions and off-transcript genomic positions', () => {
@@ -409,7 +436,7 @@ describe('ViewportController — Position-based projection', () => {
     const x = protein.toScreen({ kind: 'protein', aa: 5 })!;
     const cds = protein.screenToCds(x);
     expect(cds).not.toBeNull();
-    expect(cds!.cPos).toBe(13); // first base of codon 5
+    expect(cds!.cPos).toBe(14); // codon-centre bp of codon 5 (= 3*5 - 1)
   });
 
   it('mapper.resolveCds reduces every Position kind to (cPos, offset)', () => {
@@ -418,8 +445,10 @@ describe('ViewportController — Position-based projection', () => {
       cPos: 42,
       offset: 3,
     });
+    // Codon-centre bp: aa 5 → bp 3*5 - 1 = 14. The reducer returns the
+    // canonical CDS position of the residue, not the codon's first bp.
     expect(mapper.resolveCds({ kind: 'protein', aa: 5 })).toEqual({
-      cPos: 13,
+      cPos: 14,
       offset: 0,
     });
     expect(

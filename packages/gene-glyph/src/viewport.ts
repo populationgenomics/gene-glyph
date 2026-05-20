@@ -660,9 +660,15 @@ export class ViewportController implements Viewport {
         return this.cdsToBaselineX(pos.cPos);
       }
       case 'protein': {
-        const ruler =
-          this._mode === 'protein' ? pos.aa : this.mapper.proteinToCds(pos.aa);
-        return this.cdsToBaselineX(ruler);
+        if (this._mode === 'protein') return this.cdsToBaselineX(pos.aa);
+        // CDS modes: route through resolveCds so a protein coord lands
+        // at the codon's centre bp (3N-1), the same anchor the aa-track
+        // letter uses. proteinToCds — which returns the codon's first bp
+        // (3N-2) — is the wrong choice here; it's the lo-bound of a
+        // range, not a single-position anchor.
+        const cds = this.mapper.resolveCds(pos);
+        if (!cds) return null;
+        return this.cdsToBaselineX(cds.cPos);
       }
       case 'genomic': {
         const cds = this.mapper.genomicToCds(pos.chr, pos.pos);
@@ -691,8 +697,10 @@ export class ViewportController implements Viewport {
     if (this._mode === 'protein') {
       return this.applyZoomClamped(this.cdsToBaselineX(aa));
     }
-    const cPos = this.mapper.proteinToCds(aa);
-    return this.cdsToScreen(cPos, 0);
+    // Codon centre — see the `case 'protein'` branch of toBaselineX.
+    const cds = this.mapper.resolveCds({ kind: 'protein', aa });
+    if (!cds) return null;
+    return this.cdsToScreen(cds.cPos, cds.offset);
   }
 
   genomicToScreen(chr: string, pos: number): number | null {
@@ -741,9 +749,15 @@ export class ViewportController implements Viewport {
   ): Extract<Position, { kind: K }> | null {
     if (x < 0 || x > this._width) return null;
     const ruler = Math.round(this.screenToRulerBaseline(x));
+    // In protein mode, `ruler` is an aa index; the canonical CDS bp for
+    // aa N is the codon centre (bp 3N-1), so `{kind:'cds'}` and
+    // `{kind:'genomic'}` inversions of a protein-mode click both land
+    // on the middle bp rather than the first. Keeps the round-trip with
+    // toScreen({kind:'protein', aa:N}) consistent.
+    const aaToCenterCds = (aa: number) => (aa - 1) * 3 + 2;
     switch (kind) {
       case 'cds': {
-        const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
+        const cPos = this._mode === 'protein' ? aaToCenterCds(ruler) : ruler;
         return { kind: 'cds', cPos, offset: 0 } as Extract<Position, { kind: K }>;
       }
       case 'protein': {
@@ -752,7 +766,7 @@ export class ViewportController implements Viewport {
         return { kind: 'protein', aa } as Extract<Position, { kind: K }>;
       }
       case 'genomic': {
-        const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
+        const cPos = this._mode === 'protein' ? aaToCenterCds(ruler) : ruler;
         const g = this.mapper.cdsToGenomic(cPos, 0);
         if (!g) return null;
         return { kind: 'genomic', chr: g.chr, pos: g.pos } as Extract<Position, { kind: K }>;

@@ -149,7 +149,14 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
       case 'cds':
         return { cPos: pos.cPos, offset: pos.offset };
       case 'protein':
-        return { cPos: proteinToCds(pos.aa), offset: 0 };
+        // Codon-centre bp. Aa N's canonical CDS position is the middle bp
+        // of its codon — bp 3N-1 — so {kind:'protein', aa:N} co-locates
+        // with the aa-track letter glyph (which renders at the codon's
+        // centre in CDS modes) and with a scale tick at that same bp.
+        // {@link proteinToCds} remains available as the codon's *first*
+        // bp (3N-2) for range bracket math, where you want the lo-bound
+        // to cover the whole codon.
+        return { cPos: (pos.aa - 1) * 3 + 2, offset: 0 };
       case 'genomic':
         return genomicToCds(pos.chr, pos.pos);
     }
