@@ -27,7 +27,7 @@ test.describe('Slice 15 — hidden-feature indicators', () => {
     expect(initialOpacity).toBeCloseTo(0, 1);
 
     // Spliced collapses intronScale → mark fades in to 1.
-    await s.locator('select').first().selectOption('cds-spliced');
+    await s.locator('select').first().selectOption('transcript');
     await page.waitForTimeout(550);
     const splicedOpacity = await mark.evaluate(
       (el) => Number(getComputedStyle(el).opacity),
@@ -37,7 +37,7 @@ test.describe('Slice 15 — hidden-feature indicators', () => {
 
   test('clicking a hidden-feature mark fires onFeatureClick with the documented anchor id', async ({ page }) => {
     const s = await scenario(page);
-    await s.locator('select').first().selectOption('cds-spliced');
+    await s.locator('select').first().selectOption('transcript');
     await page.waitForTimeout(550);
 
     const mark = s.locator('.vv-hidden-feature-mark').first();

@@ -75,7 +75,7 @@ const STEP_LADDER: readonly number[] = [
 /**
  * Slice 28 — coordinate ruler above the gene body. Renders major +
  * minor tick marks labelled in the viewer's active coord system
- * (CDS bp in `cds-with-introns` / `cds-spliced` modes, aa in
+ * (CDS bp in `genome` / `transcript` modes, aa in
  * `protein`). The ruler rides per-exon CSS transforms exactly like
  * the exon track underneath, so it pans, zooms, and mode-transitions
  * in lock-step with the figure without any React re-render flicker.
@@ -402,5 +402,13 @@ function exonForRulerPos(
 
 function formatLabel(pos: number, unit: 'bp' | 'aa', withSuffix: boolean): string {
   const formatted = Math.round(pos).toLocaleString('en-US');
-  return withSuffix ? `${formatted} ${unit}` : formatted;
+  if (unit === 'aa') {
+    return withSuffix ? `${formatted} aa` : formatted;
+  }
+  // Genome and transcript modes label positions in HGVS c. coords. The
+  // ruler is CDS bp under the hood (or genomic, when the host opts in
+  // — Phase 4); the `c.` prefix signals which addressing system the
+  // number refers to. The bp suffix on the rightmost label is kept for
+  // its visual "unit hint" role but reads "bp" rather than "c. bp".
+  return withSuffix ? `c.${formatted} bp` : `c.${formatted}`;
 }

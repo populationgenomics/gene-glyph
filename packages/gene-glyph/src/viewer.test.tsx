@@ -83,23 +83,23 @@ describe('GeneGlyph', () => {
   describe('mode transitions', () => {
     it('controlled mode prop drives viewport mode + republishes CSS vars', async () => {
       const { container, rerender } = render(
-        <GeneGlyph transcript={transcript} mode="cds-with-introns" width={720} />,
+        <GeneGlyph transcript={transcript} mode="genome" width={720} />,
       );
       await flushTrackLoads();
       const svg = container.querySelector<SVGSVGElement>('svg.vv-figure');
       expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('1');
-      rerender(<GeneGlyph transcript={transcript} mode="cds-spliced" width={720} />);
+      rerender(<GeneGlyph transcript={transcript} mode="transcript" width={720} />);
       await flushTrackLoads();
       expect(svg!.style.getPropertyValue('--vv-intron-scale')).toBe('0');
     });
 
     it('updates data-vv-mode synchronously when the controlled mode prop changes', async () => {
       const { container, rerender } = render(
-        <GeneGlyph transcript={transcript} mode="cds-with-introns" width={720} />,
+        <GeneGlyph transcript={transcript} mode="genome" width={720} />,
       );
       await flushTrackLoads();
       const root = container.querySelector('[data-testid="gene-glyph"]')!;
-      expect(root.getAttribute('data-vv-mode')).toBe('cds-with-introns');
+      expect(root.getAttribute('data-vv-mode')).toBe('genome');
       await act(async () => {
         rerender(<GeneGlyph transcript={transcript} mode="protein" width={720} />);
       });
@@ -113,7 +113,7 @@ describe('GeneGlyph', () => {
       const { rerender } = render(
         <GeneGlyph
           transcript={transcript}
-          mode="cds-with-introns"
+          mode="genome"
           onModeChange={onModeChange}
         />,
       );
@@ -122,21 +122,21 @@ describe('GeneGlyph', () => {
         rerender(
           <GeneGlyph
             transcript={transcript}
-            mode="cds-spliced"
+            mode="transcript"
             onModeChange={onModeChange}
           />,
         );
       });
-      expect(onModeChange).toHaveBeenCalledWith('cds-spliced');
+      expect(onModeChange).toHaveBeenCalledWith('transcript');
     });
 
     it('uncontrolled mode falls back to defaultMode and stays stable across rerenders', async () => {
       const { container } = render(
-        <GeneGlyph transcript={transcript} defaultMode="cds-spliced" />,
+        <GeneGlyph transcript={transcript} defaultMode="transcript" />,
       );
       await flushTrackLoads();
       const root = container.querySelector('[data-testid="gene-glyph"]')!;
-      expect(root.getAttribute('data-vv-mode')).toBe('cds-spliced');
+      expect(root.getAttribute('data-vv-mode')).toBe('transcript');
     });
   });
 
@@ -207,7 +207,7 @@ describe('GeneGlyph', () => {
       await flushTrackLoads();
       expect(ref.current).not.toBeNull();
       const info = ref.current!.getViewportInfo();
-      expect(info.mode).toBe('cds-with-introns');
+      expect(info.mode).toBe('genome');
       expect(info.range).toEqual([1, transcript.cdsLength]);
       expect(info.zoom).toBeCloseTo(1);
       expect(info.layout.length).toBeGreaterThan(0);

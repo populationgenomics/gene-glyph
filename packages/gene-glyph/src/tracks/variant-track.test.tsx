@@ -40,7 +40,7 @@ const variants: ViewerVariant[] = [
 
 function setup(opts: { interaction?: Partial<InteractionState> } = {}) {
   const mapper = createCoordinateMapper(transcript);
-  const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-with-introns' });
+  const viewport = new ViewportController({ mapper, width: 720, mode: 'genome' });
   const painter = createSvgPainter({ mode: 'screen' });
   const interaction: InteractionState = {
     hoveredFeatureId: opts.interaction?.hoveredFeatureId ?? null,
@@ -137,7 +137,7 @@ describe('variantTrack', () => {
   it('hiddenFeaturesByIntron aggregates intronic variants by gap', () => {
     const t = variantTrack({ source: variants });
     const mapper = createCoordinateMapper(transcript);
-    const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-spliced' });
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
     const buckets = t.hiddenFeaturesByIntron!({
       data: { variants },
       viewport,
@@ -170,7 +170,7 @@ describe('variantTrack', () => {
     const { mapper, viewport } = setup();
     const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
     expect(queryFn).toHaveBeenCalledWith(
-      { mode: 'cds-with-introns', range: viewport.range },
+      { mode: 'genome', range: viewport.range },
       expect.anything(),
     );
     expect(data.variants).toHaveLength(1);

@@ -28,7 +28,7 @@ import { fetchGeneData, type LiveGeneData } from '../lib/gnomad.js';
  * one HTTP request per gene change. The in-memory cache keyed on the
  * upper-cased symbol keeps repeat picks instant during a session.
  *
- * Default `cds-spliced` view trades the intron decorations for a
+ * Default `transcript` view trades the intron decorations for a
  * tighter coding-sequence ribbon — easier to scan a few thousand
  * ClinVar markers at fit-gene without the intron gaps eating screen
  * width.
@@ -224,7 +224,7 @@ export function LiveDataDemoScenario() {
       <GeneGlyph
         transcript={transcript}
         tracks={tracks}
-        defaultMode="cds-spliced"
+        defaultMode="transcript"
         trackHeightBudget={420}
         renderTooltip={renderTooltip}
         onFeatureClick={(featureId, trackId) => {

@@ -130,7 +130,7 @@ export type TrackLoadState = 'loading' | 'ready' | 'error';
 // Viewport types
 // ---------------------------------------------------------------------------
 
-export type ViewMode = 'cds-with-introns' | 'cds-spliced' | 'protein';
+export type ViewMode = 'genome' | 'transcript' | 'protein';
 
 /** Default-binding profile applied to user gestures on the figure. `standard`
  *  enables drag-pan, wheel-pan, Cmd/Ctrl+wheel-zoom, pinch-zoom, and keyboard;
@@ -297,8 +297,13 @@ export interface Viewport {
   /** Project a current screen-x back into a {@link Position} of the
    *  requested coord system. Inverse of {@link toScreen}; the two paths
    *  share the same ruler conversion so the round-trip can't diverge.
-   *  Returns `null` for off-figure x or unresolvable positions. */
-  screenToPosition(x: number, kind: 'cds' | 'protein' | 'genomic'): Position | null;
+   *  Returns `null` for off-figure x or unresolvable positions. The
+   *  return type narrows to the requested kind so callers don't have
+   *  to re-check `.kind`. */
+  screenToPosition<K extends 'cds' | 'protein' | 'genomic'>(
+    x: number,
+    kind: K,
+  ): Extract<Position, { kind: K }> | null;
   screenToCds(x: number): CdsPosition | null;
   screenToProtein(x: number): number | null;
   screenToGenomic(x: number): GenomicPosition | null;

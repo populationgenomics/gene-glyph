@@ -25,7 +25,7 @@ const transcript: Transcript = {
 
 function makeViewport(): Viewport {
   const mapper = createCoordinateMapper(transcript);
-  return new ViewportController({ mapper, width: 720, mode: 'cds-spliced' });
+  return new ViewportController({ mapper, width: 720, mode: 'transcript' });
 }
 
 interface StubTrackConfig {

@@ -59,7 +59,7 @@ const protein: ProteinAnnotations = {
 
 function setup() {
   const mapper = createCoordinateMapper(transcript);
-  const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-with-introns' });
+  const viewport = new ViewportController({ mapper, width: 720, mode: 'genome' });
   const painter = createSvgPainter({ mode: 'screen' });
   const interaction: InteractionState = {
     hoveredFeatureId: null,

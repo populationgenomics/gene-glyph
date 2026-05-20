@@ -6,21 +6,21 @@ async function scenario(page: Page) {
 }
 
 test.describe('Slice 14 — mode transitions (CDS ↔ spliced ↔ protein)', () => {
-  test('switching to cds-spliced collapses --vv-intron-scale to 0', async ({ page }) => {
+  test('switching to transcript collapses --vv-intron-scale to 0', async ({ page }) => {
     const s = await scenario(page);
     const root = s.locator('[data-testid="gene-glyph"]');
     const figure = s.locator('svg.vv-figure');
 
-    await expect(root).toHaveAttribute('data-vv-mode', 'cds-with-introns');
+    await expect(root).toHaveAttribute('data-vv-mode', 'genome');
     const before = await figure.evaluate(
       (el) => (el as SVGSVGElement).style.getPropertyValue('--vv-intron-scale'),
     );
     expect(before).toBe('1');
 
-    await s.locator('select').first().selectOption('cds-spliced');
+    await s.locator('select').first().selectOption('transcript');
 
     // The data attribute flips immediately; CSS handles the visual fade.
-    await expect(root).toHaveAttribute('data-vv-mode', 'cds-spliced');
+    await expect(root).toHaveAttribute('data-vv-mode', 'transcript');
     const after = await figure.evaluate(
       (el) => (el as SVGSVGElement).style.getPropertyValue('--vv-intron-scale'),
     );
@@ -56,7 +56,7 @@ test.describe('Slice 14 — mode transitions (CDS ↔ spliced ↔ protein)', () 
     const s = await scenario(page);
     const root = s.locator('[data-testid="gene-glyph"]');
 
-    await s.locator('select').first().selectOption('cds-spliced');
+    await s.locator('select').first().selectOption('transcript');
     await expect(root).not.toHaveClass(/vv-mode-transitioning/);
 
     const exonGroup = s.locator('.vv-exon-group').first();

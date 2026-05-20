@@ -29,7 +29,7 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.j
  */
 export function InteractionDemoScenario() {
   const ref = useRef<GeneGlyphRef | null>(null);
-  const [mode] = useState<ViewMode>('cds-with-introns');
+  const [mode] = useState<ViewMode>('genome');
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('standard');
   const [controlled, setControlled] = useState(false);
   const [range, setRange] = useState<readonly [number, number]>([1, TP53_TRANSCRIPT.cdsLength]);

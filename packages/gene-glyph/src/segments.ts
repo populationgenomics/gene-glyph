@@ -5,10 +5,10 @@ import type { FrameExon } from './projection-frame.js';
  *
  *  - **`linear`**: the segment's screen width scales with the live zoom
  *    factor. Exon bodies in every mode use this. Intronic regions in
- *    `cds-spliced` and `protein` also use this — they collapse to a
+ *    `transcript` and `protein` also use this — they collapse to a
  *    one-bp transition that scales with the surrounding exon content.
  *  - **`fixed-budget`**: the segment's screen width stays constant under
- *    zoom. The inter-exon gap in `cds-with-introns` is fixed-budget so
+ *    zoom. The inter-exon gap in `genome` is fixed-budget so
  *    Pfam / InterPro segments in adjacent exons stay visually close at
  *    deep zoom; the gap content (dashed-intron polyline + breathing
  *    room) is allotted a constant pixel budget regardless of how zoomed
@@ -89,7 +89,7 @@ export function buildSegments(
   };
 
   // Gaps are fixed-budget when the baseline reserves explicit gap pixels
-  // (cds-with-introns); in cds-spliced and protein the gap shares the
+  // (genome); in transcript and protein the gap shares the
   // linear ruler with the surrounding exons.
   const gapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
 
@@ -137,7 +137,7 @@ export function buildSegments(
 export interface SegmentLayout {
   /** Shared scale factor for `linear` segments. Equivalent to today's
    *  `exonLayout.exonScale`. Renamed because intron-collapsed segments
-   *  also use it in cds-spliced / protein modes. */
+   *  also use it in transcript / protein modes. */
   readonly linearScale: number;
   /** Per-segment screen-x of the segment's left edge. Indexed by
    *  {@link Segment.index}. */
@@ -213,7 +213,7 @@ export function computeSegmentLayout(
     // so a gap-position S_lo lands inside *that* gap segment, not
     // upstream of the first exon). Padding extrapolation rule matches
     // today's: scale with linearScale when no fixed-budget segments
-    // exist (cds-spliced / protein), unscaled otherwise (cds-with-
+    // exist (transcript / protein), unscaled otherwise (cds-with-
     // introns). The asymmetry is load-bearing for the existing
     // overview-track window-rect math; Phase 1 preserves it exactly.
     const baselineUpstream = pivot.xStart - S_lo;

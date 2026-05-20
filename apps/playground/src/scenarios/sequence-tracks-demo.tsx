@@ -29,7 +29,7 @@ import {
  */
 export function SequenceTracksScenario() {
   const ref = useRef<GeneGlyphRef | null>(null);
-  const [mode, setMode] = useState<ViewMode>('cds-with-introns');
+  const [mode, setMode] = useState<ViewMode>('genome');
 
   const zoomToCodon = (aa: number, padBp = 12) => {
     const center = (aa - 1) * 3 + 2;
@@ -63,8 +63,8 @@ export function SequenceTracksScenario() {
             data-testid="sequence-mode"
             style={{ font: 'inherit', padding: '2px 6px' }}
           >
-            <option value="cds-with-introns">CDS with introns</option>
-            <option value="cds-spliced">Spliced CDS</option>
+            <option value="genome">Genome</option>
+            <option value="transcript">Transcript</option>
             <option value="protein">Protein</option>
           </select>
         </label>

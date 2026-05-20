@@ -391,7 +391,7 @@
 }
 
 /* Slice 16: brush overlay. Each touched exon contributes a rect inside its
- * per-exon group, and (in cds-with-introns) each intervening gap contributes
+ * per-exon group, and (in genome mode) each intervening gap contributes
  * a rect inside the inter-exon decoration group. The exon rect rides the live
  * pan/zoom transform; the gap rect rides `--vv-intron-scale` so the brush
  * cross-fades alongside the polyline on mode change. */

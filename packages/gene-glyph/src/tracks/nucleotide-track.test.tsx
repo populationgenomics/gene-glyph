@@ -27,7 +27,7 @@ const midGene: Transcript = {
   ],
 };
 
-function setup(transcript: Transcript, mode: 'cds-with-introns' | 'cds-spliced' | 'protein' = 'cds-with-introns') {
+function setup(transcript: Transcript, mode: 'genome' | 'transcript' | 'protein' = 'genome') {
   const mapper = createCoordinateMapper(transcript);
   const viewport = new ViewportController({ mapper, width: 600, mode });
   const painter = createSvgPainter({ mode: 'screen' });

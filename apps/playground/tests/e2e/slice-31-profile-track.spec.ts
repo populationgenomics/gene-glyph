@@ -80,7 +80,7 @@ test.describe('Slice 31 — numeric profile track', () => {
     const s = page.locator('section[aria-labelledby="scenario-profile"]');
     await s.scrollIntoViewIfNeeded();
 
-    await s.getByTestId('profile-mode').selectOption('cds-with-introns');
+    await s.getByTestId('profile-mode').selectOption('genome');
     await page.waitForTimeout(600);
 
     await expect(s.locator('.vv-profile-track[data-vv-profile-render="heatmap"]')).toBeVisible();

@@ -28,7 +28,7 @@ const shortGene: Transcript = {
   ],
 };
 
-function setup(transcript: Transcript = tp53Like, mode: 'cds-with-introns' | 'cds-spliced' | 'protein' = 'cds-with-introns') {
+function setup(transcript: Transcript = tp53Like, mode: 'genome' | 'transcript' | 'protein' = 'genome') {
   const mapper = createCoordinateMapper(transcript);
   const viewport = new ViewportController({ mapper, width: 1000, mode });
   const painter = createSvgPainter({ mode: 'screen' });
@@ -105,11 +105,13 @@ describe('scaleTrack', () => {
     expect(track.getAttribute('data-vv-scale-major-step')).toBe('50');
     // CDS length 1182 → candidate major positions are 50, 100, …, 1150
     // (23 candidates). The crash-aware walk drops any whose label would
-    // overlap its predecessor — a few near the right end where short
-    // exons compress the baseline-x spacing fall out. The remaining set
-    // is still close to the candidate count.
+    // overlap its predecessor; with the HGVS `c.` prefix each label
+    // gains two characters of screen width, so more candidates collide
+    // and the emitted set thins to roughly half. The exact count
+    // depends on per-exon compression; the bounds are loose because
+    // the assertion is "majors render, not just one near the start".
     const majorCount = container.querySelectorAll('.vv-scale-tick-major').length;
-    expect(majorCount).toBeGreaterThanOrEqual(18);
+    expect(majorCount).toBeGreaterThanOrEqual(10);
     expect(majorCount).toBeLessThanOrEqual(23);
     // Minor ticks subdivide major by 5 (default); minors at 10, 20, 30,
     // 40, 60, 70, … excluding emitted-major positions.
@@ -123,7 +125,7 @@ describe('scaleTrack', () => {
     const { mapper, painter, interaction } = setup();
     const tCds = scaleTrack({});
 
-    function probe(mode: 'cds-with-introns' | 'protein') {
+    function probe(mode: 'genome' | 'protein') {
       const v = new ViewportController({ mapper, width: 1000, mode });
       return render(
         <svg>
@@ -138,7 +140,7 @@ describe('scaleTrack', () => {
         </svg>,
       );
     }
-    const cdsTrack = probe('cds-with-introns').container.querySelector('.vv-scale-track');
+    const cdsTrack = probe('genome').container.querySelector('.vv-scale-track');
     expect(cdsTrack?.getAttribute('data-vv-scale-unit')).toBe('bp');
     const proteinTrack = probe('protein').container.querySelector('.vv-scale-track');
     expect(proteinTrack?.getAttribute('data-vv-scale-unit')).toBe('aa');

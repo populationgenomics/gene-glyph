@@ -171,7 +171,7 @@ export function DefaultMinimap({
       // Convert both the original drag-anchor and the current cursor into
       // baseline-x, then convert the resulting baseline-x deltas back through
       // the mini-viewport so the figure tracks the cursor across non-linear
-      // gap regions (cds-with-introns) consistently.
+      // gap regions (genome) consistently.
       const baselineStart = clientToBaselineX(drag.startClientX);
       const baselineNow = clientToBaselineX(e.clientX);
       if (drag.kind === 'pan') {

@@ -52,8 +52,8 @@ export function ProfileTracksScenario() {
             style={{ font: 'inherit', padding: '2px 6px' }}
           >
             <option value="protein">Protein</option>
-            <option value="cds-with-introns">CDS with introns</option>
-            <option value="cds-spliced">Spliced CDS</option>
+            <option value="genome">Genome</option>
+            <option value="transcript">Transcript</option>
           </select>
         </label>
         <button

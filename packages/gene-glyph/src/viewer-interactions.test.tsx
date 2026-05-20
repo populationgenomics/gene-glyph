@@ -114,7 +114,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
           ref={ref}
           transcript={transcript}
           tracks={[exonTrack({})]}
-          mode="cds-spliced"
+          mode="transcript"
         />,
       );
       await flushTrackLoads();

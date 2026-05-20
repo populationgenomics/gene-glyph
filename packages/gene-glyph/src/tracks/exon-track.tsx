@@ -132,7 +132,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       for (const gap of geom.gaps) {
         // The exon ribbons each overhang the gap by `overhangPx` of screen
         // pixels (a constant — the inter-exon `<g>` doesn't scale with zoom
-        // in cds-with-introns, so we can shave that overhang off as a flat
+        // in genome, so we can shave that overhang off as a flat
         // pixel value here too). The hidden-feature mark below renders
         // independently so it stays available in spliced / protein modes
         // (gap collapses but the mark fades in via the existing

@@ -34,7 +34,7 @@ const longGene: Transcript = {
   ],
 };
 
-function setup(transcript: Transcript, mode: 'cds-with-introns' | 'cds-spliced' | 'protein' = 'protein') {
+function setup(transcript: Transcript, mode: 'genome' | 'transcript' | 'protein' = 'protein') {
   const mapper = createCoordinateMapper(transcript);
   const viewport = new ViewportController({ mapper, width: 600, mode });
   const painter = createSvgPainter({ mode: 'screen' });
@@ -381,7 +381,7 @@ describe('profileTrack — render', () => {
       coordSystem: 'protein',
       render: 'heatmap',
     });
-    const ctx = setup(smallGene, 'cds-with-introns');
+    const ctx = setup(smallGene, 'genome');
     const data = await t.load({ viewport: ctx.viewport, mapper: ctx.mapper, signal: new AbortController().signal, protein: null });
     const { container } = render(
       <svg>{t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, ctx) })}</svg>,

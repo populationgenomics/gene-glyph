@@ -95,7 +95,7 @@ describe('createClinVarDataSource', () => {
       pageSize: 1,
     });
     const records = await ds.query(
-      { mode: 'cds-with-introns', range: [1, transcript.cdsLength] },
+      { mode: 'genome', range: [1, transcript.cdsLength] },
       new AbortController().signal,
     );
     expect(records).toHaveLength(2);
@@ -145,12 +145,12 @@ describe('createClinVarDataSource', () => {
       pageSize: 200,
     });
     await ds.query(
-      { mode: 'cds-with-introns', range: [1, transcript.cdsLength] },
+      { mode: 'genome', range: [1, transcript.cdsLength] },
       new AbortController().signal,
     );
     const callCount = spy.mock.calls.length;
     await ds.query(
-      { mode: 'cds-with-introns', range: [1, transcript.cdsLength] },
+      { mode: 'genome', range: [1, transcript.cdsLength] },
       new AbortController().signal,
     );
     // Range / mode change shouldn't refetch because cacheKey is the
@@ -182,7 +182,7 @@ describe('createClinVarDataSource', () => {
       pageSize: 200,
     });
     const records = await ds.query(
-      { mode: 'cds-with-introns', range: [1, 100] },
+      { mode: 'genome', range: [1, 100] },
       new AbortController().signal,
     );
     expect(records).toHaveLength(0);

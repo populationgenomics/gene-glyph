@@ -3,7 +3,7 @@ import { ProjectionFrame } from './projection-frame.js';
 import type { BaselineGeometry } from './types.js';
 
 /** Two exons of 100 baseline-px each separated by a 10-px gap, `pxPerBp = 1`.
- *  Total fit-gene width = 100 + 10 + 100 = 210. Mimics `cds-with-introns`
+ *  Total fit-gene width = 100 + 10 + 100 = 210. Mimics `genome`
  *  mode where the gap takes a fixed pixel budget. Exon bp bounds follow the
  *  baseline-builder convention `bp_in_exon = cdsEnd - cdsStart`, so the
  *  arithmetic in the assertions matches what `computeBaseline` would
@@ -51,11 +51,11 @@ function proteinBaseline(): { baseline: BaselineGeometry; exons: readonly { cdsS
   };
 }
 
-describe('ProjectionFrame — ruler ↔ baseline (cds-with-introns)', () => {
+describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
   it('maps each exon\'s cdsStart to its baseline xStart at fit-gene', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     expect(frame.rulerToBaselineX(1)).toBeCloseTo(0);
     expect(frame.rulerToBaselineX(101)).toBeCloseTo(100);
@@ -66,7 +66,7 @@ describe('ProjectionFrame — ruler ↔ baseline (cds-with-introns)', () => {
   it('round-trips ruler positions through baselineXToRuler inside exons', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     for (const r of [1, 25, 50, 75, 101, 102, 150, 202]) {
       const x = frame.rulerToBaselineX(r);
@@ -77,7 +77,7 @@ describe('ProjectionFrame — ruler ↔ baseline (cds-with-introns)', () => {
   it('interpolates baselineXToRuler continuously across the gap', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     // The fictitious-ruler-through-gap behaviour is what the controller
     // relies on for pan-animation continuity. Lock it in: at the gap's
@@ -91,7 +91,7 @@ describe('ProjectionFrame — ruler ↔ baseline (cds-with-introns)', () => {
   it('extrapolates past the gene edges using baseline pxPerBp', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     // Padding region before exon 0: cPos 0 sits one bp left of exon 0's
     // cdsStart=1, so baseline-x = 0 - 1 * pxPerBp = -1.
@@ -106,7 +106,7 @@ describe('ProjectionFrame — exonLayout', () => {
   it('exonScale = 1 at fit-gene; exon-current-x matches baseline', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
     expect(layout.exonScale).toBeCloseTo(1);
@@ -120,7 +120,7 @@ describe('ProjectionFrame — exonLayout', () => {
     // exonScale = 210 / 100 = 2.1.
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 101], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 101], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
     expect(layout.exonScale).toBeCloseTo(2.1, 4);
@@ -128,7 +128,7 @@ describe('ProjectionFrame — exonLayout', () => {
     expect(layout.exonCurrentX[0]).toBeCloseTo(0);
   });
 
-  it('keeps gap baseline pixels at a fixed screen width in cds-with-introns', () => {
+  it('keeps gap baseline pixels at a fixed screen width in genome', () => {
     // Zoom that straddles the gap: range = [51, 151]. The 10-px gap should
     // occupy exactly 10 px of screen regardless of zoom — that's the load-
     // bearing property the gap-budget logic was added for.
@@ -137,7 +137,7 @@ describe('ProjectionFrame — exonLayout', () => {
     // Solve: 99 * scale + 10 = 210 → scale = 200/99 ≈ 2.0202.
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [51, 151], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [51, 151], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
     expect(layout.exonScale).toBeCloseTo(200 / 99, 4);
@@ -152,7 +152,7 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
   it('round-trips baseline through current at fit-gene', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     for (const s of [0, 50, 100, 105, 110, 160, 210]) {
       const cur = frame.baselineToCurrent(s);
@@ -164,7 +164,7 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
   it('round-trips baseline through current when zoomed across a gap', () => {
     const { baseline, exons } = withIntronsBaseline();
     const frame = new ProjectionFrame({
-      baseline, range: [51, 151], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [51, 151], width: 210, mode: 'genome', exons,
     });
     for (const s of [50, 75, 100, 105, 110, 130, 159]) {
       const cur = frame.baselineToCurrent(s);
@@ -176,11 +176,11 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
   it('zoomFactor reports 1 at fit-gene and > 1 when zoomed', () => {
     const { baseline, exons } = withIntronsBaseline();
     const fit = new ProjectionFrame({
-      baseline, range: [1, 202], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 202], width: 210, mode: 'genome', exons,
     });
     expect(fit.zoomFactor()).toBeCloseTo(1, 4);
     const zoomed = new ProjectionFrame({
-      baseline, range: [1, 101], width: 210, mode: 'cds-with-introns', exons,
+      baseline, range: [1, 101], width: 210, mode: 'genome', exons,
     });
     expect(zoomed.zoomFactor()).toBeGreaterThan(1.5);
   });
@@ -214,7 +214,7 @@ describe('ProjectionFrame — degenerate inputs', () => {
       exons: [], gaps: [], pxPerBp: 0, gapPx: 0, totalWidth: 0,
     };
     const frame = new ProjectionFrame({
-      baseline, range: [1, 1], width: 0, mode: 'cds-spliced', exons: [],
+      baseline, range: [1, 1], width: 0, mode: 'transcript', exons: [],
     });
     expect(frame.rulerToBaselineX(50)).toBe(0);
     expect(frame.baselineXToRuler(0)).toBe(0);

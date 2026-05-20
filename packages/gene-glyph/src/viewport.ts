@@ -77,7 +77,7 @@ function defaultRangeFor(mode: ViewMode, mapper: CoordinateMapper): [number, num
 }
 
 function defaultIntronScale(mode: ViewMode): number {
-  return mode === 'cds-with-introns' ? 1 : 0;
+  return mode === 'genome' ? 1 : 0;
 }
 
 export class ViewportController implements Viewport {
@@ -95,7 +95,7 @@ export class ViewportController implements Viewport {
 
   constructor(init: ViewportControllerInit) {
     this.mapper = init.mapper;
-    this._mode = init.mode ?? 'cds-with-introns';
+    this._mode = init.mode ?? 'genome';
     this._range = [...(init.range ?? defaultRangeFor(this._mode, this.mapper))] as [number, number];
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
@@ -301,9 +301,9 @@ export class ViewportController implements Viewport {
       return this.computeProteinBaseline(exons);
     }
 
-    // CDS modes: piecewise per-exon with a visible gap (cds-with-introns) or
+    // CDS modes: piecewise per-exon with a visible gap (genome) or
     // a single-bp transition interval that gets absorbed into the linear
-    // pxPerBp (cds-spliced). Counting `cdsEnd - cdsStart` as the bp-within
+    // pxPerBp (transcript). Counting `cdsEnd - cdsStart` as the bp-within
     // each exon makes the inter-exon transition explicit; modelling it as
     // either `naturalGapPx` or `1 × pxPerBp` keeps the total = `width`.
     let sumBpWithin = 0;
@@ -311,7 +311,7 @@ export class ViewportController implements Viewport {
 
     let pxPerBp: number;
     let transitionPx: number;
-    if (this._mode === 'cds-with-introns') {
+    if (this._mode === 'genome') {
       transitionPx = naturalGapPx;
       const exonPx = Math.max(0, this._width - nGaps * transitionPx);
       pxPerBp = sumBpWithin > 0 ? exonPx / sumBpWithin : 0;
@@ -348,7 +348,7 @@ export class ViewportController implements Viewport {
       exons: exonRects,
       gaps: gapRects,
       pxPerBp,
-      gapPx: this._mode === 'cds-with-introns' ? naturalGapPx : 0,
+      gapPx: this._mode === 'genome' ? naturalGapPx : 0,
       totalWidth: this._width,
     };
   }
@@ -469,7 +469,7 @@ export class ViewportController implements Viewport {
     }
 
     // Per-gap current-x sits at the upstream exon's `currentXEnd`; scale-x
-    // folds in `intronScale` so collapsed modes (cds-spliced, protein) shrink
+    // folds in `intronScale` so collapsed modes (transcript, protein) shrink
     // the gap-content to zero width without affecting the gap's screen
     // width — that's controlled by `exonScale` only applying to exon content.
     for (const gap of geom.gaps) {
@@ -477,7 +477,7 @@ export class ViewportController implements Viewport {
       const aXEnd = layout.exonCurrentX[gap.exonIdxA]! + aEb.width * exonScale;
       s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${aXEnd}px`);
       // intron scale-x = intronScale (not multiplied by zoom): the inter-exon
-      // `<g>` carries the polyline at baseline gap width; in cds-spliced or
+      // `<g>` carries the polyline at baseline gap width; in transcript or
       // protein modes intronScale = 0 collapses it to zero.
       s.setProperty(
         `--vv-intron-scale-x-${gap.exonIdxA}`,
@@ -595,26 +595,32 @@ export class ViewportController implements Viewport {
    * The forward and inverse paths share the same ruler conversion, so
    * the two directions can't diverge.
    */
-  screenToPosition(x: number, kind: 'cds' | 'protein' | 'genomic'): Position | null {
+  screenToPosition<K extends 'cds' | 'protein' | 'genomic'>(
+    x: number,
+    kind: K,
+  ): Extract<Position, { kind: K }> | null {
     if (x < 0 || x > this._width) return null;
     const ruler = Math.round(this.screenToRulerBaseline(x));
     switch (kind) {
       case 'cds': {
         const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
-        return { kind: 'cds', cPos, offset: 0 };
+        return { kind: 'cds', cPos, offset: 0 } as Extract<Position, { kind: K }>;
       }
       case 'protein': {
         const aa = this._mode === 'protein' ? ruler : this.mapper.cdsToProtein(ruler);
         if (aa === null) return null;
-        return { kind: 'protein', aa };
+        return { kind: 'protein', aa } as Extract<Position, { kind: K }>;
       }
       case 'genomic': {
         const cPos = this._mode === 'protein' ? this.mapper.proteinToCds(ruler) : ruler;
         const g = this.mapper.cdsToGenomic(cPos, 0);
         if (!g) return null;
-        return { kind: 'genomic', chr: g.chr, pos: g.pos };
+        return { kind: 'genomic', chr: g.chr, pos: g.pos } as Extract<Position, { kind: K }>;
       }
     }
+    // Exhaustive switch above; this is unreachable but TS doesn't infer that
+    // for a generic parameter.
+    return null;
   }
 
   screenToCds(x: number): CdsPosition | null {

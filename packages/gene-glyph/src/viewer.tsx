@@ -59,7 +59,7 @@ export interface GeneGlyphProps {
    *  mutating local state. */
   mode?: ViewMode;
   /** Uncontrolled initial mode. Ignored when `mode` is supplied. Default
-   *  `cds-with-introns`. */
+   *  `genome`. */
   defaultMode?: ViewMode;
   /** Fires after every committed mode change (controlled or uncontrolled).
    *  Hosts use this to mirror the mode into URL state, telemetry, or the
@@ -354,7 +354,7 @@ function GeneGlyphInner(
   const controlled = viewportRange !== undefined;
   const brushControlled = controlledBrushRange !== undefined;
   const [uncontrolledMode] = useState<ViewMode>(
-    () => defaultMode ?? 'cds-with-introns',
+    () => defaultMode ?? 'genome',
   );
   const mode = controlledMode ?? uncontrolledMode;
   const [uncontrolledBrush, setUncontrolledBrush] = useState<
@@ -920,7 +920,7 @@ function GeneGlyphInner(
         ),
       );
     }
-    // Fill inter-exon gaps in cds-with-introns mode so the brush reads as a
+    // Fill inter-exon gaps in genome mode so the brush reads as a
     // single continuous strip across adjacent touched exons. In spliced /
     // protein modes the gap collapses (intronScale=0) so the gap rect is
     // invisible there anyway.

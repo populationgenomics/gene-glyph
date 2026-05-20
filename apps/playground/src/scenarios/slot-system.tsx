@@ -28,7 +28,7 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.j
  * right-hand readout pulls live state from `getViewportInfo`.
  */
 export function SlotSystemScenario() {
-  const [mode, setMode] = useState<ViewMode>('cds-with-introns');
+  const [mode, setMode] = useState<ViewMode>('genome');
   const ref = useRef<GeneGlyphRef | null>(null);
   const [hiddenClick, setHiddenClick] = useState<{ trackId: string; featureId: string } | null>(
     null,
@@ -106,8 +106,8 @@ export function SlotSystemScenario() {
               onChange={(e) => setMode(e.target.value as ViewMode)}
               style={{ font: 'inherit', padding: '2px 6px' }}
             >
-              <option value="cds-with-introns">CDS with introns</option>
-              <option value="cds-spliced">Spliced CDS</option>
+              <option value="genome">Genome</option>
+              <option value="transcript">Transcript</option>
               <option value="protein">Protein</option>
             </select>
           </label>

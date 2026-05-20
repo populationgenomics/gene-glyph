@@ -186,7 +186,7 @@ export class ProjectionFrame {
   /** Live screen-space zoom factor: `width / visibleBaselineSpan`. Distinct
    *  from the controller's ruler-space `zoom()` (= `naturalLen / currentLen`),
    *  which is what gets published as `--vv-zoom`. The two differ in
-   *  `cds-with-introns` mode whenever the visible range crosses an inter-exon
+   *  `genome` mode whenever the visible range crosses an inter-exon
    *  gap — gap baseline pixels don't scale, so the screen-space factor is
    *  smaller than the ruler-space one. Degenerate ranges report 1. */
   zoomFactor(): number {

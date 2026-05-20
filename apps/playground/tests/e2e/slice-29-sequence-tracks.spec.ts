@@ -29,7 +29,7 @@ test.describe('Slice 29 — nucleotide + aa sequence tracks', () => {
     // `toBeVisible` passes on any non-empty bbox; an SVG element whose
     // CSS-transform places it far off-screen still satisfies it. The
     // gap-correction bug fixed alongside Slice 31 manifested exactly
-    // that way in `cds-with-introns` mode — pin the assertion here.
+    // that way in `genome` mode — pin the assertion here.
     const onScreen = await s.evaluate((sec) => {
       const fig = sec.querySelector('svg.vv-figure') as SVGSVGElement | null;
       const figBox = fig?.getBoundingClientRect();

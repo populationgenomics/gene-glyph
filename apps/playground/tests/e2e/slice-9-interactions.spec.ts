@@ -50,7 +50,7 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     await page.keyboard.press('1');
     await expect.poll(async () => (await readRange(page))[0], { timeout: 2_000 }).toBeLessThanOrEqual(1);
     const reset = await readRange(page);
-    // Natural range is [1, cdsLength=1182] in cds-with-introns mode.
+    // Natural range is [1, cdsLength=1182] in genome mode.
     expect(reset[1]).toBeGreaterThanOrEqual(1100);
   });
 

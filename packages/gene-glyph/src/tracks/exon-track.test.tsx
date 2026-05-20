@@ -20,7 +20,7 @@ const transcript: Transcript = {
 
 function setup() {
   const mapper = createCoordinateMapper(transcript);
-  const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-with-introns' });
+  const viewport = new ViewportController({ mapper, width: 720, mode: 'genome' });
   const painter = createSvgPainter({ mode: 'screen' });
   const interaction: InteractionState = {
     hoveredFeatureId: null,
@@ -73,11 +73,11 @@ describe('exonTrack', () => {
     // that should differ is the wrapping `<g>`'s inline transform, which
     // is published via CSS variables on the controller's attached element.
     const { mapper, painter, interaction } = setup();
-    const fitVp = new ViewportController({ mapper, width: 720, mode: 'cds-with-introns' });
+    const fitVp = new ViewportController({ mapper, width: 720, mode: 'genome' });
     const zoomedVp = new ViewportController({
       mapper,
       width: 720,
-      mode: 'cds-with-introns',
+      mode: 'genome',
       range: [50, 250],
     });
     const t = exonTrack();
@@ -120,7 +120,7 @@ describe('exonTrack', () => {
     const viewport = new ViewportController({
       mapper,
       width: 720,
-      mode: 'cds-with-introns',
+      mode: 'genome',
       range: [130, 170], // tight zoom into mid exon 1; exons 0 + 2 sit off-figure
     });
     const el = document.createElement('div');
@@ -133,7 +133,7 @@ describe('exonTrack', () => {
 
   it('publishes per-exon scale-x and per-gap scale-x for every exon / gap', () => {
     const { mapper } = setup();
-    const viewport = new ViewportController({ mapper, width: 720, mode: 'cds-with-introns' });
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'genome' });
     const el = document.createElement('div');
     viewport.attach(el);
     // Three exons → three scale-x vars, two gap scale-x vars.
