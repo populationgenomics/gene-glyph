@@ -181,44 +181,62 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
           liveScale
         );
       };
-      const allMajors = collectTicks(viewport, mapper, majorStep);
+      // Merge step-divisible candidates with exon-edge anchor ticks
+      // (sorted by baseline-x, de-duplicated by ruler position). The
+      // anchors are pinned to each exon's 5'/3' boundaries so a deep
+      // zoom that misses every step tick still surfaces the boundary
+      // explicitly.
+      const stepMajors = collectTicks(viewport, mapper, majorStep);
+      const anchorMajors = collectAnchorTicks(viewport, mapper);
+      const anchorPositions = new Set(anchorMajors.map((t) => t.rulerPos));
+      const allMajors: TickRow[] = [
+        ...anchorMajors,
+        ...stepMajors.filter((t) => !anchorPositions.has(t.rulerPos)),
+      ].sort((a, b) => a.baselineX - b.baselineX);
 
       // Walk forward, skipping any candidate whose label would crash
       // with its predecessor's. Widths are sized as if *no* suffix is
       // attached — every tick has the same label-width budget, the
       // walk doesn't cascade-drop ticks just to make room for the
-      // suffix at the right end.
+      // suffix at the right end. Anchor ticks (exon edges) win over
+      // step ticks in a collision: a step predecessor is popped to
+      // make room for a colliding anchor; an anchor predecessor stays
+      // and the colliding step is dropped.
       const majors: TickRow[] = [];
       let lastBaselineX = -Infinity;
       let lastHalfWidth = 0;
       for (const t of allMajors) {
         const half = halfWidthOf(t.rulerPos, false);
         if (t.baselineX - lastBaselineX < lastHalfWidth + half + labelPadPx) {
-          continue;
+          // Collision. Anchor wins over step.
+          const prev = majors[majors.length - 1];
+          if (t.anchor && prev && !prev.anchor) {
+            majors.pop();
+            const beforePrev = majors[majors.length - 1];
+            lastBaselineX = beforePrev?.baselineX ?? -Infinity;
+            lastHalfWidth = beforePrev
+              ? halfWidthOf(beforePrev.rulerPos, false)
+              : 0;
+            // Fall through to the emit logic below.
+          } else {
+            continue;
+          }
         }
         majors.push(t);
         lastBaselineX = t.baselineX;
         lastHalfWidth = half;
       }
 
-      // Decide whether the *actually-emitted* last tick gets the unit
-      // suffix. The suffix is informational — if attaching it would
-      // make the last label crash with its predecessor, we drop the
-      // suffix rather than dropping the tick (the unit reads as a
-      // `data-vv-scale-unit` attribute on the track group either way).
-      let showSuffix = false;
-      if (unitSuffix === 'last' && majors.length > 0) {
-        if (majors.length === 1) {
-          showSuffix = true;
-        } else {
-          const last = majors[majors.length - 1]!;
-          const prev = majors[majors.length - 2]!;
-          const prevHalf = halfWidthOf(prev.rulerPos, false);
-          const lastSuffixedHalf = halfWidthOf(last.rulerPos, true);
-          showSuffix =
-            last.baselineX - prev.baselineX >= prevHalf + lastSuffixedHalf + labelPadPx;
-        }
-      }
+      // The last emitted major carries the unit suffix when
+      // `unitSuffix === 'last'`. The suffix is a short hint
+      // (` bp` / ` aa`); always emit it — adding anchor ticks at exon
+      // edges occasionally puts the last tick close to its
+      // predecessor, and the old crash check would silently drop the
+      // unit-hint in those cases. The full unit also reads off the
+      // `data-vv-scale-unit` attribute on the track group, so a small
+      // visual encroachment on the predecessor's padding is preferable
+      // to losing the suffix entirely.
+      const showSuffix = unitSuffix === 'last' && majors.length > 0;
 
       const majorPositions = new Set(majors.map((t) => t.rulerPos));
       const minors =
@@ -353,6 +371,11 @@ interface TickRow {
   rulerPos: number;
   exonIdx: number;
   baselineX: number;
+  /** Anchor ticks (exon edges) win over step-divisible ticks in the
+   *  crash walk — a step tick gets popped to make room for a colliding
+   *  anchor. Two anchors that collide with each other fall through to
+   *  the default "keep the leftmost" rule. */
+  anchor?: boolean;
 }
 
 function unitForMode(mode: ViewMode): 'bp' | 'aa' {
@@ -410,6 +433,44 @@ function collectTicks(
     rows.push({ rulerPos: pos, baselineX, exonIdx });
   }
   return rows;
+}
+
+/** Anchor ticks pinned to every exon's 5' and 3' boundaries (in ruler
+ *  units — aa in protein mode, CDS bp otherwise). At deep zoom the
+ *  step-divisible ticks can skip past an exon edge entirely; anchors
+ *  guarantee the user always sees the boundary. The crash walk treats
+ *  these as preferred — a step tick gets popped to make room for a
+ *  colliding anchor. */
+function collectAnchorTicks(
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+): TickRow[] {
+  const rows: TickRow[] = [];
+  const seen = new Set<number>();
+  const push = (rulerPos: number, exonIdx: number): void => {
+    if (seen.has(rulerPos)) return;
+    seen.add(rulerPos);
+    rows.push({
+      rulerPos,
+      exonIdx,
+      baselineX: viewport.cdsToBaselineX(rulerPos),
+      anchor: true,
+    });
+  };
+  const exons = mapper.transcript.exons;
+  for (let i = 0; i < exons.length; i++) {
+    const e = exons[i]!;
+    if (viewport.mode === 'protein') {
+      const aaStart = mapper.cdsToProtein(e.cdsStart);
+      const aaEnd = mapper.cdsToProtein(e.cdsEnd);
+      if (aaStart !== null) push(aaStart, i);
+      if (aaEnd !== null) push(aaEnd, i);
+    } else {
+      push(e.cdsStart, i);
+      push(e.cdsEnd, i);
+    }
+  }
+  return rows.sort((a, b) => a.baselineX - b.baselineX);
 }
 
 function roundedAdd(value: number, step: number): number {
