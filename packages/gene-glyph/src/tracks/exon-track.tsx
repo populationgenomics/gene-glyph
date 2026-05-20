@@ -112,70 +112,80 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       const flankStroke = painter.color('vv-color-exon-stroke', '#475569');
       const flankH = Math.max(2, Math.floor(exonH / 2));
       const flankY = (exonY + exonH / 2) - flankH / 2;
-      for (const eb of geom.exons) {
-        const scaleVar = `var(--vv-exon-scale-x-${eb.exonIdx}, 1)`;
-        const rectStyle = {
-          // SVG2: x / width as CSS properties so we can use calc with the
-          // live exon-scale CSS var. Browser support is Chrome 88+, Firefox
-          // 76+, Safari 14+ — all the targets the rest of the viewer assumes.
-          x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
-          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
-        } as unknown as CSSProperties;
-        const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
-        const acceptorWidth =
-          flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
-        exonRects.push(
-          painter.placeInExonGroup(
-            eb.exonIdx,
-            <Fragment key={`exon-${eb.exonIdx}`}>
-              {acceptorWidth > 0 && (
+      // Protein mode renders a SINGLE fill+border rect across the whole
+      // protein strip — the per-exon ribbons are skipped entirely (see the
+      // `proteinOutline` block below). The protein readout has no inter-
+      // exon decoration at any zoom level (intronScale = 0 collapses them),
+      // and per-exon rects with the screen-px overhang would leak past the
+      // outline border at codon-spanning boundaries. The CDS modes keep
+      // per-exon rects so the dashed-intron polyline can sit between
+      // visually distinct ribbons.
+      if (viewport.mode !== 'protein') {
+        for (const eb of geom.exons) {
+          const scaleVar = `var(--vv-exon-scale-x-${eb.exonIdx}, 1)`;
+          const rectStyle = {
+            // SVG2: x / width as CSS properties so we can use calc with
+            // the live exon-scale CSS var. Browser support is Chrome 88+,
+            // Firefox 76+, Safari 14+.
+            x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
+            width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
+          } as unknown as CSSProperties;
+          const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
+          const acceptorWidth =
+            flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
+          exonRects.push(
+            painter.placeInExonGroup(
+              eb.exonIdx,
+              <Fragment key={`exon-${eb.exonIdx}`}>
+                {acceptorWidth > 0 && (
+                  <rect
+                    key={`flank-acceptor-${eb.exonIdx}`}
+                    x={-acceptorWidth}
+                    y={flankY}
+                    width={acceptorWidth}
+                    height={flankH}
+                    fill={flankFill}
+                    stroke={flankStroke}
+                    strokeWidth={1}
+                    strokeOpacity={0.6}
+                    fillOpacity={0.35}
+                    vectorEffect="non-scaling-stroke"
+                    className="vv-exon-flank vv-exon-flank-acceptor"
+                    data-vv-intron-idx={eb.exonIdx - 1}
+                  />
+                )}
+                {donorWidth > 0 && (
+                  <rect
+                    key={`flank-donor-${eb.exonIdx}`}
+                    x={eb.width}
+                    y={flankY}
+                    width={donorWidth}
+                    height={flankH}
+                    fill={flankFill}
+                    stroke={flankStroke}
+                    strokeWidth={1}
+                    strokeOpacity={0.6}
+                    fillOpacity={0.35}
+                    vectorEffect="non-scaling-stroke"
+                    className="vv-exon-flank vv-exon-flank-donor"
+                    data-vv-intron-idx={eb.exonIdx}
+                  />
+                )}
                 <rect
-                  key={`flank-acceptor-${eb.exonIdx}`}
-                  x={-acceptorWidth}
-                  y={flankY}
-                  width={acceptorWidth}
-                  height={flankH}
-                  fill={flankFill}
-                  stroke={flankStroke}
+                  key={`exon-rect-${eb.exonIdx}`}
+                  y={exonY}
+                  height={exonH}
+                  fill={painter.color('vv-color-exon-fill', '#94a3b8')}
+                  stroke={painter.color('vv-color-exon-stroke', '#475569')}
                   strokeWidth={1}
-                  strokeOpacity={0.6}
-                  fillOpacity={0.35}
                   vectorEffect="non-scaling-stroke"
-                  className="vv-exon-flank vv-exon-flank-acceptor"
-                  data-vv-intron-idx={eb.exonIdx - 1}
+                  className="vv-exon-rect"
+                  style={rectStyle}
                 />
-              )}
-              {donorWidth > 0 && (
-                <rect
-                  key={`flank-donor-${eb.exonIdx}`}
-                  x={eb.width}
-                  y={flankY}
-                  width={donorWidth}
-                  height={flankH}
-                  fill={flankFill}
-                  stroke={flankStroke}
-                  strokeWidth={1}
-                  strokeOpacity={0.6}
-                  fillOpacity={0.35}
-                  vectorEffect="non-scaling-stroke"
-                  className="vv-exon-flank vv-exon-flank-donor"
-                  data-vv-intron-idx={eb.exonIdx}
-                />
-              )}
-              <rect
-                key={`exon-rect-${eb.exonIdx}`}
-                y={exonY}
-                height={exonH}
-                fill={painter.color('vv-color-exon-fill', '#94a3b8')}
-                stroke={painter.color('vv-color-exon-stroke', '#475569')}
-                strokeWidth={viewport.mode === 'protein' ? 0 : 1}
-                vectorEffect="non-scaling-stroke"
-                className="vv-exon-rect"
-                style={rectStyle}
-              />
-            </Fragment>,
-          ),
-        );
+              </Fragment>,
+            ),
+          );
+        }
       }
 
       // Each intron decoration renders inside its inter-exon `<g>`, in the
@@ -300,12 +310,13 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         );
       }
 
-      // Protein mode: one continuous outline encloses the whole protein
-      // strip. Per-exon fills (rendered without strokes — see strokeWidth
-      // branch above) sit underneath, so the strip reads as a single
-      // filled bar with one continuous border around it. The outline
-      // rides the per-exon CSS variables of the first and last exons so
-      // it tracks pan/zoom without React re-render.
+      // Protein mode: one rect with fill + border covers the whole
+      // protein strip. The rect rides the per-exon CSS variables of the
+      // first and last exons so it tracks pan / zoom without a React
+      // re-render. Going through a single rect (rather than per-exon
+      // fills + an overlay outline) keeps the border tight against the
+      // ribbon — per-exon rects + overhang would leak fill past the
+      // outline at codon-spanning boundaries.
       let proteinOutline: ReactNode = null;
       if (viewport.mode === 'protein' && geom.exons.length > 0) {
         const first = geom.exons[0]!;
@@ -320,14 +331,13 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         proteinOutline = (
           <rect
             key="protein-outline"
-            className="vv-protein-outline"
+            className="vv-protein-outline vv-exon-rect"
             y={exonY}
             height={exonH}
-            fill="none"
+            fill={painter.color('vv-color-exon-fill', '#94a3b8')}
             stroke={painter.color('vv-color-exon-stroke', '#475569')}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
-            pointerEvents="none"
             style={proteinStyle}
           />
         );
