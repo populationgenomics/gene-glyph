@@ -32,10 +32,16 @@ describe('ViewportController — screen <-> CDS at fit-gene zoom', () => {
     }
   });
 
-  it('cdsToScreen places the start of the gene at x=0 and the end at x=width', () => {
+  it('cdsToScreen places bp 1 / bp cdsLength at their cell centres', () => {
+    // Cell-width invariant: bp N has a cell of width pxPerBp centred at
+    // its lattice point. At fit-gene the figure spans cdsLength cells of
+    // width pxPerBp = width / cdsLength, so bp 1's centre sits 0.5
+    // pxPerBp inside the left edge and bp cdsLength's centre sits 0.5
+    // pxPerBp inside the right edge.
     const vp = fitGene('transcript');
-    expect(vp.cdsToScreen(1, 0)).toBe(0);
-    expect(vp.cdsToScreen(360, 0)).toBe(720);
+    const pxPerBp = 720 / 360;
+    expect(vp.cdsToScreen(1, 0)).toBeCloseTo(0.5 * pxPerBp, 5);
+    expect(vp.cdsToScreen(360, 0)).toBeCloseTo(720 - 0.5 * pxPerBp, 5);
   });
 
   it('returns null for CDS positions outside the active range', () => {
@@ -54,10 +60,14 @@ describe('ViewportController — screen <-> CDS at fit-gene zoom', () => {
     }
   });
 
-  it('protein mode places aa=1 at x=0 and the C-terminus at x=width', () => {
+  it('protein mode places aa=1 / C-terminus at their cell centres', () => {
+    // Same cell-width invariant as CDS modes. aaLen = 120, pxPerAa = 6,
+    // so aa 1's centre sits at 0.5*pxPerAa = 3 and the C-terminus at
+    // width - 3.
     const vp = fitGene('protein');
-    expect(vp.proteinToScreen(1)).toBe(0);
-    expect(vp.proteinToScreen(120)).toBe(720);
+    const pxPerAa = 720 / 120;
+    expect(vp.proteinToScreen(1)).toBeCloseTo(0.5 * pxPerAa, 5);
+    expect(vp.proteinToScreen(120)).toBeCloseTo(720 - 0.5 * pxPerAa, 5);
   });
 });
 
@@ -75,8 +85,13 @@ describe('ViewportController — range projection', () => {
     const vp = fitGene('transcript');
     const proj = vp.projectCdsRange(50, 300);
     expect(proj.segments.map((s) => s.exonIdx)).toEqual([0, 1, 2]);
-    expect(proj.segments[0]!.xEnd).toBeCloseTo(vp.cdsToScreen(100, 0)!);
-    expect(proj.segments[1]!.xStart).toBeCloseTo(vp.cdsToScreen(101, 0)!);
+    // Range projections span cell extents, not centres: exon 0's segment
+    // ends at bp 100's RIGHT cell edge (= exon 0's xEnd in baseline), exon
+    // 1's segment starts at bp 101's LEFT cell edge (= exon 1's xStart).
+    // In transcript mode (zero-width junction) these meet at the same x.
+    const geom = vp.baselineGeometry();
+    expect(proj.segments[0]!.xEnd).toBeCloseTo(geom.exons[0]!.xEnd, 5);
+    expect(proj.segments[1]!.xStart).toBeCloseTo(geom.exons[1]!.xStart, 5);
     // Slice 15: cross-exon CDS ranges report one intronic drop per crossed gap
     // so tracks aggregating hidden-feature counts can index uniformly across
     // coord systems.
@@ -94,10 +109,9 @@ describe('ViewportController — range projection', () => {
     const vp = fitGene('genome');
     const proj = vp.projectCdsRange(50, 300);
     expect(proj.segments.map((s) => s.exonIdx)).toEqual([0, 1, 2]);
-    // Adjacent segments meet at the exon boundary in screen-x, since
-    // cdsToScreen places exon i's cdsEnd and exon i+1's cdsStart at the same
-    // point only when intronScale=0; here (intronScale=1) the segments sit
-    // either side of the collapsed-intron gap.
+    // In genome mode the intron (bulk + flanks) sits between the exon
+    // segments, so exon 0's right cell-edge sits strictly to the left of
+    // exon 1's left cell-edge.
     expect(proj.segments[0]!.xEnd).toBeLessThan(proj.segments[1]!.xStart);
   });
 
@@ -144,16 +158,14 @@ describe('ViewportController — range projection', () => {
     // mode treats input as aa. The last segment of a domain at aa 1..42 then
     // rendered as if it ended at aa 126 — three times too wide.
     //
-    // The transcript's exons are c.1-100, c.101-250, c.251-360 → aa 1..34,
-    // aa 34..84, aa 84..120 (codons span both boundaries). aa 1..42 fragments
-    // into exon 0 (aa 1..34) and exon 1 (aa 34..42).
+    // Cell-width invariant: aa range [1, 42] spans cells with right edge at
+    // `cdsToBaselineX(42.5)`. The last fragment's xEnd must land on that
+    // edge, not three times further along where aa 126 would sit.
     const vp = fitGene('protein');
     const proj = vp.projectProteinRange(1, 42);
     expect(proj.segments.length).toBeGreaterThanOrEqual(2);
     const last = proj.segments[proj.segments.length - 1]!;
-    expect(last.xEnd).toBeCloseTo(vp.cdsToBaselineX(42), 5);
-    // And the last segment's xEnd must be well below where aa 126 would land,
-    // which is the symptom of the old bug.
+    expect(last.xEnd).toBeCloseTo(vp.cdsToBaselineX(42.5), 5);
     expect(last.xEnd).toBeLessThan(vp.cdsToBaselineX(60));
   });
 
@@ -335,12 +347,17 @@ describe('ViewportController — clampRange + paddedBounds', () => {
   });
 
   it('rulerAtScreen returns aa in protein mode and CDS bp in CDS modes', () => {
+    // Cell-width invariant: screen 0 is bp 1's left cell edge, ruler 0.5;
+    // screen width is bp cdsLength's right cell edge, ruler cdsLength + 0.5.
+    // Bp / aa centres sit half a pxPerUnit inside each edge.
     const cds = fitGene('transcript');
-    expect(cds.rulerAtScreen(0)).toBeCloseTo(1, 5);
-    expect(cds.rulerAtScreen(720)).toBeCloseTo(360, 5);
+    const pxPerBp = 720 / 360;
+    expect(cds.rulerAtScreen(0)).toBeCloseTo(0.5, 5);
+    expect(cds.rulerAtScreen(720)).toBeCloseTo(360.5, 5);
+    expect(cds.rulerAtScreen(0.5 * pxPerBp)).toBeCloseTo(1, 5);
     const protein = fitGene('protein');
-    expect(protein.rulerAtScreen(0)).toBeCloseTo(1, 5);
-    expect(protein.rulerAtScreen(720)).toBeCloseTo(120, 5);
+    expect(protein.rulerAtScreen(0)).toBeCloseTo(0.5, 5);
+    expect(protein.rulerAtScreen(720)).toBeCloseTo(120.5, 5);
   });
 });
 
@@ -356,6 +373,36 @@ describe('ViewportController — Position-based projection', () => {
     expect(fromCds).not.toBeNull();
     expect(fromProtein).toBeCloseTo(fromCds!, 5);
     expect(fromGenomic).toBeCloseTo(fromCds!, 5);
+  });
+
+  it('±0.5 cell-width invariant: every bp / aa occupies a cell of pxPerBp / pxPerAa', () => {
+    // The figure shows every bp / aa as a cell of width pxPerBp / pxPerAa
+    // centred on its lattice point. Cell extents on the left edge map to
+    // baseline 0; right edge maps to baseline = width. Adjacent cells share
+    // their inner edges; bp / aa centres sit ±0.5 cell inside each edge.
+    const cds = fitGene('transcript');
+    const cdsGeom = cds.baselineGeometry();
+    // Adjacent bp centres are pxPerBp apart anywhere inside an exon body.
+    expect(cds.cdsToBaselineX(50) - cds.cdsToBaselineX(49)).toBeCloseTo(
+      cdsGeom.pxPerBp,
+      5,
+    );
+    // First / last bp centre is half a cell from the figure edge.
+    expect(cds.cdsToBaselineX(1)).toBeCloseTo(0.5 * cdsGeom.pxPerBp, 5);
+    // Cell EDGES align with exon rect endpoints.
+    expect(cds.cdsToBaselineX(1 - 0.5)).toBeCloseTo(cdsGeom.exons[0]!.xStart, 5);
+    expect(cds.cdsToBaselineX(100 + 0.5)).toBeCloseTo(cdsGeom.exons[0]!.xEnd, 5);
+
+    const protein = fitGene('protein');
+    const pGeom = protein.baselineGeometry();
+    // pGeom.pxPerBp is `pxPerAa` in protein mode (the underlying frame
+    // reuses the field for both unit kinds).
+    expect(protein.cdsToBaselineX(50) - protein.cdsToBaselineX(49)).toBeCloseTo(
+      pGeom.pxPerBp,
+      5,
+    );
+    expect(protein.cdsToBaselineX(1)).toBeCloseTo(0.5 * pGeom.pxPerBp, 5);
+    expect(protein.cdsToBaselineX(120)).toBeCloseTo(720 - 0.5 * pGeom.pxPerBp, 5);
   });
 
   it('aa N projects to codon-centre bp 3N-1 across every aa-aware API', () => {
@@ -526,11 +573,13 @@ describe('ViewportController — Phase 3 soft-collapse spec', () => {
       donor0.width + (gap0.width - donor0.width - acceptor0.width) + acceptor0.width,
       4,
     );
-    // And `cdsToBaselineX(100)` / `cdsToBaselineX(101)` land at the
-    // intron's two ends in baseline-x — i.e., separated by the whole
-    // intron's width, not just the bulk.
+    // And `cdsToBaselineX(100)` / `cdsToBaselineX(101)` land on the
+    // CENTRES of bp 100's and bp 101's cells, which sit half a bp inside
+    // each exon edge. So the bp-centre separation = gap.width + pxPerBp
+    // (the two half-cells live on the exon sides of the gap, not inside
+    // it).
     expect(vp.cdsToBaselineX(101) - vp.cdsToBaselineX(100)).toBeCloseTo(
-      gap0.width,
+      gap0.width + baseline.pxPerBp,
       4,
     );
   });

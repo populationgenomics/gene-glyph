@@ -92,17 +92,27 @@ export function buildSegments(
   const segments: Segment[] = [];
   if (baseline.exons.length === 0) return segments;
 
+  // Cell-width invariant: bp/aa N occupies the cell `[N-0.5, N+0.5]` on
+  // the ruler axis. To make the segment's linear interpolation place
+  // bp/aa N's *centre* at its cell centre, the segment must span from
+  // the leftmost cell's left edge (`firstUnit - 0.5`) to the rightmost
+  // cell's right edge (`lastUnit + 0.5`) on the ruler axis. Otherwise
+  // the interpolation would place bp/aa N at its cell's *left edge*,
+  // off by half a unit.
   const exonRuler = (i: number): readonly [number, number] => {
     if (mode === 'protein') {
       const eb = baseline.exons[i]!;
       const pxPerAa = baseline.pxPerBp;
-      // Protein-mode baseline is linear in aa: xStart = (aaStart - 1) *
-      // pxPerAa. Invert to recover aaStart / aaEnd for the segment.
+      // Invert the protein-mode baseline: xStart = (aaStart-1)*pxPerAa,
+      // xEnd = aaEnd*pxPerAa. Recover the aa endpoints, then widen by
+      // ±0.5 to bracket the full cell range.
       const denom = pxPerAa > 0 ? pxPerAa : 1;
-      return [eb.xStart / denom + 1, eb.xEnd / denom + 1];
+      const aaStart = eb.xStart / denom + 1;
+      const aaEnd = eb.xEnd / denom;
+      return [aaStart - 0.5, aaEnd + 0.5];
     }
     const e = exons[i]!;
-    return [e.cdsStart, e.cdsEnd];
+    return [e.cdsStart - 0.5, e.cdsEnd + 0.5];
   };
 
   // Gaps are fixed-budget when the baseline reserves explicit gap pixels

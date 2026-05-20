@@ -216,8 +216,15 @@ export class ProjectionFrame {
     if (this._S_lo !== null && this._S_hi !== null) {
       return { S_lo: this._S_lo, S_hi: this._S_hi };
     }
-    this._S_lo = this.rulerToBaselineX(this.range[0]);
-    this._S_hi = this.rulerToBaselineX(this.range[1]);
+    // Cell-inclusive range semantic: `range[0]` and `range[1]` name the
+    // first and last visible bp/aa, and the visible baseline spans from
+    // bp range[0]'s LEFT cell edge to bp range[1]'s RIGHT cell edge.
+    // At fit-gene (`range = [1, cdsLength]`), this fills the figure
+    // with every bp's cell — `S_lo` lands on baseline 0 and `S_hi` on
+    // baseline width, regardless of the half-cell offset that bp
+    // *centres* would otherwise impose.
+    this._S_lo = this.rulerToBaselineX(this.range[0] - 0.5);
+    this._S_hi = this.rulerToBaselineX(this.range[1] + 0.5);
     return { S_lo: this._S_lo, S_hi: this._S_hi };
   }
 }

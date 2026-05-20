@@ -327,12 +327,18 @@ export class ViewportController implements Viewport {
             acceptorBp: 0,
           });
 
-    // Linear bp = exon body + every flank's bp count. Fixed budget pixels
-    // = sum of bulk allotments (one `naturalGapPx` per spec'd intron in
-    // genome mode; transcript mode has no fixed-budget pixels because
-    // its gaps are 1-bp transitions that absorb into pxPerBp).
+    // Cell-width invariant: each CDS bp occupies a cell of width
+    // `pxPerBp`; bp N spans `[(N - cdsStart) * pxPerBp + exon.xStart,
+    // (N - cdsStart + 1) * pxPerBp + exon.xStart]` inside its host
+    // exon, with its centre at the half-step. The bp count in each
+    // exon body is therefore `cdsEnd - cdsStart + 1`. Flank bp inside
+    // genome-mode splice-site zones use the same `pxPerBp` (so an
+    // intronic c.N+M bp tiles cell-for-cell with the adjacent exonic
+    // bp). Transcript mode collapses each intron to a zero-width
+    // junction — the boundary between the last cell of exon i and the
+    // first cell of exon i+1 is a single x-coordinate.
     let linearBp = 0;
-    for (const e of exons) linearBp += e.cdsEnd - e.cdsStart;
+    for (const e of exons) linearBp += e.cdsEnd - e.cdsStart + 1;
     let fixedBudgetPx = 0;
     let nLegacyGaps = 0; // introns with no flanks → legacy gap shape
     for (const fw of flankWidths) {
@@ -347,19 +353,18 @@ export class ViewportController implements Viewport {
     let pxPerBp: number;
     let transitionPx: number;
     if (this._mode === 'genome') {
-      transitionPx = naturalGapPx;
       // Legacy (un-spec'd) gaps also consume the fixed-budget pool so
       // a pre-Phase-3-style empty spec degenerates to the historical
-      // layout exactly.
+      // layout shape (fixed-budget bulk between exons).
       const totalFixed = fixedBudgetPx + nLegacyGaps * naturalGapPx;
       const linearPx = Math.max(0, this._width - totalFixed);
       pxPerBp = linearBp > 0 ? linearPx / linearBp : 0;
+      transitionPx = naturalGapPx;
     } else {
-      // transcript mode: 1-bp transition between exons, linear scale.
-      // No flanks contribute (flankWidths is all-zero here).
-      const intervalBp = linearBp + nGaps;
-      pxPerBp = intervalBp > 0 ? this._width / intervalBp : 0;
-      transitionPx = pxPerBp;
+      // Transcript mode: zero-width junction between exons. Consecutive
+      // bp cells tile [0, width] with no symbolic intron pixel.
+      pxPerBp = linearBp > 0 ? this._width / linearBp : 0;
+      transitionPx = 0;
     }
 
     const exonRects: ExonBaseline[] = [];
@@ -368,9 +373,9 @@ export class ViewportController implements Viewport {
     let x = 0;
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
-      const bp = e.cdsEnd - e.cdsStart;
+      const bpCount = e.cdsEnd - e.cdsStart + 1;
       const xStart = x;
-      const xEnd = xStart + bp * pxPerBp;
+      const xEnd = xStart + bpCount * pxPerBp;
       exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
       x = xEnd;
       if (i < exons.length - 1) {
@@ -380,9 +385,10 @@ export class ViewportController implements Viewport {
           // Phase 3: the gap spans the WHOLE intron in baseline-x, with
           // the donor/acceptor flanks stored separately so per-segment
           // layout can apply linear scale to them while leaving the
-          // central bulk (transitionPx) at its fixed pixel budget. The
-          // ruler walk only sees the gap (not the flanks) — that keeps
-          // exon-boundary ruler positions unambiguous.
+          // central bulk (transitionPx) at its fixed pixel budget. Each
+          // flank's bp count translates to a cell-width allotment at
+          // the shared `pxPerBp` so intronic bp cells tile with exonic
+          // ones across the boundary.
           const donorWidth = fw.donorBp * pxPerBp;
           const acceptorWidth = fw.acceptorBp * pxPerBp;
           const gapXStart = x;
@@ -416,17 +422,27 @@ export class ViewportController implements Viewport {
             width: x - gapXStart,
             scaleRule: 'fixed-budget',
           });
-        } else {
+        } else if (this._mode === 'genome') {
           gapRects.push({
             exonIdxA: i,
             exonIdxB: i + 1,
             xStart: x,
             xEnd: x + transitionPx,
             width: transitionPx,
-            scaleRule:
-              this._mode === 'genome' ? 'fixed-budget' : 'linear',
+            scaleRule: 'fixed-budget',
           });
           x += transitionPx;
+        } else {
+          // Transcript mode: zero-width junction. Adjacent exons share
+          // their boundary at a single x-coordinate.
+          gapRects.push({
+            exonIdxA: i,
+            exonIdxB: i + 1,
+            xStart: x,
+            xEnd: x,
+            width: 0,
+            scaleRule: 'linear',
+          });
         }
       }
     }
@@ -478,37 +494,44 @@ export class ViewportController implements Viewport {
   }
 
   private computeProteinBaseline(exons: readonly Exon[]): BaselineGeometry {
-    // Protein mode is purely linear in aa: `aa = 1` sits at `x = 0` and the
-    // last residue lands at `x = width`. Per-exon rects are derived from each
-    // exon's aa endpoints so tracks still get baseline xStart/width per exon
-    // for CSS-variable publication.
+    // Cell-width invariant (matched in CDS modes below): each residue
+    // occupies a cell of width `pxPerAa`. Aa N spans `[(N-1)*pxPerAa,
+    // N*pxPerAa]` with its centre at `(N - 0.5) * pxPerAa`; aa 1's left
+    // edge lands at x=0 and the last residue's right edge at x=width.
+    // Total width = aaLen * pxPerAa.
     //
-    // Adjacent exons interact one of two ways biologically:
-    //   1. The codon spans the boundary — `cdsToProtein(exon_i.cdsEnd) ===
-    //      cdsToProtein(exon_{i+1}.cdsStart)` — they share an aa, so their
-    //      rects are naturally adjacent in the (aa - 1) * pxPerAa model.
-    //   2. The codon ends cleanly on the boundary — exon_i's last aa N, exon_
-    //      {i+1}'s first aa N+1. The (aa - 1) * pxPerAa model would place exon
-    //      i's rect ending at (N - 1) * pxPerAa and exon i+1's starting at
-    //      N * pxPerAa, leaving one residue's worth of empty space between
-    //      them. That gap has no exon assignment, no biological meaning, and
-    //      shows up on screen as inconsistent spacing across the gene.
-    //   To kill case 2, snap each exon's aaEnd up to the next exon's aaStart
-    //   so consecutive exons always meet at a single lattice point.
+    // Codon-spanning exon boundaries: the upstream exon ends cleanly on
+    // its last whole codon. When `aaEnds[i] == aaStarts[i+1]` (codon
+    // straddles), the shared codon is assigned to the upstream exon and
+    // the downstream exon starts at the next aa. When there's a gap
+    // (`aaEnds[i] + 1 < aaStarts[i+1]`), the upstream exon's aaEnd is
+    // snapped UP so the two exon rects sit directly adjacent.
     const aaLen = Math.floor(this.mapper.transcript.cdsLength / 3);
-    const intervals = Math.max(1, aaLen - 1);
-    const pxPerAa = this._width / intervals;
+    const pxPerAa = aaLen > 0 ? this._width / aaLen : 0;
 
     const aaStarts: number[] = [];
     const aaEnds: number[] = [];
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
       aaStarts.push(this.mapper.cdsToProtein(e.cdsStart) ?? 1);
-      aaEnds.push(this.mapper.cdsToProtein(e.cdsEnd) ?? aaStarts[i]!);
+      const rawEnd = this.mapper.cdsToProtein(e.cdsEnd) ?? aaStarts[i]!;
+      // Clamp to aaLen so a trailing partial codon (when cdsLength isn't
+      // a multiple of 3) doesn't push the last exon past `width`.
+      aaEnds.push(Math.min(rawEnd, aaLen > 0 ? aaLen : rawEnd));
     }
     for (let i = 0; i < exons.length - 1; i++) {
-      if (aaEnds[i]! < aaStarts[i + 1]!) {
-        aaEnds[i] = aaStarts[i + 1]!;
+      if (aaEnds[i]! + 1 < aaStarts[i + 1]!) {
+        // Clean codon boundary with a gap (upstream ends on aa N, downstream
+        // starts on aa N+2). Snap upstream up so the rects tile.
+        aaEnds[i] = aaStarts[i + 1]! - 1;
+      } else if (aaEnds[i]! >= aaStarts[i + 1]!) {
+        // Codon-spanning boundary — the shared aa's codon's first bp is in
+        // the upstream exon, so upstream owns the cell; downstream skips
+        // that aa. Variant placement keys exon ownership off the cell's
+        // baseline-x rather than the bp position (see `placeVariant`),
+        // so a CDS-coord variant on a downstream bp of a spanning codon
+        // still anchors to the cell-owner.
+        aaStarts[i + 1] = aaEnds[i]! + 1;
       }
     }
 
@@ -516,12 +539,12 @@ export class ViewportController implements Viewport {
     const gapRects: GapBaseline[] = [];
     for (let i = 0; i < exons.length; i++) {
       const xStart = (aaStarts[i]! - 1) * pxPerAa;
-      const xEnd = (aaEnds[i]! - 1) * pxPerAa;
+      const xEnd = aaEnds[i]! * pxPerAa;
       exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
       if (i < exons.length - 1) {
-        // Zero-width "gap" in protein mode — the boundary aa is the lattice
-        // point shared between adjacent exons (post-snap). Tracks that draw
-        // gap decorations skip these zero entries (gapPx === 0).
+        // Zero-width "gap" in protein mode — consecutive exons tile
+        // cell-for-cell, so the boundary is a single x-coordinate. Tracks
+        // that draw gap decorations skip these zero entries (gapPx === 0).
         gapRects.push({ exonIdxA: i, exonIdxB: i + 1, xStart: xEnd, xEnd, width: 0 });
       }
     }
@@ -897,39 +920,17 @@ export class ViewportController implements Viewport {
       };
     }
 
-    // CDS / protein ranges are contiguous in their own ruler, but each consecutive
-    // exon pair the range touches is separated on screen by an intron decoration.
-    // Reporting one intronic drop per crossed gap mirrors projectGenomicRange so
-    // tracks can aggregate hidden-feature counts uniformly regardless of coord
-    // system.
-    const proteinMode = this._mode === 'protein';
-    const proteinGeom = proteinMode ? this.baselineGeometry() : null;
+    // CDS / protein ranges are contiguous in their own ruler, but each
+    // consecutive exon pair the range touches is separated on screen by an
+    // intron decoration. Reporting one intronic drop per crossed gap mirrors
+    // projectGenomicRange so tracks can aggregate hidden-feature counts
+    // uniformly regardless of coord system. (Protein-mode tiling across
+    // exon boundaries is handled inside `cdsRangeToBaselineSegment` via
+    // the per-exon clamp — no special-case here.)
     for (let k = 0; k < hits.length; k++) {
       const h = hits[k]!;
       const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
-      if (seg) {
-        if (proteinMode && proteinGeom) {
-          // The baseline snaps each exon's right edge up to the next exon's
-          // aaStart so the exon ribbons tile without gaps; segments that
-          // reach the right edge of their exon must follow the same snap or
-          // they leave a one-residue hole between adjacent fragments of the
-          // same domain (cdsToProtein rounds down to the last whole codon).
-          // Same applies on the left edge: a segment that starts at the
-          // exon's cdsStart should anchor to the previous exon's snapped
-          // right edge (== this exon's xStart) so the boundary is shared.
-          const exon = exons[h.idx]!;
-          const eb = proteinGeom.exons[h.idx];
-          if (eb) {
-            if (h.hi === exon.cdsEnd && h.idx < exons.length - 1) {
-              seg.xEnd = eb.xEnd;
-            }
-            if (h.lo === exon.cdsStart) {
-              seg.xStart = eb.xStart;
-            }
-          }
-        }
-        segments.push(seg);
-      }
+      if (seg) segments.push(seg);
       if (k > 0) {
         const prev = hits[k - 1]!;
         droppedIntronicCount += 1;
@@ -954,12 +955,42 @@ export class ViewportController implements Viewport {
     cdsHi: number,
     exonIdx: number,
   ): RangeSegment | null {
-    // `toBaselineX` handles the protein-mode ruler conversion internally
-    // — pass CDS bp positions directly and the right aa index falls out
-    // in protein mode.
-    const xStart = this.toBaselineX({ kind: 'cds', cPos: cdsLo, offset: 0 });
-    const xEnd = this.toBaselineX({ kind: 'cds', cPos: cdsHi, offset: 0 });
-    if (xStart === null || xEnd === null) return null;
+    // Cell-width invariant: the projected range spans from bp cdsLo's
+    // LEFT cell edge to bp cdsHi's RIGHT cell edge. Using `cPos - 0.5`
+    // / `cPos + 0.5` as the ruler positions lets the segment walk's
+    // linear interpolation land on cell edges (each exon segment's
+    // ruler spans [cdsStart - 0.5, cdsEnd + 0.5]). In protein mode the
+    // ruler is aa, so we convert bp → aa first and bracket aa cells.
+    //
+    // At exon boundaries, the upstream exon's rulerEnd and the
+    // downstream exon's rulerStart share the same ruler value, and the
+    // walk picks upstream (first match wins). In transcript mode that's
+    // harmless because the junction is zero-width, but in genome mode
+    // upstream's xEnd sits 24+ px to the left of downstream's xStart.
+    // Anchor each end to the exon's own baseline rect when the clipped
+    // range reaches the exon's own boundary.
+    const eb = this.baselineGeometry().exons[exonIdx];
+    const exon = this.mapper.transcript.exons[exonIdx];
+    if (!eb || !exon) return null;
+    let xStart: number;
+    let xEnd: number;
+    if (this._mode === 'protein') {
+      const aaLo = this.mapper.cdsToProtein(cdsLo);
+      const aaHi = this.mapper.cdsToProtein(cdsHi);
+      if (aaLo === null || aaHi === null) return null;
+      xStart = this.cdsToBaselineX(aaLo - 0.5);
+      xEnd = this.cdsToBaselineX(aaHi + 0.5);
+      // A codon-spanning aa cell is owned by upstream per the snap; the
+      // downstream exon's range projection clips to its own baseline rect
+      // so the upstream-owned half of a boundary aa doesn't bleed into
+      // the downstream segment.
+      xStart = Math.max(xStart, eb.xStart);
+      xEnd = Math.min(xEnd, eb.xEnd);
+      if (xEnd <= xStart) return null;
+    } else {
+      xStart = cdsLo === exon.cdsStart ? eb.xStart : this.cdsToBaselineX(cdsLo - 0.5);
+      xEnd = cdsHi === exon.cdsEnd ? eb.xEnd : this.cdsToBaselineX(cdsHi + 0.5);
+    }
     return { xStart, xEnd, exonIdx };
   }
 

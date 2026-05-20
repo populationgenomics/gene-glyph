@@ -90,15 +90,12 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // baseline-units pad would grow linearly with zoom and swallow the
       // inter-exon gap whole at deep zoom (no zigzag visible past ~30×).
       const overhangPx = 6;
-      // Phase 3 polish: in transcript mode the inter-exon "gap" is a
-      // 1-bp transition that becomes visible at deep zoom (pxPerBp ×
-      // zoom). Extend each exon rect by half a bp on each side in
-      // baseline units so the half-bp overhangs from adjacent exons
-      // meet at the boundary instead of leaving a visible empty slot.
-      // Skipped in genome mode (the flank rects fill that role) and
-      // protein mode (the codon-snap already makes consecutive exons
-      // adjacent in baseline-x — adding overhang would just overlap them).
-      const halfBpOverhang = viewport.mode === 'transcript' ? geom.pxPerBp / 2 : 0;
+      // The cell-width invariant gives each bp/aa a baseline cell of
+      // pxPerBp / pxPerAa, so the exon rect already covers the FULL extent
+      // of its first and last cells — no half-bp baseline pad is needed
+      // here. (Previously transcript mode added one because the lattice
+      // model anchored bp 1 at xStart and bp N at xEnd, leaving a half-cell
+      // gap between adjacent exons' last/first cells.)
       // Phase 3: index flanks by adjacent exon so each exon group can
       // render its splice-site decorations. The donor flank sits on the
       // exon's 3' side (intron i.donor for exon i); the acceptor flank
@@ -121,8 +118,8 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
           // SVG2: x / width as CSS properties so we can use calc with the
           // live exon-scale CSS var. Browser support is Chrome 88+, Firefox
           // 76+, Safari 14+ — all the targets the rest of the viewer assumes.
-          x: `calc(-1 * ${overhangPx}px / ${scaleVar} - ${halfBpOverhang}px)`,
-          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar} + 2 * ${halfBpOverhang}px)`,
+          x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
+          width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
         } as unknown as CSSProperties;
         const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
         const acceptorWidth =

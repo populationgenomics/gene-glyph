@@ -65,11 +65,13 @@ describe('partitionVariants', () => {
     const v1 = placed.find((p) => p.variant.id === 'v1');
     expect(v1).toBeDefined();
     expect(v1!.exonIdx).toBe(0);
-    // Exon 0 starts at cdsStart=1 and ends at cdsEnd=100. v1 lives at cPos=50.
-    // Its localX should equal the visible width of bp 1..50 inside exon 0.
-    const x50 = viewport.cdsToScreen(50, 0)!;
-    const x1 = viewport.cdsToScreen(1, 0)!;
-    expect(v1!.localX).toBeCloseTo(x50 - x1, 5);
+    // Exon 0 starts at baseline xStart=0 (bp 1's left cell edge), so the
+    // variant's localX equals its absolute baseline-x = its screen-x at
+    // fit-gene. (Under the cell-width invariant, bp 1's CENTRE sits half
+    // a pxPerBp inside the exon's xStart — so it's not the right reference
+    // point for "where does the variant land inside the exon's frame".)
+    const baseline = viewport.baselineGeometry();
+    expect(v1!.localX).toBeCloseTo(viewport.cdsToScreen(50, 0)! - baseline.exons[0]!.xStart, 5);
   });
 });
 

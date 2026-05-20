@@ -197,24 +197,48 @@ function placeVariant(
   mapper: CoordinateMapper,
 ): VariantPlacement | null {
   const cds = mapper.resolveCds(v.coord);
-  // Intronic offsets land in the unplaced bucket; Slice 10 keeps the same
-  // contract (intronic features bubble into the bottom track) until Slice 15
-  // teaches the exon track to draw hidden-feature indicators in the gap.
+  // Intronic offsets land in the unplaced bucket; the exon track draws
+  // hidden-feature indicators in the gap on their behalf (Slice 15).
   if (!cds || cds.offset !== 0) return null;
-  const exonHit = mapper.findExonByCds(cds.cPos);
-  if (!exonHit) return null;
-  const baseline = viewport.baselineGeometry();
-  const eb = baseline.exons[exonHit.exonIdx];
-  if (!eb) return null;
-  // Baseline localX: the variant's position within its exon's fit-gene frame.
-  // The exon `<g>` carries the live translate + scale; the figure SVG clips
-  // off-figure renderings so the variant stays in the DOM even when its
-  // current screen position is outside [0, width]. `toBaselineX` handles
-  // the protein-mode ruler conversion internally so handing it the raw
-  // VariantCoord works in every viewport mode.
+  // Baseline localX: the variant's position within its host exon's fit-gene
+  // frame. The exon `<g>` carries the live translate + scale; the figure
+  // SVG clips off-figure renderings so the variant stays in the DOM even
+  // when its current screen position is outside [0, width]. `toBaselineX`
+  // handles the protein-mode ruler conversion internally so handing it the
+  // raw VariantCoord works in every viewport mode.
   const variantBaselineX = viewport.toBaselineX(v.coord);
   if (variantBaselineX === null) return null;
-  return { variant: v, exonIdx: exonHit.exonIdx, localX: variantBaselineX - eb.xStart };
+  // Locate the host exon by the variant's baseline-x rather than by bp.
+  // In protein mode, codon-spanning aa cells are owned by one exon
+  // (downstream skips the shared aa) — and the baseline-x lookup always
+  // picks the cell-owner, regardless of which physical exon the variant's
+  // CDS bp lives in. In CDS modes the two paths give the same answer
+  // (each bp's cell sits inside its host exon's rect).
+  const baseline = viewport.baselineGeometry();
+  const exonIdx = findExonByBaselineX(baseline.exons, variantBaselineX);
+  if (exonIdx === null) return null;
+  const eb = baseline.exons[exonIdx]!;
+  return { variant: v, exonIdx, localX: variantBaselineX - eb.xStart };
+}
+
+function findExonByBaselineX(
+  exons: readonly { exonIdx: number; xStart: number; xEnd: number }[],
+  x: number,
+): number | null {
+  // Inclusive-left, exclusive-right so a baseline-x that lands exactly on
+  // a shared boundary tile-edge (e.g., the right edge of one exon's last
+  // cell == the left edge of the next exon's first cell) is assigned to
+  // the downstream exon. Symmetric special-case at the right end of the
+  // gene so the C-terminus's right cell-edge stays inside the last exon.
+  const last = exons[exons.length - 1];
+  for (const eb of exons) {
+    if (eb === last) {
+      if (x >= eb.xStart && x <= eb.xEnd) return eb.exonIdx;
+    } else if (x >= eb.xStart && x < eb.xEnd) {
+      return eb.exonIdx;
+    }
+  }
+  return null;
 }
 
 /** Greedy lane packing in baseline (fit-gene) screen-x. Group placed variants
