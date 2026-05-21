@@ -122,26 +122,31 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     (deltaViewboxPx: number, reason: ViewportChangeReason) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       if (viewport.width <= 0) return;
-      // Pan in current-x space so the gesture is pixel-for-pixel: a
-      // feature that was at OLD current-x `f` lands at NEW current-x
-      // `f - deltaViewboxPx` (positive `deltaViewboxPx` shifts the
-      // visible window right, sliding the gene left under the cursor).
-      // Earlier this multiplied `deltaViewboxPx` by an average
-      // `baselineSpan / width` ratio — fine in modes with a uniform
-      // baseline-to-current scale, but wrong in genome mode where
-      // fixed-budget gaps and 1:1 padding give a piecewise mapping.
-      // `screenToBaselineX` walks the actual piecewise frame, so the
-      // pan stays accurate regardless of where the visible window
-      // straddles gaps or padding.
-      const newSLo = viewport.screenToBaselineX(deltaViewboxPx);
-      const newSHi = viewport.screenToBaselineX(viewport.width + deltaViewboxPx);
-      // Recover the cell-inclusive range endpoints. `bounds()` brackets
-      // baseline with `range[0] - 0.5` / `range[1] + 0.5`, so to put
-      // baseline at `newSLo` on the left edge we need `range[0] - 0.5
-      // = baselineXToRuler(newSLo)` ⇒ `range[0] = ruler + 0.5`. Inverse
-      // on the right edge.
-      const newLo = viewport.baselineXToRuler(newSLo) + 0.5;
-      const newHi = viewport.baselineXToRuler(newSHi) - 0.5;
+      // Pan = uniform baseline shift. Both endpoints of the visible
+      // baseline window slide by the SAME baseline-x delta, so the
+      // visible baseline span (= zoom) is preserved across the gesture
+      // — no zoom drift when the visible window straddles a fixed-
+      // budget gap or padding.
+      //
+      // The conversion factor is `exonScale` (the live screen width of
+      // 1 baseline-px of exon). One viewbox-px of drag then moves exon
+      // content by exactly one px on screen, since exon content is
+      // what scales linearly with baseline. Fixed-budget gap content
+      // (intronic decorations) renders at 1:1 baseline-to-screen, so
+      // a baseline-shift of `1/exonScale` moves gap content by
+      // `1/exonScale` of a screen px — slightly slower than the
+      // cursor. That's the intentional consequence of the fixed-
+      // budget design (the gap is a constant visual landmark, not a
+      // pannable coordinate region).
+      const [lo, hi] = viewport.range;
+      const sLo = viewport.cdsToBaselineX(lo - 0.5);
+      const sHi = viewport.cdsToBaselineX(hi + 0.5);
+      if (!(sHi > sLo)) return;
+      const exonScale = viewport.exonScale();
+      if (!(exonScale > 0)) return;
+      const baselineDelta = deltaViewboxPx / exonScale;
+      const newLo = viewport.baselineXToRuler(sLo + baselineDelta) + 0.5;
+      const newHi = viewport.baselineXToRuler(sHi + baselineDelta) - 0.5;
       applyRange([newLo, newHi], reason);
     },
     [viewport, applyRange],

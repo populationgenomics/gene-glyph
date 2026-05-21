@@ -377,6 +377,17 @@ export interface Viewport {
    *  the *actually-visible* baseline range, including past-the-gene-end
    *  padding zones. Extrapolates linearly past the last exon. */
   screenToBaselineX(currentX: number): number;
+  /** Live scale factor applied to exon-body baseline pixels — the screen
+   *  width that 1 baseline-px of exon takes at the current zoom. In modes
+   *  without fixed-budget elements this is `width / visibleBaselineSpan`.
+   *  In genome mode it diverges from the screen-space `zoomFactor()` when
+   *  the visible window contains any fixed-budget gap budget: gap pixels
+   *  stay at their fixed budget, so exon content scales up to consume the
+   *  remaining screen pixels. Pan / wheel-pan use this to make 1 viewbox-
+   *  px of drag move exon content by exactly 1 px on screen (gap content
+   *  shifts at 1:1 baseline = `1/exonScale` of a screen-px, lagging
+   *  slightly — the intentional consequence of the fixed-budget design). */
+  exonScale(): number;
   /** Viewport-independent geometry at fit-gene zoom. Tracks render against
    *  this frame; the wrapping exon/intron `<g>` elements carry the live
    *  translate + scale derived from the current range. */

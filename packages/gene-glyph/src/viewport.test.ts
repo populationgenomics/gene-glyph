@@ -298,43 +298,42 @@ describe('ViewportController — mode transitions', () => {
   });
 });
 
-describe('ViewportController — pixel-for-pixel pan via screenToBaselineX', () => {
+describe('ViewportController — pan preserves zoom; exon content tracks cursor', () => {
   /** Mirrors `useViewportInteractions.panByPx` (which lives in a React
-   *  hook and so is awkward to drive without a host). The math is the
-   *  contract under test: panning by `deltaViewboxPx` in current-x space
-   *  must move every feature by exactly `-deltaViewboxPx` screen px. */
+   *  hook and so is awkward to drive without a host). Baseline-shift
+   *  semantics: both endpoints of the visible baseline window shift by
+   *  the same delta, so the visible span (= zoom) is invariant. The
+   *  shift is sized via `exonScale` so exon content moves at exactly
+   *  the cursor speed. */
   function panByPx(vp: ViewportController, deltaViewboxPx: number): void {
-    const newSLo = vp.screenToBaselineX(deltaViewboxPx);
-    const newSHi = vp.screenToBaselineX(vp.width + deltaViewboxPx);
-    const newLo = vp.baselineXToRuler(newSLo) + 0.5;
-    const newHi = vp.baselineXToRuler(newSHi) - 0.5;
+    const [lo, hi] = vp.range;
+    const sLo = vp.cdsToBaselineX(lo - 0.5);
+    const sHi = vp.cdsToBaselineX(hi + 0.5);
+    const baselineDelta = deltaViewboxPx / vp.exonScale();
+    const newLo = vp.baselineXToRuler(sLo + baselineDelta) + 0.5;
+    const newHi = vp.baselineXToRuler(sHi + baselineDelta) - 0.5;
     vp.setRange([newLo, newHi]);
   }
 
-  it('genome mode: a feature\'s screen position shifts by exactly -delta across a fixed-budget gap', () => {
+  it('genome mode: exon content shifts by exactly -delta across a fixed-budget gap', () => {
     // Visible window straddles a fixed-budget intron gap so the
-    // piecewise baseline-to-current mapping is exercised. Pre-fix
-    // `panByPx` used an average `baselineSpan / width` ratio that
-    // over-shot the gene's position whenever the gap was inside the
-    // window. The new pan goes through `screenToBaselineX` so the
-    // promise holds exactly.
+    // piecewise baseline-to-screen mapping is exercised. The baseline
+    // shift keeps the gap content in place (it's fixed-budget) while
+    // the exon content slides past the gap at cursor speed.
     const vp = fitGene('genome');
     vp.setRange([50, 150]); // straddles the cdsEnd=100 / cdsStart=101 gap
-    const featureCpos = 130;
-    const featureBaseline = vp.cdsToBaselineX(featureCpos);
+    const featureCpos = 130; // inside exon 2 (downstream of the gap)
     const before = vp.cdsToScreen(featureCpos, 0)!;
     const delta = 50; // pretend the user dragged the gene 50 px left
     panByPx(vp, delta);
     const after = vp.cdsToScreen(featureCpos, 0)!;
-    // Sanity: the feature stayed in the visible window and the
-    // baseline anchor didn't move.
-    expect(vp.cdsToBaselineX(featureCpos)).toBeCloseTo(featureBaseline, 5);
-    // Pixel-for-pixel: screen displacement = -delta (a positive delta
-    // shifts the visible window right, sliding the feature left).
-    expect(after - before).toBeCloseTo(-delta, 4);
+    expect(after - before).toBeCloseTo(-delta, 1);
   });
 
   it('preserves the visible baseline span across the gesture (no zoom drift)', () => {
+    // The whole point of baseline-shift pan: ZOOM cannot change. Both
+    // endpoints shift by the same baseline-x delta, so the visible
+    // baseline span is invariant.
     const vp = fitGene('genome');
     vp.setRange([50, 150]);
     const beforeSpan =

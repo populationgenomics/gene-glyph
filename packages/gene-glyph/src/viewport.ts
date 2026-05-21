@@ -753,6 +753,13 @@ export class ViewportController implements Viewport {
     return this.frame().currentToBaseline(currentX) ?? 0;
   }
 
+  /** Public view of the live exon-content scale — the screen width that 1
+   *  baseline-px of exon takes at the current zoom. See the docstring on
+   *  `Viewport.exonScale` for the contract. */
+  exonScale(): number {
+    return this.frame().exonLayout().exonScale;
+  }
+
   /**
    * Inverse of {@link toScreen}: project a current screen-x back into a
    * {@link Position} of the requested coord system. Returns `null` when
