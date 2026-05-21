@@ -187,6 +187,15 @@ export interface SegmentLayout {
    *  `exonLayout.exonScale`. Renamed because intron-collapsed segments
    *  also use it in transcript / protein modes. */
   readonly linearScale: number;
+  /** Scale factor applied to the padding region outside the segment
+   *  array (before `segments[0].xStart` / after the last segment's
+   *  xEnd). In modes with fixed-budget segments (genome) this is 1:1
+   *  so padding doesn't double-count with the fixed gap budget — and
+   *  the figure's right edge stays anchored to `width` even when
+   *  panned into the padding. In modes without fixed-budget segments
+   *  (transcript / protein) it equals `linearScale` so padding scales
+   *  with the exons. */
+  readonly paddingScale: number;
   /** Per-segment screen-x of the segment's left edge. Indexed by
    *  {@link Segment.index}. */
   readonly segmentCurrentX: readonly number[];
@@ -220,7 +229,9 @@ export function computeSegmentLayout(
   width: number,
 ): SegmentLayout {
   const out = new Array<number>(segments.length).fill(0);
-  if (segments.length === 0) return { linearScale: 1, segmentCurrentX: out };
+  if (segments.length === 0) {
+    return { linearScale: 1, paddingScale: 1, segmentCurrentX: out };
+  }
 
   // Internal sub-region bounds for a fixed-budget intron segment. The
   // bulk sits in the middle, flanked by donor (upstream) and acceptor
@@ -243,14 +254,27 @@ export function computeSegmentLayout(
     const hi = Math.min(bulk.end, S_hi);
     if (hi > lo) visibleFixedBaseline += hi - lo;
   }
+  // Padding zones — visible baseline outside any segment. In `anyFixed`
+  // mode the pivot logic places the padding 1:1 (baseline-px == screen-px)
+  // because mixing scaled padding with fixed-budget bulks produced a
+  // visible drift past the figure right edge. Account for that 1:1 budget
+  // here, otherwise `linearScale` over-shoots and the visible content
+  // extends past `width`.
+  const firstX = segments[0]!.xStart;
+  const lastX = segments[segments.length - 1]!.xEnd;
+  const paddingBaseline = anyFixed
+    ? Math.max(0, firstX - S_lo) + Math.max(0, S_hi - lastX)
+    : 0;
   const visibleScalingBaseline = Math.max(
     1e-9,
-    S_hi - S_lo - visibleFixedBaseline,
+    S_hi - S_lo - visibleFixedBaseline - paddingBaseline,
   );
   const linearScale = Math.max(
     1e-9,
-    (width - visibleFixedBaseline) / visibleScalingBaseline,
+    (width - visibleFixedBaseline - paddingBaseline) / visibleScalingBaseline,
   );
+  // anyFixed → padding is 1:1; otherwise it scales with linearScale.
+  const paddingScale = anyFixed ? 1 : linearScale;
 
   const segmentScreenWidth = (seg: Segment): number => {
     if (seg.scaleRule === 'linear') return seg.width * linearScale;
@@ -277,13 +301,14 @@ export function computeSegmentLayout(
     // S_lo upstream of the pivot — this only happens when S_lo is in
     // the padding zone before segment 0 (every gap is a real segment,
     // so a gap-position S_lo lands inside *that* gap segment, not
-    // upstream of the first exon). Padding extrapolation rule matches
-    // today's: scale with linearScale when no fixed-budget segments
-    // exist (transcript / protein), unscaled otherwise (cds-with-
-    // introns). The asymmetry is load-bearing for the existing
-    // overview-track window-rect math; Phase 1 preserves it exactly.
+    // upstream of the first exon). Padding extrapolation uses
+    // `paddingScale`: 1:1 in modes with fixed-budget segments (the
+    // visible padding baseline is already accounted for in the
+    // `width - paddingBaseline` numerator of `linearScale`, so
+    // applying `linearScale` here would double-count), and
+    // `linearScale` in modes without fixed-budget segments.
     const baselineUpstream = pivot.xStart - S_lo;
-    pivotCurrentX = anyFixed ? baselineUpstream : baselineUpstream * linearScale;
+    pivotCurrentX = baselineUpstream * paddingScale;
   }
   out[pivot.index] = pivotCurrentX;
 
@@ -298,7 +323,7 @@ export function computeSegmentLayout(
     out[i] = cursor;
   }
 
-  return { linearScale, segmentCurrentX: out };
+  return { linearScale, paddingScale, segmentCurrentX: out };
 }
 
 /** Find the segment containing `baselineX`, or the first segment whose

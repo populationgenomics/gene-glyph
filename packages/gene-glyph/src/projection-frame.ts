@@ -117,7 +117,11 @@ export class ProjectionFrame {
   /** Baseline screen-x → live screen-x. Each segment's screen width
    *  follows its {@link Segment.scaleRule}: `linear` segments scale with
    *  {@link SegmentLayout.linearScale}; `fixed-budget` segments stay at
-   *  their baseline pixel width. */
+   *  their baseline pixel width. The padding zone before / after the
+   *  segment array uses {@link SegmentLayout.paddingScale} — 1:1 when
+   *  any segment is fixed-budget (so the figure's right edge stays
+   *  anchored to `width`), otherwise the same `linearScale` as the
+   *  exons. */
   baselineToCurrent(baselineX: number): number | null {
     const segments = this._segments;
     if (segments.length === 0) return null;
@@ -125,11 +129,11 @@ export class ProjectionFrame {
     if (S_hi - S_lo <= 0) return null;
     const layout = this.segmentLayout();
     const scale = layout.linearScale;
+    const padScale = layout.paddingScale;
 
     const first = segments[0]!;
     if (baselineX < first.xStart) {
-      // Padding before segment 0 — extrapolate using `linearScale`.
-      return layout.segmentCurrentX[0]! - (first.xStart - baselineX) * scale;
+      return layout.segmentCurrentX[0]! - (first.xStart - baselineX) * padScale;
     }
     for (const seg of segments) {
       if (baselineX <= seg.xEnd) {
@@ -139,7 +143,7 @@ export class ProjectionFrame {
     const last = segments[segments.length - 1]!;
     const lastCurrent = layout.segmentCurrentX[last.index]!;
     const lastWidth = segmentScreenWidth(last, scale);
-    return lastCurrent + lastWidth + (baselineX - last.xEnd) * scale;
+    return lastCurrent + lastWidth + (baselineX - last.xEnd) * padScale;
   }
 
   /** Inverse of {@link baselineToCurrent}: live screen-x → baseline-x. */
@@ -150,12 +154,13 @@ export class ProjectionFrame {
     if (S_hi - S_lo <= 0) return null;
     const layout = this.segmentLayout();
     const scale = layout.linearScale;
-    if (scale <= 0) return null;
+    const padScale = layout.paddingScale;
+    if (scale <= 0 || padScale <= 0) return null;
 
     const first = segments[0]!;
     const firstCurrent = layout.segmentCurrentX[first.index]!;
     if (currentX < firstCurrent) {
-      return first.xStart - (firstCurrent - currentX) / scale;
+      return first.xStart - (firstCurrent - currentX) / padScale;
     }
     for (const seg of segments) {
       const cur = layout.segmentCurrentX[seg.index]!;
@@ -170,7 +175,7 @@ export class ProjectionFrame {
     const lastCurrent = layout.segmentCurrentX[last.index]!;
     const lastWidth = segmentScreenWidth(last, scale);
     const lastEnd = lastCurrent + lastWidth;
-    return last.xEnd + (currentX - lastEnd) / scale;
+    return last.xEnd + (currentX - lastEnd) / padScale;
   }
 
   /** Live screen-space zoom factor: `width / visibleBaselineSpan`. Distinct

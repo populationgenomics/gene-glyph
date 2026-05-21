@@ -190,6 +190,26 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
     });
     expect(zoomed.zoomFactor()).toBeGreaterThan(1.5);
   });
+
+  it('S_hi maps to current-x = width even when visible window includes 5\' padding (genome)', () => {
+    // Pan into the padding zone before the gene: S_lo lands negative.
+    // Pre-fix, the layout treated the padding region as if it scaled with
+    // linearScale (the formula divided by `S_hi - S_lo - visibleFixed`,
+    // ignoring that padding is rendered 1:1 in anyFixed mode). The total
+    // screen width covered then over-shot `width` by `padding * (1 -
+    // scale)`. The new layout subtracts padding-baseline from both sides
+    // and `baselineToCurrent` uses `paddingScale` (= 1 here) for the
+    // padding extrapolation.
+    const { baseline, exons } = withIntronsBaseline();
+    // range = [-10, 100] (cell-inclusive). S_lo = rulerToBaselineX(-10.5)
+    // = -11 (the bp 1-cell-edge extrapolation crosses 0.5 of a bp); S_hi
+    // = rulerToBaselineX(100.5) = 100 (bp 100's right cell edge).
+    const frame = new ProjectionFrame({
+      baseline, range: [-10, 100], width: 210, mode: 'genome', exons,
+    });
+    expect(frame.baselineToCurrent(-11)).toBeCloseTo(0, 4);
+    expect(frame.baselineToCurrent(100)).toBeCloseTo(210, 4);
+  });
 });
 
 describe('ProjectionFrame — protein mode', () => {
