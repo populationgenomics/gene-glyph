@@ -23,6 +23,7 @@ import { createSvgPainter } from './painter/svg-painter.js';
 import { exonTrack } from './tracks/exon-track.js';
 import {
   isTrackGroup,
+  type BaselineGeometry,
   type CollapsedRegion,
   type HiddenFeatureBucket,
   type InteractionMode,
@@ -237,6 +238,18 @@ export interface ViewportInfo {
    *  protein). Stable until the mode changes; chrome uses it as the
    *  thumbnail's coordinate span. */
   naturalRange: readonly [number, number];
+  /** Canonical viewport state in baseline (display) coords: `[S_lo, S_hi]`
+   *  in fit-gene baseline pixels. Surfaced here so chrome (minimaps,
+   *  overview tracks) can compute the bounds rectangle without going
+   *  through the ruler — which would snap to the gap boundary whenever
+   *  an endpoint of the visible window crossed a fixed-budget gap. */
+  baselineWindow: readonly [number, number];
+  /** Figure's baseline geometry. Chrome that maintains a separately-
+   *  scaled baseline (e.g., `DefaultMinimap` at its own width) uses this
+   *  to translate figure-baseline positions into its own baseline via a
+   *  segment-by-segment proportional walk — instead of going through the
+   *  ruler, which snaps inside fixed-budget gaps. */
+  baselineGeometry: BaselineGeometry;
   /** The transcript currently rendered by the viewer. */
   transcript: Transcript;
 }
@@ -789,6 +802,8 @@ function GeneGlyphInner(
       zoom,
       layout: layout.items,
       naturalRange: natural,
+      baselineWindow: viewport.baselineWindow(),
+      baselineGeometry: viewport.baselineGeometry(),
       transcript,
     };
   }, [viewport, layout, transcript]);

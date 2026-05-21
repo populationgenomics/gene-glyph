@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DefaultMinimap,
   GeneGlyph,
@@ -7,8 +7,54 @@ import {
   pfamTrack,
   variantTrack,
 } from '@populationgenomics/gene-glyph';
-import type { GeneGlyphRef, Track } from '@populationgenomics/gene-glyph';
+import type {
+  GeneGlyphRef,
+  Track,
+  ViewportInfo,
+} from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.js';
+
+/** Live readout of the viewport's canonical state. Subscribes to the
+ *  viewer via the imperative ref and re-renders on every committed
+ *  change. Useful for sanity-checking what the underlying state is
+ *  doing — especially "is the baseline window moving smoothly or
+ *  snapping?" — without having to read the figure pixels. */
+function ViewportDebug({ refForward }: { refForward: React.RefObject<GeneGlyphRef | null> }) {
+  const [info, setInfo] = useState<ViewportInfo | null>(null);
+  useEffect(() => {
+    const v = refForward.current;
+    if (!v) return;
+    setInfo(v.getViewportInfo());
+    return v.subscribe(() => {
+      const live = refForward.current;
+      if (live) setInfo(live.getViewportInfo());
+    });
+  }, [refForward]);
+  if (!info) return null;
+  const fmt = (n: number) => n.toFixed(2);
+  const fmtRange = (r: readonly [number, number]) => `[${fmt(r[0])}, ${fmt(r[1])}]`;
+  const baselineSpan = info.baselineWindow[1] - info.baselineWindow[0];
+  return (
+    <pre
+      style={{
+        background: '#0f172a',
+        color: '#e2e8f0',
+        padding: '8px 12px',
+        borderRadius: 4,
+        fontSize: 11,
+        lineHeight: 1.5,
+        margin: '4px 0 12px',
+        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+      }}
+    >
+      mode={info.mode}  zoom={fmt(info.zoom)}{'\n'}
+      range         = {fmtRange(info.range)}  (ruler, derived){'\n'}
+      naturalRange  = {fmtRange(info.naturalRange)}{'\n'}
+      baselineWindow= {fmtRange(info.baselineWindow)}  span={fmt(baselineSpan)} (display){'\n'}
+      figureBaseline= [0, {fmt(info.baselineGeometry.totalWidth)}]  pxPerBp={fmt(info.baselineGeometry.pxPerBp)}  gapPx={fmt(info.baselineGeometry.gapPx)}
+    </pre>
+  );
+}
 
 /**
  * Slice 26 — overview track + minimap, side by side.
@@ -43,13 +89,16 @@ function OverviewSubFigure() {
     [upstream],
   );
   return (
-    <GeneGlyph
-      ref={ref}
-      transcript={TP53_TRANSCRIPT}
-      protein={TP53_PROTEIN}
-      tracks={tracks}
-      trackHeightBudget={260}
-    />
+    <>
+      <GeneGlyph
+        ref={ref}
+        transcript={TP53_TRANSCRIPT}
+        protein={TP53_PROTEIN}
+        tracks={tracks}
+        trackHeightBudget={260}
+      />
+      <ViewportDebug refForward={ref} />
+    </>
   );
 }
 
@@ -93,6 +142,7 @@ export function OverviewTrackDemoScenario() {
             <DefaultMinimap viewerRef={minimapRef} width={520} height={28} />
           </GeneGlyph.Footer>
         </GeneGlyph>
+        <ViewportDebug refForward={minimapRef} />
       </div>
     </section>
   );

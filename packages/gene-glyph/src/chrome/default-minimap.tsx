@@ -98,13 +98,57 @@ export function DefaultMinimap({
   );
 
   const windowRect = useMemo(() => {
-    if (!info || !mini) return null;
-    const xa = rulerToX(info.range[0]);
-    const xb = rulerToX(info.range[1]);
+    if (!info || !mini || !baseline) return null;
+    // Project the figure's canonical baseline window directly into mini
+    // baseline coords via a per-segment proportional walk. Going through
+    // ruler would snap inside fixed-budget gaps (where the synthetic
+    // ruler has zero span) and make the window rectangle stutter
+    // whenever the figure pans across a collapsed intron.
+    const figureGeom = info.baselineGeometry;
+    const figureToMini = (figureP: number): number => {
+      const figureExons = figureGeom.exons;
+      const figureGaps = figureGeom.gaps;
+      const miniExons = baseline.exons;
+      const miniGaps = baseline.gaps;
+      if (figureExons.length === 0 || miniExons.length === 0) return 0;
+      const firstFigure = figureExons[0]!;
+      const firstMini = miniExons[0]!;
+      if (figureP < firstFigure.xStart) {
+        // Padding before the gene: pxPerBp ratio determines the scaling.
+        const ratio =
+          figureGeom.pxPerBp > 0
+            ? baseline.pxPerBp / figureGeom.pxPerBp
+            : 0;
+        return firstMini.xStart - (firstFigure.xStart - figureP) * ratio;
+      }
+      for (let i = 0; i < figureExons.length; i++) {
+        const fe = figureExons[i]!;
+        if (figureP <= fe.xEnd) {
+          const me = miniExons[i] ?? miniExons[miniExons.length - 1]!;
+          const t = (figureP - fe.xStart) / Math.max(1e-9, fe.width);
+          return me.xStart + t * me.width;
+        }
+        if (i < figureGaps.length) {
+          const fg = figureGaps[i]!;
+          if (figureP <= fg.xEnd) {
+            const mg = miniGaps[i] ?? miniGaps[miniGaps.length - 1]!;
+            const t = (figureP - fg.xStart) / Math.max(1e-9, fg.width);
+            return mg.xStart + t * mg.width;
+          }
+        }
+      }
+      const lastFigure = figureExons[figureExons.length - 1]!;
+      const lastMini = miniExons[miniExons.length - 1]!;
+      const ratio =
+        figureGeom.pxPerBp > 0 ? baseline.pxPerBp / figureGeom.pxPerBp : 0;
+      return lastMini.xEnd + (figureP - lastFigure.xEnd) * ratio;
+    };
+    const xa = figureToMini(info.baselineWindow[0]);
+    const xb = figureToMini(info.baselineWindow[1]);
     const x = Math.min(xa, xb);
     const w = Math.max(2, Math.abs(xb - xa));
     return { x, w };
-  }, [info, mini, rulerToX]);
+  }, [info, mini, baseline]);
 
   const clamp = useCallback(
     (range: readonly [number, number]): [number, number] => {

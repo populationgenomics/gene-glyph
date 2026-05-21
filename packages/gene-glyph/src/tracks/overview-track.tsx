@@ -310,25 +310,47 @@ function OverviewTrackImpl({
   const cdsToMinimapX = (cPos: number): number => minimapFrame.rulerToBaselineX(cPos);
   const minimapXToCds = (x: number): number => minimapFrame.baselineXToRuler(x);
 
-  // Bounds rectangle: drive the window endpoints off the figure's
-  // *actually-visible* baseline range (screenToBaselineX(0..width))
-  // rather than `liveRange[0..1]`. The figure's publish formula applies
-  // a "gaps don't scale" correction proportional to all preceding gaps
-  // (not just those within the visible range), so `cdsToBaselineX(
-  // range[0])` is not where screen-x = 0 actually sits when the user
-  // has panned away from the gene's 5' end. Going through
-  // `screenToBaselineX` + `baselineXToRuler` lands the window exactly
-  // where the figure puts its leftmost / rightmost rendered content,
-  // and mapping those CDS positions through the scaled minimap frame
-  // keeps the alignment correct visually.
-  const figureLeftCds = viewport.baselineXToRuler(
-    viewport.screenToBaselineX(0),
-  );
-  const figureRightCds = viewport.baselineXToRuler(
-    viewport.screenToBaselineX(viewport.width),
-  );
-  const xLoRaw = cdsToMinimapX(figureLeftCds);
-  const xHiRaw = cdsToMinimapX(figureRightCds);
+  // Bounds rectangle: project the figure's canonical baseline window
+  // directly through the minimap's scaled-segment geometry — no ruler
+  // round-trip. Inside a fixed-budget gap the synthetic ruler has zero
+  // span, so the old `baselineXToRuler ∘ screenToBaselineX` route
+  // collapsed any S_lo / S_hi inside a gap to the gap's boundary
+  // ruler and made the bounds rectangle jump across the gap instead of
+  // moving smoothly. Direct baseline-to-baseline mapping preserves
+  // smooth motion across gaps.
+  const figureToMinimap = (figureP: number): number => {
+    const figureExons = figureBaseGeom.exons;
+    const figureGaps = figureBaseGeom.gaps;
+    if (figureExons.length === 0) return 0;
+    const firstFigureExon = figureExons[0]!;
+    if (figureP < firstFigureExon.xStart) {
+      // Padding before the gene: 1:1 in figure baseline; compresses by
+      // `compress` into minimap baseline.
+      return scaledExons[0]!.xStart - (firstFigureExon.xStart - figureP) * compress;
+    }
+    for (let i = 0; i < figureExons.length; i++) {
+      const fe = figureExons[i]!;
+      if (figureP <= fe.xEnd) {
+        const t = (figureP - fe.xStart) / Math.max(1e-9, fe.width);
+        const se = scaledExons[i]!;
+        return se.xStart + t * se.width;
+      }
+      if (i < figureGaps.length) {
+        const fg = figureGaps[i]!;
+        if (figureP <= fg.xEnd) {
+          const t = (figureP - fg.xStart) / Math.max(1e-9, fg.width);
+          const sg = scaledGaps[i]!;
+          return sg.xStart + t * sg.width;
+        }
+      }
+    }
+    const lastFigureExon = figureExons[figureExons.length - 1]!;
+    const lastScaledExon = scaledExons[scaledExons.length - 1]!;
+    return lastScaledExon.xEnd + (figureP - lastFigureExon.xEnd) * compress;
+  };
+  const [figureSLo, figureSHi] = viewport.baselineWindow();
+  const xLoRaw = figureToMinimap(figureSLo);
+  const xHiRaw = figureToMinimap(figureSHi);
   const xLo = Math.max(0, Math.min(width, Math.min(xLoRaw, xHiRaw)));
   const xHi = Math.max(0, Math.min(width, Math.max(xLoRaw, xHiRaw)));
   const windowX = xLo;
