@@ -119,22 +119,32 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   );
 
   const panByPx = useCallback(
-    (deltaViewboxPx: number, reason: ViewportChangeReason) => {
+    (
+      deltaViewboxPx: number,
+      cursorViewboxX: number,
+      reason: ViewportChangeReason,
+    ) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       if (viewport.width <= 0) return;
       // Pan = uniform baseline shift, applied directly to the canonical
       // baseline window. Both endpoints slide by the same delta, so the
       // visible span (= zoom) is invariant by construction — no zoom
       // drift across fixed-budget gaps and no information lost through
-      // the ruler round-trip. Sized via `exonScale` so 1 viewbox-px of
-      // drag moves exon content by exactly 1 px on screen; fixed-budget
-      // gap content sits at 1:1 baseline-to-screen and so lags slightly
-      // (the intentional consequence of the fixed-budget design).
+      // the ruler round-trip.
+      //
+      // The shift is sized via the LOCAL screen-to-baseline scale at the
+      // cursor position: 1 viewbox-px of drag → 1 / localScale baseline-
+      // px shift. So whatever's directly under the cursor — exon
+      // content, intronic flank, fixed-budget gap, padding — stays under
+      // the cursor as the user drags. Content elsewhere on screen moves
+      // at the rate dictated by ITS local scale (exon content moves at
+      // exonScale; fixed-budget gap content moves 1:1), which is the
+      // intentional consequence of the piecewise mapping.
       const [sLo, sHi] = viewport.baselineWindow();
       if (!(sHi > sLo)) return;
-      const exonScale = viewport.exonScale();
-      if (!(exonScale > 0)) return;
-      const baselineDelta = deltaViewboxPx / exonScale;
+      const localScale = viewport.localScreenScaleAt(cursorViewboxX);
+      if (!(localScale > 0)) return;
+      const baselineDelta = deltaViewboxPx / localScale;
       const next = viewport.clampBaselineWindow(
         [sLo + baselineDelta, sHi + baselineDelta],
         clampOpts,
@@ -238,7 +248,14 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const atRightLimit = dxCss > 0 && hi >= pHi - 1e-6;
       if (atLeftLimit || atRightLimit) return;
       ev.preventDefault();
-      panByPx(cssDxToViewbox(dxCss), 'wheel');
+      // Anchor the wheel pan at the cursor position so trackpad scrolling
+      // moves the gene under the pointer at the cursor's local scale.
+      const wheelRect = el.getBoundingClientRect();
+      const cursorViewboxX =
+        wheelRect.width > 0
+          ? ((ev.clientX - wheelRect.left) / wheelRect.width) * viewport.width
+          : viewport.width / 2;
+      panByPx(cssDxToViewbox(dxCss), cursorViewboxX, 'wheel');
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -296,8 +313,16 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         drag.lastClientX = ev.clientX;
         // Drag-to-pan moves in the opposite direction of the cursor: as the
         // user pulls right, the gene under their finger should follow, which
-        // means the range slides left.
-        panByPx(-cssDxToViewbox(dxCss), 'drag');
+        // means the range slides left. Anchor at the cursor's CURRENT
+        // viewbox position so the point directly under the pointer stays
+        // there regardless of whether the cursor sits in an exon, gap,
+        // or padding region.
+        const dragRect = svgRef.current?.getBoundingClientRect();
+        const cursorViewboxX =
+          dragRect && dragRect.width > 0
+            ? ((ev.clientX - dragRect.left) / dragRect.width) * viewport.width
+            : viewport.width / 2;
+        panByPx(-cssDxToViewbox(dxCss), cursorViewboxX, 'drag');
       }
     };
     const onUp = (ev: PointerEvent) => {

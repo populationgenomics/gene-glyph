@@ -298,36 +298,44 @@ describe('ViewportController — mode transitions', () => {
   });
 });
 
-describe('ViewportController — pan preserves zoom; exon content tracks cursor', () => {
+describe('ViewportController — pan preserves zoom; point under cursor stays put', () => {
   /** Mirrors `useViewportInteractions.panByPx` (which lives in a React
-   *  hook and so is awkward to drive without a host). Baseline-shift
-   *  semantics: both endpoints of the visible baseline window shift by
-   *  the same delta, so the visible span (= zoom) is invariant. The
-   *  shift is sized via `exonScale` so exon content moves at exactly
-   *  the cursor speed. */
-  function panByPx(vp: ViewportController, deltaViewboxPx: number): void {
-    const [lo, hi] = vp.range;
-    const sLo = vp.cdsToBaselineX(lo - 0.5);
-    const sHi = vp.cdsToBaselineX(hi + 0.5);
-    const baselineDelta = deltaViewboxPx / vp.exonScale();
-    const newLo = vp.baselineXToRuler(sLo + baselineDelta) + 0.5;
-    const newHi = vp.baselineXToRuler(sHi + baselineDelta) - 0.5;
-    vp.setRange([newLo, newHi]);
+   *  hook). The shift is sized via the LOCAL screen-to-baseline scale
+   *  at the cursor, so the baseline directly under the cursor moves by
+   *  exactly `dxViewbox` screen px — whatever the user "grabs" stays
+   *  under their pointer regardless of whether the cursor sits in an
+   *  exon, a gap, or padding. */
+  function panByPx(
+    vp: ViewportController,
+    deltaViewboxPx: number,
+    cursorViewboxX: number,
+  ): void {
+    const [sLo, sHi] = vp.baselineWindow();
+    const localScale = vp.localScreenScaleAt(cursorViewboxX);
+    const baselineDelta = deltaViewboxPx / localScale;
+    vp.setBaselineWindow([sLo + baselineDelta, sHi + baselineDelta]);
   }
 
-  it('genome mode: exon content shifts by exactly -delta across a fixed-budget gap', () => {
-    // Visible window straddles a fixed-budget intron gap so the
-    // piecewise baseline-to-screen mapping is exercised. The baseline
-    // shift keeps the gap content in place (it's fixed-budget) while
-    // the exon content slides past the gap at cursor speed.
+  it('genome mode: the baseline directly under the cursor shifts by exactly -delta', () => {
+    // Visible window straddles a fixed-budget intron gap. With cursor
+    // in the exon region, exon content tracks the cursor exactly.
     const vp = fitGene('genome');
     vp.setRange([50, 150]); // straddles the cdsEnd=100 / cdsStart=101 gap
-    const featureCpos = 130; // inside exon 2 (downstream of the gap)
-    const before = vp.cdsToScreen(featureCpos, 0)!;
+    const cursorViewboxX = 200; // somewhere in exon 1 (downstream of gap)
+    const baselineUnderCursorBefore = vp.screenToBaselineX(cursorViewboxX);
     const delta = 50; // pretend the user dragged the gene 50 px left
-    panByPx(vp, delta);
-    const after = vp.cdsToScreen(featureCpos, 0)!;
-    expect(after - before).toBeCloseTo(-delta, 1);
+    panByPx(vp, delta, cursorViewboxX);
+    // After the shift, the same baseline point should sit `delta` pixels
+    // to the LEFT of where the cursor was — because we shifted the
+    // visible window right by `delta` baseline-px (gene slides left).
+    const baselineAtCursorNow = vp.screenToBaselineX(cursorViewboxX);
+    // The new baseline at the same cursor screen-x = (old baseline + delta
+    // baseline equivalent) = old baseline + delta / localScale.
+    // Equivalent assertion: the OLD baseline-under-cursor moved by -delta
+    // viewbox-px on screen.
+    const newScreenOfOldBaseline = vp.screenToBaselineX(cursorViewboxX - delta);
+    expect(newScreenOfOldBaseline).toBeCloseTo(baselineUnderCursorBefore, 1);
+    expect(baselineAtCursorNow).not.toBeCloseTo(baselineUnderCursorBefore, 5);
   });
 
   it('preserves the visible baseline span across the gesture (no zoom drift)', () => {
@@ -336,9 +344,10 @@ describe('ViewportController — pan preserves zoom; exon content tracks cursor'
     // baseline span is invariant.
     const vp = fitGene('genome');
     vp.setRange([50, 150]);
+    const cursorViewboxX = 360; // middle of the figure
     const beforeSpan =
       vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
-    panByPx(vp, 50);
+    panByPx(vp, 50, cursorViewboxX);
     const afterSpan =
       vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
     expect(afterSpan).toBeCloseTo(beforeSpan, 4);

@@ -398,6 +398,15 @@ export interface Viewport {
    *  shifts at 1:1 baseline = `1/exonScale` of a screen-px, lagging
    *  slightly — the intentional consequence of the fixed-budget design). */
   exonScale(): number;
+  /** Local screen-to-baseline scale at a given current-x — the screen
+   *  width that 1 baseline-px takes at this *specific* point on the
+   *  figure. In modes with a uniform mapping this equals `exonScale()`
+   *  everywhere; in `genome` mode it returns the exon scale inside
+   *  exon segments, 1 inside a fixed-budget gap bulk, and the padding
+   *  scale in the 5'/3' padding zone. Pan uses this to make a Δviewbox
+   *  drag move the baseline UNDER THE CURSOR by exactly Δviewbox
+   *  pixels — so whatever the user grabs stays under their pointer. */
+  localScreenScaleAt(currentX: number): number;
   /** Viewport-independent geometry at fit-gene zoom. Tracks render against
    *  this frame; the wrapping exon/intron `<g>` elements carry the live
    *  translate + scale derived from the current range. */

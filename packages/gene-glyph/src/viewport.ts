@@ -894,6 +894,24 @@ export class ViewportController implements Viewport {
     return this.frame().exonLayout().exonScale;
   }
 
+  /** Numerical derivative of `currentToBaseline` at `currentX` — gives the
+   *  local screen-px-per-baseline-px scale at THIS specific screen
+   *  position. Exon segments report `exonScale`; fixed-budget gap bulks
+   *  report 1; padding reports the layout's `paddingScale` (which is 1 in
+   *  `anyFixed` mode, `exonScale` otherwise). Pan uses this so a drag of
+   *  Δviewbox px shifts the baseline UNDER THE CURSOR by exactly that
+   *  many screen pixels — the user's anchor doesn't drift. */
+  localScreenScaleAt(currentX: number): number {
+    const eps = 0.5;
+    const frame = this.frame();
+    const b0 = frame.currentToBaseline(currentX);
+    const b1 = frame.currentToBaseline(currentX + eps);
+    if (b0 === null || b1 === null) return this.exonScale();
+    const delta = b1 - b0;
+    if (!Number.isFinite(delta) || delta === 0) return this.exonScale();
+    return eps / delta;
+  }
+
   /**
    * Inverse of {@link toScreen}: project a current screen-x back into a
    * {@link Position} of the requested coord system. Returns `null` when
