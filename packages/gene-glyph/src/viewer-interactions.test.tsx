@@ -225,6 +225,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       const expectedShift = startSpan * (-dxCss / 1000);
       expect(Math.abs(observedShift - expectedShift)).toBeLessThan(startSpan * 0.25);
     });
+
   });
 
   describe('brush selection', () => {

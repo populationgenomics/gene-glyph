@@ -298,6 +298,54 @@ describe('ViewportController — mode transitions', () => {
   });
 });
 
+describe('ViewportController — pixel-for-pixel pan via screenToBaselineX', () => {
+  /** Mirrors `useViewportInteractions.panByPx` (which lives in a React
+   *  hook and so is awkward to drive without a host). The math is the
+   *  contract under test: panning by `deltaViewboxPx` in current-x space
+   *  must move every feature by exactly `-deltaViewboxPx` screen px. */
+  function panByPx(vp: ViewportController, deltaViewboxPx: number): void {
+    const newSLo = vp.screenToBaselineX(deltaViewboxPx);
+    const newSHi = vp.screenToBaselineX(vp.width + deltaViewboxPx);
+    const newLo = vp.baselineXToRuler(newSLo) + 0.5;
+    const newHi = vp.baselineXToRuler(newSHi) - 0.5;
+    vp.setRange([newLo, newHi]);
+  }
+
+  it('genome mode: a feature\'s screen position shifts by exactly -delta across a fixed-budget gap', () => {
+    // Visible window straddles a fixed-budget intron gap so the
+    // piecewise baseline-to-current mapping is exercised. Pre-fix
+    // `panByPx` used an average `baselineSpan / width` ratio that
+    // over-shot the gene's position whenever the gap was inside the
+    // window. The new pan goes through `screenToBaselineX` so the
+    // promise holds exactly.
+    const vp = fitGene('genome');
+    vp.setRange([50, 150]); // straddles the cdsEnd=100 / cdsStart=101 gap
+    const featureCpos = 130;
+    const featureBaseline = vp.cdsToBaselineX(featureCpos);
+    const before = vp.cdsToScreen(featureCpos, 0)!;
+    const delta = 50; // pretend the user dragged the gene 50 px left
+    panByPx(vp, delta);
+    const after = vp.cdsToScreen(featureCpos, 0)!;
+    // Sanity: the feature stayed in the visible window and the
+    // baseline anchor didn't move.
+    expect(vp.cdsToBaselineX(featureCpos)).toBeCloseTo(featureBaseline, 5);
+    // Pixel-for-pixel: screen displacement = -delta (a positive delta
+    // shifts the visible window right, sliding the feature left).
+    expect(after - before).toBeCloseTo(-delta, 4);
+  });
+
+  it('preserves the visible baseline span across the gesture (no zoom drift)', () => {
+    const vp = fitGene('genome');
+    vp.setRange([50, 150]);
+    const beforeSpan =
+      vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
+    panByPx(vp, 50);
+    const afterSpan =
+      vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
+    expect(afterSpan).toBeCloseTo(beforeSpan, 4);
+  });
+});
+
 describe('ViewportController — CSS variable publication', () => {
   it('publishes --vv-* variables to an attached element on attach() and on state changes', () => {
     const vp = fitGene('transcript');

@@ -121,28 +121,27 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   const panByPx = useCallback(
     (deltaViewboxPx: number, reason: ViewportChangeReason) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
-      const [lo, hi] = viewport.range;
       if (viewport.width <= 0) return;
-      // Pan in baseline screen-x space, not CDS-bp space. The baseline
-      // mapping is non-uniform: inter-exon gaps occupy ~24 px each (per
-      // Slice 10's fixed-gap layout), so a uniform CDS-bp shift would move
-      // the visible content faster when an endpoint sits inside a gap than
-      // when it sits inside an exon, producing a "sticky" pan feel. Shifting
-      // both endpoints by the same baseline-x delta keeps visual motion
-      // uniform regardless of where lo / hi land in the gene.
-      const sLo = viewport.cdsToBaselineX(lo);
-      const sHi = viewport.cdsToBaselineX(hi);
-      // Convert on-screen pixel delta to baseline-x delta. At fit-gene,
-      // baselineSpan ≈ viewport.width and 1 viewBox-px equals 1 baseline-px;
-      // at zoom N×, baselineSpan = viewport.width/N so each on-screen pixel
-      // must shift the baseline window by only 1/N of a baseline-px to keep
-      // visual motion matched to the cursor. Without this, drag/wheel pan
-      // accelerates by the zoom factor — "skating on ice" at deep zoom.
-      const baselineSpan = sHi - sLo;
-      if (!(baselineSpan > 0)) return;
-      const baselineDelta = deltaViewboxPx * (baselineSpan / viewport.width);
-      const newLo = viewport.baselineXToRuler(sLo + baselineDelta);
-      const newHi = viewport.baselineXToRuler(sHi + baselineDelta);
+      // Pan in current-x space so the gesture is pixel-for-pixel: a
+      // feature that was at OLD current-x `f` lands at NEW current-x
+      // `f - deltaViewboxPx` (positive `deltaViewboxPx` shifts the
+      // visible window right, sliding the gene left under the cursor).
+      // Earlier this multiplied `deltaViewboxPx` by an average
+      // `baselineSpan / width` ratio — fine in modes with a uniform
+      // baseline-to-current scale, but wrong in genome mode where
+      // fixed-budget gaps and 1:1 padding give a piecewise mapping.
+      // `screenToBaselineX` walks the actual piecewise frame, so the
+      // pan stays accurate regardless of where the visible window
+      // straddles gaps or padding.
+      const newSLo = viewport.screenToBaselineX(deltaViewboxPx);
+      const newSHi = viewport.screenToBaselineX(viewport.width + deltaViewboxPx);
+      // Recover the cell-inclusive range endpoints. `bounds()` brackets
+      // baseline with `range[0] - 0.5` / `range[1] + 0.5`, so to put
+      // baseline at `newSLo` on the left edge we need `range[0] - 0.5
+      // = baselineXToRuler(newSLo)` ⇒ `range[0] = ruler + 0.5`. Inverse
+      // on the right edge.
+      const newLo = viewport.baselineXToRuler(newSLo) + 0.5;
+      const newHi = viewport.baselineXToRuler(newSHi) - 0.5;
       applyRange([newLo, newHi], reason);
     },
     [viewport, applyRange],
