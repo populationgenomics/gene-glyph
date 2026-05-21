@@ -297,9 +297,12 @@ function OverviewTrackImpl({
   // Reusing `ProjectionFrame` keeps the per-exon walk, gap interpolation,
   // and protein-mode ruler semantics in one place — the live figure and
   // the minimap stay numerically aligned without parallel implementations.
+  // ProjectionFrame's primary state is the baseline window — supply the
+  // full scaled-geometry width so the minimap's mapping covers the whole
+  // gene regardless of where the live figure is parked.
   const minimapFrame = new ProjectionFrame({
     baseline: scaledGeom,
-    range: naturalRange,
+    baselineWindow: [0, scaledGeom.totalWidth],
     width,
     mode: viewport.mode,
     exons: mapper.transcript.exons,

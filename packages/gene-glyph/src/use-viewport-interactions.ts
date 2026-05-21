@@ -122,34 +122,35 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     (deltaViewboxPx: number, reason: ViewportChangeReason) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       if (viewport.width <= 0) return;
-      // Pan = uniform baseline shift. Both endpoints of the visible
-      // baseline window slide by the SAME baseline-x delta, so the
-      // visible baseline span (= zoom) is preserved across the gesture
-      // — no zoom drift when the visible window straddles a fixed-
-      // budget gap or padding.
-      //
-      // The conversion factor is `exonScale` (the live screen width of
-      // 1 baseline-px of exon). One viewbox-px of drag then moves exon
-      // content by exactly one px on screen, since exon content is
-      // what scales linearly with baseline. Fixed-budget gap content
-      // (intronic decorations) renders at 1:1 baseline-to-screen, so
-      // a baseline-shift of `1/exonScale` moves gap content by
-      // `1/exonScale` of a screen px — slightly slower than the
-      // cursor. That's the intentional consequence of the fixed-
-      // budget design (the gap is a constant visual landmark, not a
-      // pannable coordinate region).
-      const [lo, hi] = viewport.range;
-      const sLo = viewport.cdsToBaselineX(lo - 0.5);
-      const sHi = viewport.cdsToBaselineX(hi + 0.5);
+      // Pan = uniform baseline shift, applied directly to the canonical
+      // baseline window. Both endpoints slide by the same delta, so the
+      // visible span (= zoom) is invariant by construction — no zoom
+      // drift across fixed-budget gaps and no information lost through
+      // the ruler round-trip. Sized via `exonScale` so 1 viewbox-px of
+      // drag moves exon content by exactly 1 px on screen; fixed-budget
+      // gap content sits at 1:1 baseline-to-screen and so lags slightly
+      // (the intentional consequence of the fixed-budget design).
+      const [sLo, sHi] = viewport.baselineWindow();
       if (!(sHi > sLo)) return;
       const exonScale = viewport.exonScale();
       if (!(exonScale > 0)) return;
       const baselineDelta = deltaViewboxPx / exonScale;
-      const newLo = viewport.baselineXToRuler(sLo + baselineDelta) + 0.5;
-      const newHi = viewport.baselineXToRuler(sHi + baselineDelta) - 0.5;
-      applyRange([newLo, newHi], reason);
+      const next = viewport.clampBaselineWindow(
+        [sLo + baselineDelta, sHi + baselineDelta],
+        clampOpts,
+      );
+      if (next[0] === sLo && next[1] === sHi) return;
+      // Compute the ruler equivalent BEFORE updating the viewport, so a
+      // controlled host sees the new range even if we don't apply it
+      // locally. Then optionally apply.
+      const newRange: [number, number] = [
+        viewport.baselineXToRuler(next[0]) + 0.5,
+        viewport.baselineXToRuler(next[1]) - 0.5,
+      ];
+      if (!controlled) viewport.setBaselineWindow(next);
+      onChange(newRange, reason);
     },
-    [viewport, applyRange],
+    [viewport, clampOpts, controlled, onChange],
   );
 
   /** Scale a `clientX`-delta in CSS pixels onto viewBox-pixel units. The

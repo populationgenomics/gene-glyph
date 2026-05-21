@@ -320,12 +320,22 @@ export interface BaselineGeometry {
 export interface Viewport {
   readonly mode: ViewMode;
   readonly intronScale: number;
+  /** Visible ruler range. Derived from {@link baselineWindow} via the
+   *  segment walk — round-trip-exact for windows whose endpoints sit in
+   *  exonic regions; snaps to the nearest cell-boundary when an endpoint
+   *  sits inside a fixed-budget gap (where the synthetic ruler has zero
+   *  span and the inverse is ambiguous). */
   readonly range: readonly [number, number];
   readonly width: number;
   /** Natural fit-gene ruler range for the active mode. CDS bp in CDS
    *  modes, aa in protein mode. Stable until the mode or transcript
    *  changes; chrome / minimap code uses it as the thumbnail span. */
   naturalRange(): readonly [number, number];
+  /** Canonical viewport state in display (baseline) coordinates: `[S_lo,
+   *  S_hi]` in fit-gene baseline-x. The figure renders this slice of the
+   *  baseline to current-x `[0, width]`. Pan / zoom operate on this state
+   *  directly so the gesture math doesn't round-trip through the ruler. */
+  baselineWindow(): readonly [number, number];
 
   /** Project a {@link Position} (any coord system) onto current screen-x.
    *  Returns `null` when the position can't be placed in the active mode

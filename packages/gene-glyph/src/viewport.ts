@@ -90,7 +90,23 @@ function defaultIntronScale(mode: ViewMode): number {
 
 export class ViewportController implements Viewport {
   private _mode: ViewMode;
-  private _range: [number, number];
+  /** Canonical viewport state: the visible window in *baseline* (display)
+   *  coordinates. Stored as `[S_lo, S_hi]` in fit-gene baseline pixels.
+   *  The figure renders this slice of the baseline to current-x [0, width].
+   *
+   *  Pan operates directly on this state — shifting both ends by the same
+   *  baseline-x delta — so the visible span (and therefore zoom) is
+   *  invariant by construction, and the round-trip through the ruler that
+   *  used to lose information at fixed-budget gap boundaries is gone.
+   *  Ruler positions are computed via `range` when needed for display or
+   *  for the public API. */
+  private _baselineWindow: [number, number];
+  /** Cached ruler view of `_baselineWindow`. Recomputed whenever the
+   *  baseline window changes; consumers of `range` get the snapped-to-
+   *  cell-boundary ruler equivalent, which is exact when both endpoints
+   *  sit in exonic regions and snaps to the nearest exon boundary when an
+   *  endpoint sits inside a fixed-budget gap. */
+  private _rangeCache: [number, number] | null = null;
   private _width: number;
   private _intronScale: number;
   private _attached: CssTarget | null = null;
@@ -105,10 +121,36 @@ export class ViewportController implements Viewport {
   constructor(init: ViewportControllerInit) {
     this.mapper = init.mapper;
     this._mode = init.mode ?? 'genome';
-    this._range = [...(init.range ?? defaultRangeFor(this._mode, this.mapper))] as [number, number];
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
     this._collapsedRegions = init.collapsedRegions ?? [];
+    // Eagerly compute the canonical baseline window from the seed ruler
+    // range. Doing this in the constructor (rather than lazily) avoids
+    // a circular dependency: the lazy frame() needs `_baselineWindow`,
+    // and the lazy ruler→baseline conversion needs frame().
+    const seedRange = init.range ?? defaultRangeFor(this._mode, this.mapper);
+    this._baselineWindow = this.rulerRangeToBaselineWindow(seedRange);
+  }
+
+  /** Convert a ruler range to its baseline-window equivalent, using a
+   *  throwaway frame so we don't rely on `_baselineWindow` (which may not
+   *  exist yet during construction / reseat). The throwaway frame's
+   *  ruler→baseline math depends only on segments, not on a window. */
+  private rulerRangeToBaselineWindow(
+    range: readonly [number, number],
+  ): [number, number] {
+    const baseline = this.baselineGeometry();
+    const tmp = new ProjectionFrame({
+      baseline,
+      baselineWindow: [0, baseline.totalWidth],
+      width: this._width,
+      mode: this._mode,
+      exons: this.mapper.transcript.exons,
+    });
+    return [
+      tmp.rulerToBaselineX(range[0] - 0.5),
+      tmp.rulerToBaselineX(range[1] + 0.5),
+    ];
   }
 
   // ---- Read-only state ---------------------------------------------------
@@ -121,8 +163,25 @@ export class ViewportController implements Viewport {
     return this._intronScale;
   }
 
+  /** Visible ruler range (CDS bp / aa). Derived from `_baselineWindow`.
+   *  Round-trip-exact with `setRange` for ranges whose endpoints fall in
+   *  exonic regions; snaps to the nearest cell boundary when an endpoint
+   *  falls inside a fixed-budget gap (where the synthetic ruler has zero
+   *  span and the inverse is ambiguous). */
   get range(): readonly [number, number] {
-    return this._range;
+    if (this._rangeCache) return this._rangeCache;
+    const [sLo, sHi] = this.baselineWindow();
+    this._rangeCache = [
+      this.baselineXToRuler(sLo) + 0.5,
+      this.baselineXToRuler(sHi) - 0.5,
+    ];
+    return this._rangeCache;
+  }
+
+  /** Visible baseline window `[S_lo, S_hi]` in fit-gene display pixels.
+   *  This is the canonical viewport state — `range` is derived from it. */
+  baselineWindow(): readonly [number, number] {
+    return this._baselineWindow;
   }
 
   get width(): number {
@@ -134,20 +193,45 @@ export class ViewportController implements Viewport {
   setMode(mode: ViewMode): void {
     if (mode === this._mode) return;
     const prevMode = this._mode;
+    // Convert the current visible window via the ruler so the BIOLOGICAL
+    // window is preserved across the mode switch. Baseline geometry
+    // differs across modes, so we go through ruler as an intermediate.
+    const prevRange = this.range;
+    const newRange = reprojectRange(prevRange, prevMode, mode, this.mapper);
     this._mode = mode;
     this._intronScale = defaultIntronScale(mode);
-    // Preserve the visible region across the mode switch by reprojecting the
-    // range endpoints through the mapper. Numeric range values differ between
-    // rulers (CDS bp vs aa); the biological window the user sees should not.
-    this._range = reprojectRange(this._range, prevMode, mode, this.mapper);
     this.invalidateBaseline();
+    this._rangeCache = null;
+    // Re-seed the canonical baseline window in the NEW mode's geometry.
+    this._baselineWindow = this.rulerRangeToBaselineWindow(newRange);
     this.publish();
     this.notify();
   }
 
   setRange(range: readonly [number, number]): void {
-    if (this._range[0] === range[0] && this._range[1] === range[1]) return;
-    this._range = [range[0], range[1]];
+    const current = this.range;
+    if (current[0] === range[0] && current[1] === range[1]) return;
+    // Convert the supplied ruler range into the canonical baseline window.
+    // Also cache the input range verbatim so `range` returns the exact
+    // value the caller passed in — the rulerToBaselineX → baselineXToRuler
+    // round-trip is mathematically identity inside exons but has tiny
+    // floating-point drift that breaks controlled-prop equality.
+    this._baselineWindow = this.rulerRangeToBaselineWindow(range);
+    this._rangeCache = [range[0], range[1]];
+    this._frame = null;
+    this.publish();
+    this.notify();
+  }
+
+  /** Direct baseline-window setter — bypasses the ruler round-trip so pan
+   *  gestures don't lose information at fixed-budget gap boundaries. The
+   *  `_rangeCache` is invalidated; subsequent `range` reads derive the
+   *  ruler equivalent from the new window. */
+  setBaselineWindow(window: readonly [number, number]): void {
+    const current = this.baselineWindow();
+    if (current[0] === window[0] && current[1] === window[1]) return;
+    this._baselineWindow = [window[0], window[1]];
+    this._rangeCache = null;
     this._frame = null;
     this.publish();
     this.notify();
@@ -239,10 +323,59 @@ export class ViewportController implements Viewport {
     return [lo, hi];
   }
 
+  /** Same as {@link clampRange}, but operating directly on baseline (display)
+   *  coordinates. Pan and zoom in `use-viewport-interactions` use this so the
+   *  clamp doesn't round-trip through the ruler — which would lose information
+   *  at fixed-budget gap boundaries where the synthetic ruler has zero span.
+   *
+   *  Padded bounds are sized to match {@link paddedBounds} in ruler-space
+   *  (5% of natural ruler length on each side), translated through the
+   *  segment walk so the clamp boundary lines up with the same biological
+   *  position the ruler-space clamp would pick. */
+  clampBaselineWindow(
+    window: readonly [number, number],
+    opts: { minZoom?: number; maxZoom: number },
+  ): [number, number] {
+    const [pLoRuler, pHiRuler] = this.paddedBounds();
+    const naturalSpan = this.baselineGeometry().totalWidth;
+    const pLo = this.cdsToBaselineX(pLoRuler - 0.5);
+    const pHi = this.cdsToBaselineX(pHiRuler + 0.5);
+    const minLen = Math.max(1, naturalSpan / opts.maxZoom);
+    const maxLen =
+      opts.minZoom && opts.minZoom > 0
+        ? Math.min(pHi - pLo, naturalSpan / opts.minZoom)
+        : pHi - pLo;
+
+    let [lo, hi] = window[0] <= window[1] ? [window[0], window[1]] : [window[1], window[0]];
+    const len = Math.max(minLen, Math.min(maxLen, hi - lo));
+    const centre = (lo + hi) / 2;
+    lo = centre - len / 2;
+    hi = centre + len / 2;
+
+    if (len >= pHi - pLo) {
+      return [pLo, pHi];
+    }
+    if (lo < pLo) {
+      hi += pLo - lo;
+      lo = pLo;
+    }
+    if (hi > pHi) {
+      lo -= hi - pHi;
+      hi = pHi;
+    }
+    return [lo, hi];
+  }
+
   setWidth(width: number): void {
     if (this._width === width) return;
+    // Baseline geometry depends on width, so the canonical baseline
+    // window must be recomputed in the new baseline's units. Preserve
+    // the visible RULER range across the width change.
+    const prevRange = this.range;
     this._width = width;
     this.invalidateBaseline();
+    this._rangeCache = null;
+    this._baselineWindow = this.rulerRangeToBaselineWindow(prevRange);
     this.publish();
     this.notify();
   }
@@ -291,7 +424,7 @@ export class ViewportController implements Viewport {
     if (this._frame) return this._frame;
     this._frame = new ProjectionFrame({
       baseline: this.baselineGeometry(),
-      range: this._range,
+      baselineWindow: this.baselineWindow(),
       width: this._width,
       mode: this._mode,
       exons: this.mapper.transcript.exons,
@@ -654,7 +787,8 @@ export class ViewportController implements Viewport {
   zoom(): number {
     const naturalSpan = defaultRangeFor(this._mode, this.mapper);
     const naturalLen = naturalSpan[1] - naturalSpan[0];
-    const currentLen = this._range[1] - this._range[0];
+    const [lo, hi] = this.range;
+    const currentLen = hi - lo;
     return currentLen > 0 ? naturalLen / currentLen : 1;
   }
 
@@ -831,7 +965,7 @@ export class ViewportController implements Viewport {
 
   private screenToRulerBaseline(x: number): number {
     const baselineX = this.frame().currentToBaseline(x);
-    if (baselineX === null) return this._range[0];
+    if (baselineX === null) return this.range[0];
     return this.baselineXToRuler(baselineX);
   }
 
@@ -1012,8 +1146,8 @@ export class ViewportController implements Viewport {
   cdsGeometry(): CdsGeometry {
     const frame = this.frame();
     const geom = frame.baseline;
-    const [lo, hi] = this._range;
-    const S_lo = frame.rulerToBaselineX(lo);
+    const [lo, hi] = this.range;
+    const [S_lo] = this.baselineWindow();
     const zoom = frame.zoomFactor();
     const exons = this.mapper.transcript.exons;
 

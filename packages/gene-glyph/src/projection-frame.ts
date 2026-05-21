@@ -26,7 +26,11 @@ export interface ExonLayout {
 
 export interface ProjectionFrameInit {
   baseline: BaselineGeometry;
-  range: readonly [number, number];
+  /** Visible baseline window — `[S_lo, S_hi]` in fit-gene baseline-x. The
+   *  frame is the canonical owner of this; the controller stores it in
+   *  display coordinates rather than reprojecting from a ruler range each
+   *  render. */
+  baselineWindow: readonly [number, number];
   width: number;
   mode: ViewMode;
   /** CDS bp bounds for each baseline exon, indexed by `exonIdx`. */
@@ -34,9 +38,13 @@ export interface ProjectionFrameInit {
 }
 
 /**
- * Pure value object describing the projection from ruler-space (CDS bp in
- * CDS modes, aa in protein mode) through baseline-x (fit-gene screen pixels)
- * to current screen-x for one `(baseline, range, width, mode)` tuple.
+ * Pure value object describing the projection from baseline-x (fit-gene
+ * screen pixels) onto current screen-x for one `(baseline, baselineWindow,
+ * width, mode)` tuple. Ruler positions (CDS bp / aa) are computed from
+ * baseline-x on demand — the frame's primary state is purely in display
+ * coordinates so pan operations don't round-trip through the ruler (which
+ * loses information at fixed-budget gap boundaries where the synthetic
+ * ruler interpolation has zero span).
  *
  * Internally, the math walks a `Segment[]` — a single ordered sequence
  * of exonic and intron-collapsed display intervals — so the four
@@ -46,18 +54,16 @@ export interface ProjectionFrameInit {
  */
 export class ProjectionFrame {
   readonly baseline: BaselineGeometry;
-  readonly range: readonly [number, number];
+  readonly baselineWindow: readonly [number, number];
   readonly width: number;
   readonly mode: ViewMode;
   private readonly _segments: readonly Segment[];
   private _layout: SegmentLayout | null = null;
   private _exonLayout: ExonLayout | null = null;
-  private _S_lo: number | null = null;
-  private _S_hi: number | null = null;
 
   constructor(init: ProjectionFrameInit) {
     this.baseline = init.baseline;
-    this.range = init.range;
+    this.baselineWindow = init.baselineWindow;
     this.width = init.width;
     this.mode = init.mode;
     this._segments = buildSegments(init.baseline, init.exons, init.mode);
@@ -218,19 +224,7 @@ export class ProjectionFrame {
   }
 
   private bounds(): { S_lo: number; S_hi: number } {
-    if (this._S_lo !== null && this._S_hi !== null) {
-      return { S_lo: this._S_lo, S_hi: this._S_hi };
-    }
-    // Cell-inclusive range semantic: `range[0]` and `range[1]` name the
-    // first and last visible bp/aa, and the visible baseline spans from
-    // bp range[0]'s LEFT cell edge to bp range[1]'s RIGHT cell edge.
-    // At fit-gene (`range = [1, cdsLength]`), this fills the figure
-    // with every bp's cell — `S_lo` lands on baseline 0 and `S_hi` on
-    // baseline width, regardless of the half-cell offset that bp
-    // *centres* would otherwise impose.
-    this._S_lo = this.rulerToBaselineX(this.range[0] - 0.5);
-    this._S_hi = this.rulerToBaselineX(this.range[1] + 0.5);
-    return { S_lo: this._S_lo, S_hi: this._S_hi };
+    return { S_lo: this.baselineWindow[0], S_hi: this.baselineWindow[1] };
   }
 }
 

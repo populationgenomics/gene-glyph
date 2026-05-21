@@ -1,6 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectionFrame } from './projection-frame.js';
-import type { BaselineGeometry } from './types.js';
+import type { ViewMode, BaselineGeometry } from './types.js';
+import type { FrameExon } from './projection-frame.js';
+
+/** Test helper: construct a `ProjectionFrame` from a ruler range (the
+ *  way tests are easier to read). The controller stores the baseline
+ *  window directly, but for tests it's still clearest to say "range
+ *  [1, 200]" and have the helper convert via a throwaway frame. */
+function makeFrame(opts: {
+  baseline: BaselineGeometry;
+  exons: readonly FrameExon[];
+  range: readonly [number, number];
+  width: number;
+  mode: ViewMode;
+}): ProjectionFrame {
+  const tmp = new ProjectionFrame({
+    baseline: opts.baseline,
+    baselineWindow: [0, opts.baseline.totalWidth],
+    width: opts.width,
+    mode: opts.mode,
+    exons: opts.exons,
+  });
+  return new ProjectionFrame({
+    baseline: opts.baseline,
+    baselineWindow: [
+      tmp.rulerToBaselineX(opts.range[0] - 0.5),
+      tmp.rulerToBaselineX(opts.range[1] + 0.5),
+    ],
+    width: opts.width,
+    mode: opts.mode,
+    exons: opts.exons,
+  });
+}
 
 /** Two exons of 100 bp (cells) each separated by a 10-px gap, `pxPerBp = 1`.
  *  Cell-width invariant: bp N has a cell of `pxPerBp` width centred at
@@ -55,7 +86,7 @@ function proteinBaseline(): { baseline: BaselineGeometry; exons: readonly { cdsS
 describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
   it('maps each bp to the centre of its cell at fit-gene', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     // Cell-width invariant: bp N's centre = (N - cdsStart + 0.5) * pxPerBp + exon.xStart.
@@ -71,7 +102,7 @@ describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
 
   it('round-trips ruler positions through baselineXToRuler inside exons', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     for (const r of [1, 25, 50, 75, 100, 101, 150, 200]) {
@@ -82,7 +113,7 @@ describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
 
   it('interpolates baselineXToRuler continuously across the gap', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     // The fictitious-ruler-through-gap behaviour is what the controller
@@ -96,7 +127,7 @@ describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
 
   it('extrapolates past the gene edges using baseline pxPerBp', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     // Padding before bp 1's cell: ruler 0 is 0.5 bp left of bp 1's centre
@@ -112,7 +143,7 @@ describe('ProjectionFrame — ruler ↔ baseline (genome)', () => {
 describe('ProjectionFrame — exonLayout', () => {
   it('exonScale = 1 at fit-gene; exon-current-x matches baseline', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
@@ -126,7 +157,7 @@ describe('ProjectionFrame — exonLayout', () => {
     // S_lo = 0 (bp 1's left cell edge), S_hi = 100 (bp 100's right cell edge).
     // No gap in view. visibleScalingBaseline = 100. exonScale = 210/100 = 2.1.
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 100], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
@@ -142,7 +173,7 @@ describe('ProjectionFrame — exonLayout', () => {
     // visibleFixed = 10, visibleScaling = 100. exonScale = (210 - 10) / 100
     // = 2 — exactly. The gap holds its 10-px budget even as exons stretch.
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [51, 150], width: 210, mode: 'genome', exons,
     });
     const layout = frame.exonLayout();
@@ -157,7 +188,7 @@ describe('ProjectionFrame — exonLayout', () => {
 describe('ProjectionFrame — baseline ↔ current screen', () => {
   it('round-trips baseline through current at fit-gene', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     for (const s of [0, 50, 100, 105, 110, 160, 210]) {
@@ -169,7 +200,7 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
 
   it('round-trips baseline through current when zoomed across a gap', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [51, 150], width: 210, mode: 'genome', exons,
     });
     for (const s of [50, 75, 100, 105, 110, 130, 159]) {
@@ -181,11 +212,11 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
 
   it('zoomFactor reports 1 at fit-gene and > 1 when zoomed', () => {
     const { baseline, exons } = withIntronsBaseline();
-    const fit = new ProjectionFrame({
+    const fit = makeFrame({
       baseline, range: [1, 200], width: 210, mode: 'genome', exons,
     });
     expect(fit.zoomFactor()).toBeCloseTo(1, 4);
-    const zoomed = new ProjectionFrame({
+    const zoomed = makeFrame({
       baseline, range: [1, 100], width: 210, mode: 'genome', exons,
     });
     expect(zoomed.zoomFactor()).toBeGreaterThan(1.5);
@@ -204,7 +235,7 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
     // range = [-10, 100] (cell-inclusive). S_lo = rulerToBaselineX(-10.5)
     // = -11 (the bp 1-cell-edge extrapolation crosses 0.5 of a bp); S_hi
     // = rulerToBaselineX(100.5) = 100 (bp 100's right cell edge).
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [-10, 100], width: 210, mode: 'genome', exons,
     });
     expect(frame.baselineToCurrent(-11)).toBeCloseTo(0, 4);
@@ -215,7 +246,7 @@ describe('ProjectionFrame — baseline ↔ current screen', () => {
 describe('ProjectionFrame — protein mode', () => {
   it('rulerToBaselineX places aa N at its cell centre', () => {
     const { baseline, exons } = proteinBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 100], width: 100, mode: 'protein', exons,
     });
     // Cell-width invariant: aa N centre = (N - 0.5) * pxPerAa.
@@ -229,7 +260,7 @@ describe('ProjectionFrame — protein mode', () => {
 
   it('baselineXToRuler inverts the cell mapping', () => {
     const { baseline, exons } = proteinBaseline();
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 100], width: 100, mode: 'protein', exons,
     });
     expect(frame.baselineXToRuler(0.5)).toBeCloseTo(1);
@@ -243,7 +274,7 @@ describe('ProjectionFrame — degenerate inputs', () => {
     const baseline: BaselineGeometry = {
       exons: [], gaps: [], pxPerBp: 0, gapPx: 0, totalWidth: 0,
     };
-    const frame = new ProjectionFrame({
+    const frame = makeFrame({
       baseline, range: [1, 1], width: 0, mode: 'transcript', exons: [],
     });
     expect(frame.rulerToBaselineX(50)).toBe(0);
