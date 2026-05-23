@@ -148,7 +148,8 @@ export type ViewportChangeReason =
   | 'wheel-zoom'
   | 'pinch'
   | 'keyboard'
-  | 'imperative';
+  | 'imperative'
+  | 'box-zoom';
 
 export type CoordSystem = 'genomic' | 'cds' | 'protein';
 

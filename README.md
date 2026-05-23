@@ -27,6 +27,19 @@ export function MyPage() {
 
 The viewer is a compound component. Tracks, slots, and controlled state are added in later slices.
 
+## Default mouse / keyboard bindings
+
+| Gesture | Action |
+|---|---|
+| Drag | Box-zoom: snap viewport to the dragged screen-x interval (live preview; `Esc` cancels) |
+| Space + drag | Pan (Adobe Hand-tool pattern). Touch / pen drag pans without the modifier |
+| Wheel | Pan horizontally (falls through to the page at the pan limit) |
+| Cmd/Ctrl + wheel | Zoom, cursor-anchored |
+| Pinch | Zoom, cursor-anchored |
+| Shift + drag (or right-click drag) | Brush-select a range — surfaced via `onBrushChange` |
+| Arrows / WASD | Pan / zoom |
+| `1` | Fit gene |
+
 ## Repo layout
 
 ```

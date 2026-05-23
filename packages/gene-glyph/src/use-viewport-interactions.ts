@@ -2,6 +2,34 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { InteractionMode, ViewportChangeReason } from './types.js';
 import type { ViewportController } from './viewport.js';
 
+/** Clamp `requested` so the viewport `[offset, offset + width]` can't pan
+ *  beyond `paddedBounds`. The figure layout is static at the current
+ *  zoom; the viewport just slides over it. Padding is 5% of the natural
+ *  ruler range on each side — converted to display via the segment walk,
+ *  so the boundary lands at the same biological position the ruler-space
+ *  clamp would pick. */
+function clampDisplayOffset(
+  viewport: ViewportController,
+  requested: number,
+  _opts: { minZoom?: number; maxZoom: number },
+): number {
+  const [pLoRuler, pHiRuler] = viewport.paddedBounds();
+  const padLoBase = viewport.cdsToBaselineX(pLoRuler - 0.5);
+  const padHiBase = viewport.cdsToBaselineX(pHiRuler + 0.5);
+  const padLoDisp = viewport.baselineToLayoutX(padLoBase);
+  const padHiDisp = viewport.baselineToLayoutX(padHiBase);
+  const W = viewport.width;
+  const minOffset = padLoDisp;
+  const maxOffset = padHiDisp - W;
+  if (maxOffset <= minOffset) {
+    // Padded bounds smaller than viewport — centre the padded interval.
+    return (padLoDisp + padHiDisp - W) / 2;
+  }
+  if (requested < minOffset) return minOffset;
+  if (requested > maxOffset) return maxOffset;
+  return requested;
+}
+
 /** Scroll-line height assumed when the browser reports `deltaMode === 1`. */
 const LINE_HEIGHT_PX = 16;
 /** Page height assumed when the browser reports `deltaMode === 2`. */
@@ -42,6 +70,11 @@ export interface UseViewportInteractionsArgs {
    *  Slice 16: viewers wire this onto their brush state (controlled or local)
    *  and pass the result back via `interaction.brushRange`. */
   onBrush: (range: readonly [number, number] | null) => void;
+  /** Called during an alt+drag box-zoom gesture with the live `[x0, x1]`
+   *  viewBox-x bounds of the selection rectangle, or `null` when the gesture
+   *  ends / cancels. Viewers render a translucent preview overlay from this;
+   *  the viewport snap happens internally on pointer-up. */
+  onBoxZoomPreview: (rect: readonly [number, number] | null) => void;
 }
 
 interface PointerInfo {
@@ -75,9 +108,23 @@ interface BrushState {
   moved: boolean;
 }
 
+interface BoxZoomState {
+  pointerId: number;
+  /** viewBox-x at pointer-down (the anchor of the selection rect). */
+  anchorViewboxX: number;
+  /** Client-px x at pointer-down; movement is judged against this. */
+  startClientX: number;
+  /** True once the cursor has moved beyond {@link BOX_ZOOM_MIN_PX}. A release
+   *  before this is a no-op (treated as a click). */
+  moved: boolean;
+}
+
 /** Minimum px movement before a shift-drag becomes a brush (anything less
  *  registers as a click, which clears the brush). */
 const BRUSH_MIN_PX = 2;
+/** Minimum px movement before an alt-drag commits a box-zoom on release.
+ *  Anything less is treated as a click and the viewport stays put. */
+const BOX_ZOOM_MIN_PX = 4;
 
 /**
  * Wires the default interaction bindings — drag/wheel/pinch/keyboard — onto
@@ -100,11 +147,18 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     controlled,
     onChange,
     onBrush,
+    onBoxZoomPreview,
   } = args;
 
   const dragRef = useRef<DragState | null>(null);
   const pinchRef = useRef<PinchState | null>(null);
   const brushRef = useRef<BrushState | null>(null);
+  const boxZoomRef = useRef<BoxZoomState | null>(null);
+  /** True while the Space key is held. Adobe-style modifier: arms a pan
+   *  gesture so a plain left-button drag (which now defaults to box-zoom)
+   *  becomes a pan instead. Tracked at the window so the modifier is in
+   *  scope whether the container is focused or not. */
+  const spaceHeldRef = useRef(false);
 
   // Stable clamp helper bound to current opts.
   const clampOpts = useMemo(() => ({ minZoom, maxZoom }), [minZoom, maxZoom]);
@@ -121,43 +175,42 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   const panByPx = useCallback(
     (
       deltaViewboxPx: number,
-      cursorViewboxX: number,
+      _cursorViewboxX: number,
       reason: ViewportChangeReason,
     ) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       if (viewport.width <= 0) return;
-      // Pan = uniform baseline shift, applied directly to the canonical
-      // baseline window. Both endpoints slide by the same delta, so the
-      // visible span (= zoom) is invariant by construction — no zoom
-      // drift across fixed-budget gaps and no information lost through
-      // the ruler round-trip.
+      // Pan = pure display-space translation. The static figure layout is
+      // unchanged; only the viewport's display offset shifts. Every pixel
+      // of the figure moves by exactly `deltaViewboxPx` — exon content,
+      // flanks, fixed-budget bulks, padding all uniformly. Whatever is
+      // under the cursor stays under the cursor automatically, because
+      // the cursor itself moves by `deltaViewboxPx` as the user drags.
+      // No localScreenScaleAt gymnastics required.
       //
-      // The shift is sized via the LOCAL screen-to-baseline scale at the
-      // cursor position: 1 viewbox-px of drag → 1 / localScale baseline-
-      // px shift. So whatever's directly under the cursor — exon
-      // content, intronic flank, fixed-budget gap, padding — stays under
-      // the cursor as the user drags. Content elsewhere on screen moves
-      // at the rate dictated by ITS local scale (exon content moves at
-      // exonScale; fixed-budget gap content moves 1:1), which is the
-      // intentional consequence of the piecewise mapping.
-      const [sLo, sHi] = viewport.baselineWindow();
-      if (!(sHi > sLo)) return;
-      const localScale = viewport.localScreenScaleAt(cursorViewboxX);
-      if (!(localScale > 0)) return;
-      const baselineDelta = deltaViewboxPx / localScale;
-      const next = viewport.clampBaselineWindow(
-        [sLo + baselineDelta, sHi + baselineDelta],
-        clampOpts,
-      );
-      if (next[0] === sLo && next[1] === sHi) return;
-      // Compute the ruler equivalent BEFORE updating the viewport, so a
-      // controlled host sees the new range even if we don't apply it
-      // locally. Then optionally apply.
-      const newRange: [number, number] = [
-        viewport.baselineXToRuler(next[0]) + 0.5,
-        viewport.baselineXToRuler(next[1]) - 0.5,
-      ];
-      if (!controlled) viewport.setBaselineWindow(next);
+      // Sign: a leftward drag (deltaViewboxPx > 0 in our convention)
+      // scrolls the viewport RIGHT over the figure — i.e. shifts the
+      // display offset by +deltaViewboxPx.
+      const before = viewport.displayOffset();
+      const requested = before + deltaViewboxPx;
+      const clamped = clampDisplayOffset(viewport, requested, clampOpts);
+      if (clamped === before) return;
+      const appliedDelta = clamped - before;
+      const newRange: [number, number] = (() => {
+        // Predict the new range after the shift, without mutating
+        // viewport state (so a controlled host can compute it from this
+        // callback even if we don't apply locally).
+        const f = viewport;
+        // Baseline-x at viewport-x 0 / width AFTER the shift = baseline-x
+        // at viewport-x appliedDelta / (width + appliedDelta) BEFORE.
+        const lo = f.screenToBaselineX(0 + appliedDelta);
+        const hi = f.screenToBaselineX(f.width + appliedDelta);
+        return [
+          f.baselineXToRuler(lo) + 0.5,
+          f.baselineXToRuler(hi) - 0.5,
+        ];
+      })();
+      if (!controlled) viewport.panByDisplayPx(appliedDelta);
       onChange(newRange, reason);
     },
     [viewport, clampOpts, controlled, onChange],
@@ -187,6 +240,18 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const raw = ((clientX - rect.left) / rect.width) * viewport.width;
       const clamped = Math.max(0, Math.min(viewport.width, raw));
       return viewport.rulerAtScreen(clamped);
+    },
+    [svgRef, viewport],
+  );
+
+  /** Convert a client-space clientX to a viewBox-x. Clamped to the figure's
+   *  width so a box-zoom drag past the edge pegs at the edge. */
+  const clientXToViewbox = useCallback(
+    (clientX: number): number | null => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return null;
+      const raw = ((clientX - rect.left) / rect.width) * viewport.width;
+      return Math.max(0, Math.min(viewport.width, raw));
     },
     [svgRef, viewport],
   );
@@ -277,10 +342,55 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     if (c) c.classList.remove('vv-brushing');
   }, [containerRef]);
 
+  const endBoxZoom = useCallback(() => {
+    boxZoomRef.current = null;
+    const c = containerRef.current;
+    if (c) c.classList.remove('vv-box-zooming');
+    onBoxZoomPreview(null);
+  }, [containerRef, onBoxZoomPreview]);
+
+  const commitBoxZoom = useCallback(
+    (anchorVx: number, endVx: number) => {
+      const lo = Math.min(anchorVx, endVx);
+      const hi = Math.max(anchorVx, endVx);
+      const rLo = viewport.rulerAtScreen(lo);
+      const rHi = viewport.rulerAtScreen(hi);
+      if (rLo === null || rHi === null) return;
+      const a = Math.min(rLo, rHi);
+      const b = Math.max(rLo, rHi);
+      if (!(b > a)) return;
+      applyRange([a, b], 'box-zoom');
+    },
+    [applyRange, viewport],
+  );
+
   // Pointer move / up listeners attach to the window once a pointer is down
   // so the gesture continues even if the cursor leaves the SVG.
   useEffect(() => {
     const onMove = (ev: PointerEvent) => {
+      // Box-zoom takes priority — alt+drag selects a rectangle in viewBox-x
+      // and snaps the viewport on release.
+      const box = boxZoomRef.current;
+      if (box && box.pointerId === ev.pointerId) {
+        // Cancel cleanly if the cursor leaves the figure vertically (the
+        // ticket calls this out specifically; horizontal stays clamped to
+        // edges so the gesture remains usable when the user overshoots).
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect && (ev.clientY < rect.top || ev.clientY > rect.bottom)) {
+          endBoxZoom();
+          return;
+        }
+        if (!box.moved && Math.abs(ev.clientX - box.startClientX) < BOX_ZOOM_MIN_PX) {
+          return;
+        }
+        const vx = clientXToViewbox(ev.clientX);
+        if (vx === null) return;
+        box.moved = true;
+        const lo = Math.min(box.anchorViewboxX, vx);
+        const hi = Math.max(box.anchorViewboxX, vx);
+        onBoxZoomPreview([lo, hi]);
+        return;
+      }
       // Brush takes priority over drag/pinch — once a brush gesture is
       // active, single-pointer move updates the brush range.
       const brushSt = brushRef.current;
@@ -326,6 +436,15 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       }
     };
     const onUp = (ev: PointerEvent) => {
+      const box = boxZoomRef.current;
+      if (box && box.pointerId === ev.pointerId) {
+        if (box.moved) {
+          const vx = clientXToViewbox(ev.clientX);
+          if (vx !== null) commitBoxZoom(box.anchorViewboxX, vx);
+        }
+        endBoxZoom();
+        return;
+      }
       const brushSt = brushRef.current;
       if (brushSt && brushSt.pointerId === ev.pointerId) {
         // Shift-click with no drag clears the brush; a real drag leaves the
@@ -351,23 +470,78 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const drag = dragRef.current;
       if (drag && drag.pointerId === ev.pointerId) endDrag();
     };
+    const onKey = (ev: KeyboardEvent) => {
+      // Escape cancels an in-flight box-zoom; the viewport stays where it was.
+      if (ev.key === 'Escape' && boxZoomRef.current) {
+        endBoxZoom();
+        return;
+      }
+      // Space arms the pan modifier (Adobe-style). We avoid trampling text
+      // input by ignoring repeat events from editable targets.
+      if (ev.key === ' ' || ev.code === 'Space') {
+        const target = ev.target;
+        if (
+          target &&
+          target instanceof Element &&
+          isEditableTarget(target)
+        ) {
+          return;
+        }
+        spaceHeldRef.current = true;
+        const c = containerRef.current;
+        if (c) c.classList.add('vv-pan-armed');
+        // Only suppress the page's default space-scroll when the container
+        // is the focus target; otherwise we'd interfere with the host page.
+        if (
+          c &&
+          target instanceof Node &&
+          (c === target || c.contains(target))
+        ) {
+          ev.preventDefault();
+        }
+      }
+    };
+    const onKeyUp = (ev: KeyboardEvent) => {
+      if (ev.key === ' ' || ev.code === 'Space') {
+        spaceHeldRef.current = false;
+        const c = containerRef.current;
+        if (c) c.classList.remove('vv-pan-armed');
+      }
+    };
+    const onBlur = () => {
+      // Tab away mid-pan: drop the modifier so the next click isn't sticky.
+      spaceHeldRef.current = false;
+      const c = containerRef.current;
+      if (c) c.classList.remove('vv-pan-armed');
+    };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [
     applyRange,
     panByPx,
     cssDxToViewbox,
     clientXToRuler,
+    clientXToViewbox,
+    commitBoxZoom,
+    containerRef,
     endDrag,
     endPinch,
     endBrush,
+    endBoxZoom,
     onBrush,
+    onBoxZoomPreview,
     svgRef,
     viewport,
   ]);
@@ -399,6 +573,29 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         return;
       }
       if (e.button !== 0 && e.pointerType === 'mouse') return; // left-click only
+      // Default left-button drag now means box-zoom (select an interval; the
+      // viewport snaps on release). Hold Space — or use a non-mouse pointer
+      // (touch / pen, which has no Space modifier) — to pan instead. This is
+      // the Adobe "Hand tool" pattern: Space arms the pan, plain drag picks
+      // the primary "make a selection" affordance.
+      const wantsPan =
+        spaceHeldRef.current || (e.pointerType !== 'mouse' && e.pointerType !== '');
+      if (!wantsPan) {
+        const vx = clientXToViewbox(e.clientX);
+        if (vx === null) return;
+        if (dragRef.current) endDrag();
+        if (brushRef.current) endBrush();
+        boxZoomRef.current = {
+          pointerId: e.pointerId,
+          anchorViewboxX: vx,
+          startClientX: e.clientX,
+          moved: false,
+        };
+        const c = containerRef.current;
+        if (c) c.classList.add('vv-box-zooming');
+        e.preventDefault();
+        return;
+      }
       const drag = dragRef.current;
       if (drag) {
         // Promote single-pointer drag into a pinch when a second pointer arrives.
@@ -428,7 +625,15 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const c = containerRef.current;
       if (c) c.classList.add('vv-dragging');
     },
-    [viewport, svgRef, containerRef, clientXToRuler, endDrag],
+    [
+      viewport,
+      svgRef,
+      containerRef,
+      clientXToRuler,
+      clientXToViewbox,
+      endDrag,
+      endBrush,
+    ],
   );
 
   const onKeyDown = useCallback(
@@ -494,6 +699,12 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   );
 
   return { onPointerDown, onKeyDown, onContextMenu };
+}
+
+function isEditableTarget(el: Element): boolean {
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return (el as HTMLElement).isContentEditable === true;
 }
 
 function normaliseWheelDelta(delta: number, deltaMode: number): number {

@@ -164,6 +164,9 @@ describe('GeneGlyph — Slice 9 interactions', () => {
         await new Promise((r) => setTimeout(r, 400));
       });
       const svg = stubFigureRect(container, 1000);
+      // Space-hold arms the pan gesture (Adobe "Hand tool" pattern); a plain
+      // left-button drag now defaults to box-zoom.
+      fireEvent.keyDown(window, { key: ' ', code: 'Space' });
       fireEvent.pointerDown(svg, { pointerId: 1, clientX: 500, button: 0 });
       fireEvent.pointerMove(window, { pointerId: 1, clientX: 400 });
       const mid = ref.current!.getViewportInfo().range;
@@ -176,6 +179,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(mid[1]).toBeGreaterThan(220);
       expect(mid[0]).toBeLessThan(mid[1]);
       fireEvent.pointerUp(window, { pointerId: 1, clientX: 400 });
+      fireEvent.keyUp(window, { key: ' ', code: 'Space' });
       // Slice 33: no transition class — `vv-no-transition` is gone.
       const root = container.querySelector('[data-testid="gene-glyph"]');
       expect(root?.className).not.toContain('vv-no-transition');
@@ -210,9 +214,11 @@ describe('GeneGlyph — Slice 9 interactions', () => {
         .range;
       const startRange = cposUnderCursorBefore as readonly [number, number];
       const startSpan = startRange[1] - startRange[0];
+      fireEvent.keyDown(window, { key: ' ', code: 'Space' });
       fireEvent.pointerDown(svg, { pointerId: 1, clientX: startCursorX, button: 0 });
       fireEvent.pointerMove(window, { pointerId: 1, clientX: startCursorX + dxCss });
       fireEvent.pointerUp(window, { pointerId: 1, clientX: startCursorX + dxCss });
+      fireEvent.keyUp(window, { key: ' ', code: 'Space' });
       const endRange = ref.current!.getViewportInfo().range as readonly [number, number];
       // Span should be preserved across a pure pan.
       expect(endRange[1] - endRange[0]).toBeCloseTo(startSpan, 1);
@@ -299,6 +305,146 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       const range = ref.current!.getViewportInfo().range;
       expect(range[0]).toBeCloseTo(80, 5);
       expect(range[1]).toBeCloseTo(220, 5);
+    });
+  });
+
+  describe('box-zoom (drag, Adobe pattern)', () => {
+    it('snaps the viewport range to the dragged interval on pointer-up', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const onChange = vi.fn();
+      const { container } = render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[exonTrack({})]}
+          onViewportChange={onChange}
+        />,
+      );
+      await flushTrackLoads();
+      const svg = stubFigureRect(container, 1000);
+      // Alt-drag from cssX=250 to cssX=750. With width=1000 css == 1000
+      // viewBox, that maps to viewBox-x 250..750 — roughly the middle half of
+      // the gene's CDS-bp ruler.
+      fireEvent.pointerDown(svg, {
+        pointerId: 9,
+        clientX: 250,
+        button: 0,
+      });
+      fireEvent.pointerMove(window, { pointerId: 9, clientX: 750 });
+      // Preview rect renders inside the SVG while dragging.
+      expect(
+        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
+      ).not.toBeNull();
+      fireEvent.pointerUp(window, { pointerId: 9, clientX: 750 });
+      // Preview clears on release.
+      expect(
+        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
+      ).toBeNull();
+      const range = ref.current!.getViewportInfo().range;
+      // Selected interval should be a strict subset of the natural range and
+      // markedly smaller than fit-gene.
+      expect(range[0]).toBeGreaterThan(1);
+      expect(range[1]).toBeLessThan(transcript.cdsLength);
+      expect(range[1] - range[0]).toBeLessThan(transcript.cdsLength * 0.7);
+      expect(onChange).toHaveBeenCalledWith(expect.any(Array), 'box-zoom');
+    });
+
+    it('Escape cancels an in-flight box-zoom without changing the viewport', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      const before = ref.current!.getViewportInfo().range;
+      const svg = stubFigureRect(container, 1000);
+      fireEvent.pointerDown(svg, {
+        pointerId: 10,
+        clientX: 200,
+        button: 0,
+      });
+      fireEvent.pointerMove(window, { pointerId: 10, clientX: 600 });
+      expect(
+        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
+      ).not.toBeNull();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(
+        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
+      ).toBeNull();
+      // A subsequent pointerup is a no-op for the viewport.
+      fireEvent.pointerUp(window, { pointerId: 10, clientX: 600 });
+      const after = ref.current!.getViewportInfo().range;
+      expect(after[0]).toBeCloseTo(before[0], 5);
+      expect(after[1]).toBeCloseTo(before[1], 5);
+    });
+
+    it('a click without drag is a no-op', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      const before = ref.current!.getViewportInfo().range;
+      const svg = stubFigureRect(container, 1000);
+      fireEvent.pointerDown(svg, {
+        pointerId: 11,
+        clientX: 500,
+        button: 0,
+      });
+      fireEvent.pointerUp(window, { pointerId: 11, clientX: 500 });
+      const after = ref.current!.getViewportInfo().range;
+      expect(after[0]).toBeCloseTo(before[0], 5);
+      expect(after[1]).toBeCloseTo(before[1], 5);
+    });
+
+    it('Space-held drag pans instead of box-zooming', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const { container } = render(
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} />,
+      );
+      await flushTrackLoads();
+      act(() => {
+        ref.current!.fitTo({ kind: 'range', range: [80, 220] });
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 400));
+      });
+      const before = ref.current!.getViewportInfo().range;
+      const beforeLen = before[1] - before[0];
+      const svg = stubFigureRect(container, 1000);
+      fireEvent.keyDown(window, { key: ' ', code: 'Space' });
+      fireEvent.pointerDown(svg, { pointerId: 13, clientX: 500, button: 0 });
+      fireEvent.pointerMove(window, { pointerId: 13, clientX: 400 });
+      // No preview rect — the gesture became a pan.
+      expect(
+        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
+      ).toBeNull();
+      fireEvent.pointerUp(window, { pointerId: 13, clientX: 400 });
+      fireEvent.keyUp(window, { key: ' ', code: 'Space' });
+      const after = ref.current!.getViewportInfo().range;
+      // Span preserved (pan, not zoom); range shifted.
+      expect(after[1] - after[0]).toBeCloseTo(beforeLen, 1);
+      expect(after[0]).not.toBeCloseTo(before[0], 0);
+    });
+
+    it('leaves the brush state untouched (does not double-fire the brush)', async () => {
+      const onBrush = vi.fn();
+      const { container } = render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[exonTrack({})]}
+          onBrushChange={onBrush}
+        />,
+      );
+      await flushTrackLoads();
+      const svg = stubFigureRect(container, 1000);
+      fireEvent.pointerDown(svg, {
+        pointerId: 12,
+        clientX: 200,
+        button: 0,
+      });
+      fireEvent.pointerMove(window, { pointerId: 12, clientX: 600 });
+      fireEvent.pointerUp(window, { pointerId: 12, clientX: 600 });
+      expect(onBrush).not.toHaveBeenCalled();
     });
   });
 

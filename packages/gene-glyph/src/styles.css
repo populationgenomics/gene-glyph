@@ -314,7 +314,10 @@
   display: block;
   width: 100%;
   background: var(--vv-color-bg-surface);
-  cursor: grab;
+  /* Default cursor reflects the primary gesture: plain drag selects an
+   * interval to zoom into. Holding Space switches to a grab cursor — see
+   * the `.vv-pan-armed` rule below. */
+  cursor: crosshair;
   touch-action: pan-y; /* allow vertical page scroll, capture horizontal */
   /* Slice 10: tracks render every exon at its baseline width regardless of
    * whether it's currently in view, and the wrapping `<g>` transforms slide
@@ -424,6 +427,40 @@
 .gene-glyph.vv-brushing .vv-figure,
 .gene-glyph.vv-brushing .vv-figure * {
   cursor: crosshair;
+}
+
+/* Box-zoom preview rectangle (alt+drag). Lives in viewBox-x rather than the
+ * baseline frame — a single rect that follows the cursor's screen-x bounds,
+ * since the gesture targets a screen interval rather than a biological one. */
+.gene-glyph {
+  --vv-box-zoom-fill: rgba(16, 185, 129, 0.18);
+  --vv-box-zoom-stroke: rgba(16, 185, 129, 0.85);
+}
+
+.gene-glyph .vv-box-zoom-rect {
+  fill: var(--vv-box-zoom-fill);
+  stroke: var(--vv-box-zoom-stroke);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.gene-glyph.vv-box-zooming,
+.gene-glyph.vv-box-zooming .vv-figure,
+.gene-glyph.vv-box-zooming .vv-figure * {
+  cursor: crosshair;
+}
+
+/* Adobe-style pan modifier: Space arms the pan, switching the figure's
+ * cursor to a grab affordance even before the pointer goes down. */
+.gene-glyph.vv-pan-armed .vv-figure,
+.gene-glyph.vv-pan-armed .vv-figure * {
+  cursor: grab;
+}
+
+.gene-glyph.vv-pan-armed.vv-dragging .vv-figure,
+.gene-glyph.vv-pan-armed.vv-dragging .vv-figure * {
+  cursor: grabbing;
 }
 
 /* Variant track. Each variant lives inside a per-exon group; the outer `g`

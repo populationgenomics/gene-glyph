@@ -348,7 +348,8 @@ The viewport internally tracks zoom as `{ ruler: 'cds' | 'protein', range: [star
 | Wheel over viewer | Pan horizontally; falls through to page when at pan limit |
 | Cmd/Ctrl + wheel | Zoom, cursor-anchored |
 | Pinch | Zoom, cursor-anchored |
-| Drag | Pan, `cursor: grabbing` |
+| Drag | Box-zoom: snap viewport to the dragged screen-x interval (Esc cancels) |
+| Space+drag | Pan, `cursor: grabbing` (Adobe Hand-tool pattern; touch / pen pan without modifier) |
 | Shift+drag or right-click drag | Brush-select a range |
 | Double-click feature | Fit feature |
 | Double-click empty | Zoom out one step (or fit gene on second tap) |

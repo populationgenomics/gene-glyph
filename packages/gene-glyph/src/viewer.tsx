@@ -250,6 +250,29 @@ export interface ViewportInfo {
    *  segment-by-segment proportional walk — instead of going through the
    *  ruler, which snaps inside fixed-budget gaps. */
   baselineGeometry: BaselineGeometry;
+  /** Live zoom scale (multiplier on flexible piece figure widths to get
+   *  display widths). Constant under pan. Chrome that renders at the
+   *  current layout scale (e.g., display-space minimap thumbnails) uses
+   *  this together with {@link displayOffset} and {@link totalDisplayWidth}
+   *  to size and place its content. */
+  zoomScale: number;
+  /** Layout display-x of the figure's first piece relative to viewport-x
+   *  0. Pan modifies only this. */
+  displayOffset: number;
+  /** Total display width of the laid-out figure at the current zoom. */
+  totalDisplayWidth: number;
+  /** Viewport pixel width — the figure SVG's viewBox width. The brush
+   *  rectangle of a display-space minimap is exactly this many layout
+   *  pixels wide regardless of zoom. */
+  viewportWidth: number;
+  /** Per-exon display-x extent at the current zoom. Parallel to
+   *  `baselineGeometry.exons` but with positions in the live layout
+   *  rather than fit-zoom. */
+  currentExons: ReadonlyArray<{ exonIdx: number; xStart: number; xEnd: number }>;
+  /** Per-inter-exon-gap display-x extent at the current zoom. Parallel
+   *  to `baselineGeometry.gaps`. Zero-width gaps (transcript / protein
+   *  modes) collapse to a single x. */
+  currentGaps: ReadonlyArray<{ exonIdxA: number; exonIdxB: number; xStart: number; xEnd: number }>;
   /** The transcript currently rendered by the viewer. */
   transcript: Transcript;
 }
@@ -270,6 +293,25 @@ export interface ViewportCommandOptions {
 export interface GeneGlyphRef {
   fitTo(target: FitTarget, options?: ViewportCommandOptions): void;
   zoomBy(factor: number, options?: ViewportCommandOptions): void;
+  /** Pure display-space pan: shift the viewport by `deltaPx` layout
+   *  pixels. The figure's static layout is unchanged; only the offset
+   *  shifts, so zoom is preserved exactly and every visible point
+   *  moves uniformly. Used by the display-space minimap's brush-pan
+   *  gesture and by any host chrome that wants smooth pan without
+   *  going through ruler-space round-trip. */
+  panByDisplayPx(deltaPx: number): void;
+  /** Set the visible baseline window directly. The viewer solves for the
+   *  (zoomScale, displayOffset) pair that maps `[window[0], window[1]]`
+   *  to viewport `[0, width]`. Use this for the minimap's handle drag /
+   *  brush-resize gestures — bypasses ruler-space and so doesn't snap
+   *  inside fixed-budget intron bulks. */
+  setBaselineWindow(window: readonly [number, number]): void;
+  /** Convert a position in the figure's static layout (display-x in the
+   *  laid-out figure, not viewport-relative) to a baseline-x. Display-
+   *  space chrome (e.g. the minimap) uses this to translate a cursor
+   *  position in its own mini-display into the figure's baseline coords
+   *  so it can set a new visible window. */
+  layoutXToBaseline(layoutX: number): number;
   getViewportInfo(): ViewportInfo;
   /** Subscribe to committed range / mode / width changes. The listener fires
    *  synchronously after every mutation (gesture, imperative, or controlled-
@@ -694,6 +736,10 @@ function GeneGlyphInner(
     [viewport, onViewportChange],
   );
 
+  const [boxZoomPreview, setBoxZoomPreview] = useState<
+    readonly [number, number] | null
+  >(null);
+
   const interactions = useViewportInteractions({
     viewport,
     svgRef,
@@ -709,6 +755,7 @@ function GeneGlyphInner(
       [onViewportChange],
     ),
     onBrush: applyBrush,
+    onBoxZoomPreview: setBoxZoomPreview,
   });
 
   const fitTo = useCallback(
@@ -804,6 +851,12 @@ function GeneGlyphInner(
       naturalRange: natural,
       baselineWindow: viewport.baselineWindow(),
       baselineGeometry: viewport.baselineGeometry(),
+      zoomScale: viewport.zoomScale(),
+      displayOffset: viewport.displayOffset(),
+      totalDisplayWidth: viewport.totalFigureDisplayWidth(),
+      viewportWidth: viewport.width,
+      currentExons: viewport.currentExonLayout(),
+      currentGaps: viewport.currentGapLayout(),
       transcript,
     };
   }, [viewport, layout, transcript]);
@@ -860,10 +913,43 @@ function GeneGlyphInner(
     [viewport],
   );
 
+  const panByDisplayPx = useCallback(
+    (deltaPx: number) => viewport.panByDisplayPx(deltaPx),
+    [viewport],
+  );
+  const setBaselineWindow = useCallback(
+    (window: readonly [number, number]) => viewport.setBaselineWindow(window),
+    [viewport],
+  );
+  const layoutXToBaseline = useCallback(
+    (layoutX: number) => viewport.layoutXToBaseline(layoutX),
+    [viewport],
+  );
+
   useImperativeHandle(
     ref,
-    () => ({ fitTo, zoomBy, getViewportInfo, subscribe, exportSVG, exportPNG }),
-    [fitTo, zoomBy, getViewportInfo, subscribe, exportSVG, exportPNG],
+    () => ({
+      fitTo,
+      zoomBy,
+      panByDisplayPx,
+      setBaselineWindow,
+      layoutXToBaseline,
+      getViewportInfo,
+      subscribe,
+      exportSVG,
+      exportPNG,
+    }),
+    [
+      fitTo,
+      zoomBy,
+      panByDisplayPx,
+      setBaselineWindow,
+      layoutXToBaseline,
+      getViewportInfo,
+      subscribe,
+      exportSVG,
+      exportPNG,
+    ],
   );
 
   // Aggregate hidden-feature counts across tracks once per render so the exon
@@ -1155,6 +1241,18 @@ function GeneGlyphInner(
             );
           })}
           {brushOverlay}
+          {boxZoomPreview && boxZoomPreview[1] > boxZoomPreview[0] && (
+            <rect
+              className="vv-box-zoom-rect"
+              data-testid="gene-glyph-box-zoom"
+              x={boxZoomPreview[0]}
+              y={0}
+              width={boxZoomPreview[1] - boxZoomPreview[0]}
+              height={totalHeight}
+              vectorEffect="non-scaling-stroke"
+              aria-hidden
+            />
+          )}
           {loadingShimmer}
         </svg>
         <div

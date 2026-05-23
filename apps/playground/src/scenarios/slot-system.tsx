@@ -78,6 +78,13 @@ export function SlotSystemScenario() {
         <code>getViewportInfo()</code>. The mode dropdown is now live — switching
         cross-fades intron decorations and slides exons onto the new ruler.
       </p>
+      <p className="scenario-blurb">
+        <strong>Try it:</strong> drag across the figure to box-zoom into that
+        interval; <kbd>Esc</kbd> cancels mid-drag. To pan instead, hold{' '}
+        <kbd>Space</kbd> while dragging (Adobe Hand-tool pattern).{' '}
+        <kbd>Shift</kbd>+drag still emits the persistent brush range shown in
+        the footer.
+      </p>
       <GeneGlyph
         ref={ref}
         transcript={TP53_TRANSCRIPT}
