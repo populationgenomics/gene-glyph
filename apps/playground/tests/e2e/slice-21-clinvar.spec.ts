@@ -72,4 +72,43 @@ test.describe('Slice 21 — ClinVar density-clustered track', () => {
     const afterClusters = await s.locator('.vv-clinvar-mark.is-cluster').count();
     expect(afterClusters).toBeLessThan(beforeClusters);
   });
+
+  test('drag-to-zoom starting over a ClinVar cluster narrows the viewport (RD-1102 / RD-1106)', async ({
+    page,
+  }) => {
+    // RD-1102 asked for a region-zoom gesture on the ClinVar track. RD-1106
+    // shipped drag-to-zoom as the figure-wide default, and the ClinVar mark
+    // only stops propagation on `onClick` (clicks, not pointerdown), so the
+    // SVG-level pointerdown still arms the box-zoom even when the gesture
+    // starts on a cluster glyph. This test pins that contract.
+    const s = await scenario(page);
+    const fig = s.locator('svg.vv-figure');
+    const figBox = (await fig.boundingBox())!;
+    const cluster = s.locator('.vv-clinvar-mark.is-cluster').first();
+    const clusterBox = (await cluster.boundingBox())!;
+    const startX = clusterBox.x + clusterBox.width / 2;
+    const startY = clusterBox.y + clusterBox.height / 2;
+    const endX = startX + Math.min(160, figBox.x + figBox.width - startX - 4);
+    expect(endX).toBeGreaterThan(startX + 40);
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    // Move in several steps so the gesture is unambiguously a drag (not a
+    // click) and the box-zoom preview rect mounts.
+    await page.mouse.move(startX + 30, startY, { steps: 4 });
+    await expect(s.locator('[data-testid="gene-glyph-box-zoom"]')).toBeVisible();
+    await page.mouse.move(endX, startY, { steps: 6 });
+    await page.mouse.up();
+
+    // After release, the box-zoom preview tears down and the visible
+    // exon-span shrinks (the SVG's intrinsic content-width grows or the
+    // visible exons collapse — measure by counting rendered exon groups
+    // and asserting the figure's exon-scale CSS variable changed).
+    await expect(s.locator('[data-testid="gene-glyph-box-zoom"]')).toHaveCount(0);
+    const exonScale = await fig.evaluate((el) => {
+      const v = getComputedStyle(el).getPropertyValue('--vv-exon-scale-x-0');
+      return Number(v) || 1;
+    });
+    expect(exonScale).toBeGreaterThan(1);
+  });
 });
