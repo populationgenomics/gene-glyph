@@ -348,6 +348,13 @@ function toReadonlySet(ids: ReadonlySet<string> | Iterable<string> | undefined):
 
 const EMPTY_SET: ReadonlySet<string> = new Set<string>();
 
+/** Vertical extent used by full-figure overlays (brush, box-zoom preview)
+ *  when track content overflows the layout budget. The figure SVG's own
+ *  overflow rules clip whatever isn't visible, so a generously tall rect
+ *  is safe and guarantees the overlay reaches the edge of any rendered
+ *  content regardless of which tracks the host stacks in. */
+const OVERFLOW_BRUSH_HEIGHT = 100000;
+
 function findSlot<P>(
   children: ReactNode,
   component: ComponentType<P>,
@@ -1010,15 +1017,16 @@ function GeneGlyphInner(
     const hi = Math.max(a, b);
     if (!(hi > lo)) return null;
     // Brush is a single contiguous range in the active ruler. Render it as
-    // one viewport-x rect bridging from the lo cell's left edge to the hi
-    // cell's right edge — bypassing the per-exon segmentation that used to
-    // produce visible stroke seams between adjacent brushed exons and
-    // misaligned inter-exon gap fills under Phase-3 soft-collapse layout.
-    // baselineToLayoutX walks the mixed linear-flank + fixed-bulk geometry
-    // correctly, so the rect's screen extent matches the figure's real
-    // layout in every mode.
-    const baseLo = viewport.cdsToBaselineX(lo - 0.5);
-    const baseHi = viewport.cdsToBaselineX(hi + 0.5);
+    // one viewport-x rect spanning lo→hi, bypassing the per-exon
+    // segmentation that used to produce stroke seams between adjacent
+    // brushed exons and misaligned inter-exon gap fills under Phase-3
+    // soft-collapse layout. `cdsToBaselineX` consumes a cell-edge ruler
+    // value (the same convention `rulerAtScreen` returns), so we pass
+    // `lo`/`hi` straight through — no extra ±0.5 cell adjustment, which
+    // previously shifted the brush half a cell off the user's click
+    // position (≈25px at high zoom).
+    const baseLo = viewport.cdsToBaselineX(lo);
+    const baseHi = viewport.cdsToBaselineX(hi);
     const offset = viewport.displayOffset();
     const xLo = viewport.baselineToLayoutX(baseLo) - offset;
     const xHi = viewport.baselineToLayoutX(baseHi) - offset;
@@ -1026,6 +1034,13 @@ function GeneGlyphInner(
     const clampedLo = Math.max(0, xLo);
     const clampedHi = Math.min(viewport.width, xHi);
     if (!(clampedHi > clampedLo)) return null;
+    // Use a height that's guaranteed to span any rendered content — some
+    // tracks (data-dependent stacked variants) render glyphs at viewBox y
+    // beyond `layout.totalHeight` because the layout engine clamps the
+    // declared px to the budget but the track's renderer doesn't clip its
+    // rows. The SVG's overflow rules cull anything past the visible
+    // figure, so the brush always reaches the on-screen edge regardless.
+    const brushHeight = Math.max(totalHeight, OVERFLOW_BRUSH_HEIGHT);
     return (
       <g className="vv-brush-overlay" data-testid="gene-glyph-brush" aria-hidden>
         <rect
@@ -1033,7 +1048,7 @@ function GeneGlyphInner(
           x={clampedLo}
           y={0}
           width={clampedHi - clampedLo}
-          height={totalHeight}
+          height={brushHeight}
           vectorEffect="non-scaling-stroke"
         />
       </g>
@@ -1212,7 +1227,7 @@ function GeneGlyphInner(
               x={boxZoomPreview[0]}
               y={0}
               width={boxZoomPreview[1] - boxZoomPreview[0]}
-              height={totalHeight}
+              height={Math.max(totalHeight, OVERFLOW_BRUSH_HEIGHT)}
               vectorEffect="non-scaling-stroke"
               aria-hidden
             />

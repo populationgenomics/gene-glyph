@@ -1,19 +1,70 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
-import { createCoordinateMapper } from '../coordinate-mapper.js';
-import { ViewportController } from '../viewport.js';
 import type { GeneGlyphRef, ViewportInfo } from '../viewer.js';
+
+/** Smallest visible-window span permitted by handle drag, as a fraction
+ *  of the natural baseline width. Caps "max zoom in" via minimap to
+ *  something readable (currently 1% of the gene). */
+const MIN_VISIBLE_FRACTION = 0.01;
+
+/** Clamp a requested displayOffset so the brush rectangle stays flush
+ *  inside the minimap. The minimap renders the laid-out figure `[0,
+ *  totalDisplayWidth]`, so we keep the viewport slice `[offset, offset
+ *  + W]` within that. This is tighter than the figure's own pan clamp
+ *  (which allows ~5% padding overshoot); panning further past the gene
+ *  ends needs the main-figure drag, not the minimap. */
+function clampDisplayOffsetForPan(
+  info: ViewportInfo,
+  requested: number,
+): number {
+  const minOffset = 0;
+  const maxOffset = info.totalDisplayWidth - info.viewportWidth;
+  if (maxOffset <= minOffset) {
+    // Whole gene fits inside the viewport — centre.
+    return (info.totalDisplayWidth - info.viewportWidth) / 2;
+  }
+  if (requested < minOffset) return minOffset;
+  if (requested > maxOffset) return maxOffset;
+  return requested;
+}
+
+/** Clamp the new baseline window from a handle-resize gesture. Holds
+ *  the anchored side fixed (the non-dragged endpoint) and clamps the
+ *  dragged side to the gene's baseline bounds and the min-span cap.
+ *  `which` names the side being dragged. */
+function clampResizeWindow(
+  info: ViewportInfo,
+  window: readonly [number, number],
+  minSpan: number,
+  which: 'left' | 'right',
+): [number, number] {
+  const total = info.baselineGeometry.totalWidth;
+  let [lo, hi] = window;
+  if (which === 'left') {
+    // The RIGHT edge is anchored; clamp LEFT.
+    const minLo = 0;
+    const maxLo = hi - minSpan;
+    if (lo < minLo) lo = minLo;
+    if (lo > maxLo) lo = maxLo;
+  } else {
+    // The LEFT edge is anchored; clamp RIGHT.
+    const minHi = lo + minSpan;
+    const maxHi = total;
+    if (hi < minHi) hi = minHi;
+    if (hi > maxHi) hi = maxHi;
+  }
+  return [lo, hi];
+}
 
 export interface DefaultMinimapProps {
   /** Ref handed to `<GeneGlyph>`. The minimap subscribes to viewer changes
-   *  and writes pan / zoom back via `fitTo`. */
+   *  and writes pan / zoom back via `panByDisplayPx` and `fitTo`. */
   viewerRef: RefObject<GeneGlyphRef | null>;
   /** Pixel width of the thumbnail SVG. Default 480. */
   width?: number;
@@ -27,23 +78,34 @@ interface DragState {
   kind: 'pan' | 'resize-left' | 'resize-right';
   pointerId: number;
   startClientX: number;
-  startRange: readonly [number, number];
-  natural: readonly [number, number];
+  /** Display offset of the viewport at the start of the drag (used by
+   *  pan to compute the delta to apply via `panByDisplayPx`). */
+  startDisplayOffset: number;
+  /** Layout total display width at drag start. The mini-x → layout-x
+   *  ratio is anchored to the drag's starting layout so the brush /
+   *  handle tracks the cursor 1:1 even though zoom may change mid-drag. */
+  startTotalDisplay: number;
+  /** Zoom scale at drag start. Resize uses this to convert layout-px
+   *  deltas to baseline-px deltas (flex regions: dBase = dLayout /
+   *  zoom). Constant across the drag; not re-read from the live state. */
+  startZoomScale: number;
+  /** Baseline window at drag start. Resize keeps one endpoint fixed and
+   *  moves the other. */
+  startBaselineWindow: readonly [number, number];
 }
 
 const HANDLE_PX = 6;
 
 /**
- * Slice 20 — chrome convenience component for the Footer slot. Renders a
- * full-gene thumbnail (exons drawn at the active mode's baseline) with a
- * draggable window rectangle. Dragging the window pans the viewer; the
- * two edge handles resize the window, which zooms. Clicking outside the
- * window jumps the viewer to that point.
+ * Display-space minimap. Renders the figure in the **current** static
+ * layout (scaled to the minimap's width), so the brush rectangle
+ * represents exactly what the viewport sees in display pixels. Under
+ * pure pan the brush slides uniformly with no scale change in either
+ * view; under handle drag the zoom changes smoothly.
  *
- * Subscribes to the viewer's committed range / mode changes via
- * `viewerRef.current.subscribe()` (Slice 33 retired the rAF poll).
- *
- * Built using only the public API.
+ * Built on the viewer's public API: `subscribe()` for state changes,
+ * `panByDisplayPx()` for the pan gesture, and `fitTo({range})` for
+ * resize-induced zoom.
  */
 export function DefaultMinimap({
   viewerRef,
@@ -54,10 +116,8 @@ export function DefaultMinimap({
   const dragRef = useRef<DragState | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Mirror the viewer's committed range / mode into local state via the
-  // imperative subscribe() hook. Re-fires on every committed mutation so the
-  // window rectangle stays locked to whatever the figure is showing without
-  // polling.
+  // Mirror the viewer's current state. Re-fires on every committed
+  // mutation — pan, zoom, mode, width changes.
   const [info, setInfo] = useState<ViewportInfo | null>(null);
   useEffect(() => {
     const v = viewerRef.current;
@@ -69,132 +129,16 @@ export function DefaultMinimap({
     });
   }, [viewerRef]);
 
-  // Mini viewport for coordinate mapping. Re-created when the transcript or
-  // mode changes; widths are minimap-local so baseline-x lands in
-  // `[0, width]`. The mapper memoises baseline geometry internally so this
-  // is cheap to keep around.
-  const mini = useMemo(() => {
-    if (!info) return null;
-    const mapper = createCoordinateMapper(info.transcript);
-    return new ViewportController({ mapper, width, mode: info.mode });
-  }, [info?.transcript, info?.mode, width]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const baseline = useMemo(() => (mini ? mini.baselineGeometry() : null), [mini]);
-
-  const rulerToX = useCallback(
-    (ruler: number): number => {
-      if (!mini) return 0;
-      return mini.cdsToBaselineX(ruler);
+  /** Mini-x → layout display-x. */
+  const miniToLayout = useCallback(
+    (miniX: number, totalDisplay: number): number => {
+      return (miniX / Math.max(1, width)) * Math.max(1, totalDisplay);
     },
-    [mini],
+    [width],
   );
 
-  const xToRuler = useCallback(
-    (x: number): number => {
-      if (!mini) return 0;
-      return mini.baselineXToRuler(x);
-    },
-    [mini],
-  );
-
-  const windowRect = useMemo(() => {
-    if (!info || !mini || !baseline) return null;
-    // Project the figure's canonical baseline window directly into mini
-    // baseline coords via a per-segment proportional walk. Going through
-    // ruler would snap inside fixed-budget gaps (where the synthetic
-    // ruler has zero span) and make the window rectangle stutter
-    // whenever the figure pans across a collapsed intron.
-    const figureGeom = info.baselineGeometry;
-    const figureToMini = (figureP: number): number => {
-      const figureExons = figureGeom.exons;
-      const figureGaps = figureGeom.gaps;
-      const miniExons = baseline.exons;
-      const miniGaps = baseline.gaps;
-      if (figureExons.length === 0 || miniExons.length === 0) return 0;
-      const firstFigure = figureExons[0]!;
-      const firstMini = miniExons[0]!;
-      if (figureP < firstFigure.xStart) {
-        // Padding before the gene: pxPerBp ratio determines the scaling.
-        const ratio =
-          figureGeom.pxPerBp > 0
-            ? baseline.pxPerBp / figureGeom.pxPerBp
-            : 0;
-        return firstMini.xStart - (firstFigure.xStart - figureP) * ratio;
-      }
-      for (let i = 0; i < figureExons.length; i++) {
-        const fe = figureExons[i]!;
-        if (figureP <= fe.xEnd) {
-          const me = miniExons[i] ?? miniExons[miniExons.length - 1]!;
-          const t = (figureP - fe.xStart) / Math.max(1e-9, fe.width);
-          return me.xStart + t * me.width;
-        }
-        if (i < figureGaps.length) {
-          const fg = figureGaps[i]!;
-          if (figureP <= fg.xEnd) {
-            const mg = miniGaps[i] ?? miniGaps[miniGaps.length - 1]!;
-            const t = (figureP - fg.xStart) / Math.max(1e-9, fg.width);
-            return mg.xStart + t * mg.width;
-          }
-        }
-      }
-      const lastFigure = figureExons[figureExons.length - 1]!;
-      const lastMini = miniExons[miniExons.length - 1]!;
-      const ratio =
-        figureGeom.pxPerBp > 0 ? baseline.pxPerBp / figureGeom.pxPerBp : 0;
-      return lastMini.xEnd + (figureP - lastFigure.xEnd) * ratio;
-    };
-    const xa = figureToMini(info.baselineWindow[0]);
-    const xb = figureToMini(info.baselineWindow[1]);
-    const x = Math.min(xa, xb);
-    const w = Math.max(2, Math.abs(xb - xa));
-    return { x, w };
-  }, [info, mini, baseline]);
-
-  const clamp = useCallback(
-    (range: readonly [number, number]): [number, number] => {
-      if (!info) return [range[0], range[1]];
-      const [nLo, nHi] = info.naturalRange;
-      const len = Math.max(1e-3, range[1] - range[0]);
-      let lo = range[0];
-      let hi = range[1];
-      if (lo < nLo) {
-        lo = nLo;
-        hi = lo + len;
-      }
-      if (hi > nHi) {
-        hi = nHi;
-        lo = hi - len;
-      }
-      lo = Math.max(nLo, lo);
-      hi = Math.min(nHi, hi);
-      return [lo, hi];
-    },
-    [info],
-  );
-
-  const onPointerDown = useCallback(
-    (kind: DragState['kind']) =>
-      (e: ReactPointerEvent<SVGRectElement>) => {
-        if (!info || !mini) return;
-        e.preventDefault();
-        // Capture on the SVG root rather than the handle/window rect: the
-        // SVG carries the pointermove/up handlers, and capturing on a child
-        // would redirect pointer events to that child (which has none),
-        // freezing the drag the moment the cursor left the child's box.
-        const svg = svgRef.current;
-        svg?.setPointerCapture(e.pointerId);
-        dragRef.current = {
-          kind,
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startRange: [info.range[0], info.range[1]],
-          natural: [info.naturalRange[0], info.naturalRange[1]],
-        };
-      },
-    [info, mini],
-  );
-
-  const clientToBaselineX = useCallback(
+  /** Client-x → mini-x. */
+  const clientToMiniX = useCallback(
     (clientX: number): number => {
       const svg = svgRef.current;
       if (!svg) return 0;
@@ -206,52 +150,88 @@ export function DefaultMinimap({
     [width],
   );
 
+  const onPointerDown = useCallback(
+    (kind: DragState['kind']) =>
+      (e: ReactPointerEvent<SVGRectElement>) => {
+        if (!info) return;
+        e.preventDefault();
+        const svg = svgRef.current;
+        svg?.setPointerCapture(e.pointerId);
+        dragRef.current = {
+          kind,
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startDisplayOffset: info.displayOffset,
+          startTotalDisplay: info.totalDisplayWidth,
+          startZoomScale: info.zoomScale,
+          startBaselineWindow: [info.baselineWindow[0], info.baselineWindow[1]],
+        };
+      },
+    [info],
+  );
+
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== e.pointerId) return;
       const v = viewerRef.current;
-      if (!v || !mini) return;
-      // Convert both the original drag-anchor and the current cursor into
-      // baseline-x, then convert the resulting baseline-x deltas back through
-      // the mini-viewport so the figure tracks the cursor across non-linear
-      // gap regions (genome) consistently.
-      const baselineStart = clientToBaselineX(drag.startClientX);
-      const baselineNow = clientToBaselineX(e.clientX);
+      if (!v || !info) return;
+
+      const dxClient = e.clientX - drag.startClientX;
+      // CSS-pixel → mini-pixel conversion (the SVG may be rendered at a
+      // different size than its viewBox).
+      const svgRect = svgRef.current?.getBoundingClientRect();
+      const cssToMini = svgRect && svgRect.width > 0 ? width / svgRect.width : 1;
+      const dxMini = dxClient * cssToMini;
+
+      // The mini renders the figure's STATIC layout scaled to the
+      // minimap width. mini-x → layout-x is `miniX × (totalDisplay /
+      // miniWidth)`. We anchor against the START layout (frozen at drag
+      // start) so the handle / brush tracks the cursor 1:1 even though
+      // zoom may change mid-drag during resize.
+      const dxLayout = miniToLayout(dxMini, drag.startTotalDisplay);
+      const startOffset = drag.startDisplayOffset;
+
       if (drag.kind === 'pan') {
-        const xLo = rulerToX(drag.startRange[0]);
-        const xHi = rulerToX(drag.startRange[1]);
-        const dx = baselineNow - baselineStart;
-        const newLo = xToRuler(xLo + dx);
-        const newHi = xToRuler(xHi + dx);
-        const next = clamp([newLo, newHi]);
-        v.fitTo({ kind: 'range', range: next });
+        // Pure display-pan: shift offset by the cursor-equivalent layout
+        // delta. Recompute the absolute target each tick from drag-start +
+        // cumulative dxMini so missed pointer events don't drift. Clamp
+        // to padded gene bounds so the brush bites at the minimap edges.
+        const targetOffsetRaw = startOffset + dxLayout;
+        const targetOffset = clampDisplayOffsetForPan(info, targetOffsetRaw);
+        const currentOffset = v.getViewportInfo().displayOffset;
+        const applied = targetOffset - currentOffset;
+        if (applied !== 0) v.panByDisplayPx(applied);
         return;
       }
+
+      // Resize: translate the dragged handle's layout-px delta into a
+      // baseline-px delta using the START zoom, then commit a new
+      // baseline window through setBaselineWindow. Anchoring on
+      // startZoom (not the live layout) keeps the math stable across
+      // the zoom changes the gesture causes — one cursor pixel always
+      // maps to the same baseline-px shift for the dragged endpoint.
+      const dxBase = drag.startZoomScale > 0 ? dxLayout / drag.startZoomScale : 0;
+      const minBaselineSpan = Math.max(
+        1,
+        info.baselineGeometry.totalWidth * MIN_VISIBLE_FRACTION,
+      );
       if (drag.kind === 'resize-left') {
-        const xHi = rulerToX(drag.startRange[1]);
-        const xLoStart = rulerToX(drag.startRange[0]);
-        const dx = baselineNow - baselineStart;
-        const xLoNew = Math.min(xHi - 4, xLoStart + dx);
-        const newLo = xToRuler(xLoNew);
-        const newHi = drag.startRange[1];
-        const next = clamp([Math.min(newLo, newHi - 1), newHi]);
-        v.fitTo({ kind: 'range', range: next });
+        const rightBase = drag.startBaselineWindow[1];
+        const newLeftBase = drag.startBaselineWindow[0] + dxBase;
+        const next = clampResizeWindow(info, [newLeftBase, rightBase], minBaselineSpan, 'left');
+        v.setBaselineWindow(next);
         return;
       }
       if (drag.kind === 'resize-right') {
-        const xLo = rulerToX(drag.startRange[0]);
-        const xHiStart = rulerToX(drag.startRange[1]);
-        const dx = baselineNow - baselineStart;
-        const xHiNew = Math.max(xLo + 4, xHiStart + dx);
-        const newHi = xToRuler(xHiNew);
-        const newLo = drag.startRange[0];
-        const next = clamp([newLo, Math.max(newHi, newLo + 1)]);
-        v.fitTo({ kind: 'range', range: next });
+        const leftBase = drag.startBaselineWindow[0];
+        const newRightBase = drag.startBaselineWindow[1] + dxBase;
+        const next = clampResizeWindow(info, [leftBase, newRightBase], minBaselineSpan, 'right');
+        v.setBaselineWindow(next);
         return;
       }
     },
-    [viewerRef, mini, clientToBaselineX, rulerToX, xToRuler, clamp],
+    [viewerRef, info, miniToLayout],
   );
 
   const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {
@@ -260,25 +240,24 @@ export function DefaultMinimap({
     }
   }, []);
 
-  // Background click: jump to that location, centred on the click.
+  // Background click: jump to that location, keeping zoom unchanged.
   const onBackgroundPointerDown = useCallback(
     (e: ReactPointerEvent<SVGRectElement>) => {
-      if (!info || !mini) return;
-      // Ignore non-primary buttons — keeps right-click free for any host
-      // context menu the minimap might be embedded under.
+      if (!info) return;
       if (e.button !== 0) return;
       e.preventDefault();
-      const x = clientToBaselineX(e.clientX);
-      const ruler = xToRuler(x);
-      const [lo, hi] = info.range;
-      const len = hi - lo;
-      const next = clamp([ruler - len / 2, ruler + len / 2]);
-      viewerRef.current?.fitTo({ kind: 'range', range: next });
+      const v = viewerRef.current;
+      if (!v) return;
+      const miniX = clientToMiniX(e.clientX);
+      const targetLayoutX = miniToLayout(miniX, info.totalDisplayWidth);
+      const targetOffset = targetLayoutX - info.viewportWidth / 2;
+      const dx = targetOffset - info.displayOffset;
+      if (dx !== 0) v.panByDisplayPx(dx);
     },
-    [info, mini, clientToBaselineX, xToRuler, clamp, viewerRef],
+    [info, viewerRef, clientToMiniX, miniToLayout],
   );
 
-  if (!info || !baseline || !windowRect) {
+  if (!info) {
     return (
       <div
         className={['vv-default-minimap', className].filter(Boolean).join(' ')}
@@ -288,10 +267,17 @@ export function DefaultMinimap({
     );
   }
 
+  // Rendering: scale the figure's CURRENT layout to fit minimap width.
+  const total = Math.max(1, info.totalDisplayWidth);
+  const scale = width / total;
   const exonH = Math.max(4, height - 8);
   const exonY = (height - exonH) / 2;
-  const handleLeft = { x: windowRect.x - HANDLE_PX / 2, w: HANDLE_PX };
-  const handleRight = { x: windowRect.x + windowRect.w - HANDLE_PX / 2, w: HANDLE_PX };
+
+  // Brush rect = viewport's slice of the layout, scaled to minimap-x.
+  const brushX = info.displayOffset * scale;
+  const brushW = Math.max(2, info.viewportWidth * scale);
+  const handleLeft = { x: brushX - HANDLE_PX / 2, w: HANDLE_PX };
+  const handleRight = { x: brushX + brushW - HANDLE_PX / 2, w: HANDLE_PX };
 
   return (
     <div
@@ -320,34 +306,34 @@ export function DefaultMinimap({
           height={height}
           onPointerDown={onBackgroundPointerDown}
         />
-        {baseline.gaps.map((g) =>
-          g.width > 0 ? (
+        {info.currentGaps.map((g) =>
+          g.xEnd > g.xStart ? (
             <line
               key={`gap-${g.exonIdxA}-${g.exonIdxB}`}
               className="vv-default-minimap-intron"
-              x1={g.xStart}
-              x2={g.xEnd}
+              x1={g.xStart * scale}
+              x2={g.xEnd * scale}
               y1={height / 2}
               y2={height / 2}
             />
           ) : null,
         )}
-        {baseline.exons.map((e) => (
+        {info.currentExons.map((e) => (
           <rect
             key={`exon-${e.exonIdx}`}
             className="vv-default-minimap-exon"
-            x={e.xStart}
+            x={e.xStart * scale}
             y={exonY}
-            width={Math.max(1, e.width)}
+            width={Math.max(1, (e.xEnd - e.xStart) * scale)}
             height={exonH}
           />
         ))}
         <rect
           className="vv-default-minimap-window"
           data-testid="gene-glyph-minimap-window"
-          x={windowRect.x}
+          x={brushX}
           y={0}
-          width={windowRect.w}
+          width={brushW}
           height={height}
           onPointerDown={onPointerDown('pan')}
         />
@@ -373,3 +359,4 @@ export function DefaultMinimap({
     </div>
   );
 }
+

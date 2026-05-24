@@ -47,10 +47,11 @@ function ViewportDebug({ refForward }: { refForward: React.RefObject<GeneGlyphRe
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
       }}
     >
-      mode={info.mode}  zoom={fmt(info.zoom)}{'\n'}
+      mode={info.mode}  zoom={fmt(info.zoom)} (biological)  zoomScale={fmt(info.zoomScale)} (layout){'\n'}
       range         = {fmtRange(info.range)}  (ruler, derived){'\n'}
       naturalRange  = {fmtRange(info.naturalRange)}{'\n'}
-      baselineWindow= {fmtRange(info.baselineWindow)}  span={fmt(baselineSpan)} (display){'\n'}
+      baselineWindow= {fmtRange(info.baselineWindow)}  span={fmt(baselineSpan)} (baseline){'\n'}
+      displayOffset = {fmt(info.displayOffset)}  totalDisplay={fmt(info.totalDisplayWidth)}  viewportWidth={fmt(info.viewportWidth)}{'\n'}
       figureBaseline= [0, {fmt(info.baselineGeometry.totalWidth)}]  pxPerBp={fmt(info.baselineGeometry.pxPerBp)}  gapPx={fmt(info.baselineGeometry.gapPx)}
     </pre>
   );

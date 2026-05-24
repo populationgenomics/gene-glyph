@@ -90,22 +90,22 @@ function defaultIntronScale(mode: ViewMode): number {
 
 export class ViewportController implements Viewport {
   private _mode: ViewMode;
-  /** Canonical viewport state: the visible window in *baseline* (display)
-   *  coordinates. Stored as `[S_lo, S_hi]` in fit-gene baseline pixels.
-   *  The figure renders this slice of the baseline to current-x [0, width].
+  /** Canonical viewport state: the live zoom scale (multiplier on flexible
+   *  piece figure widths) and the display offset that anchors the static
+   *  figure layout to the viewport `[0, width]`. Pan modifies only
+   *  `_displayOffset`; zoom modifies `_zoomScale` (and adjusts the offset
+   *  to keep a chosen anchor in place).
    *
-   *  Pan operates directly on this state — shifting both ends by the same
-   *  baseline-x delta — so the visible span (and therefore zoom) is
-   *  invariant by construction, and the round-trip through the ruler that
-   *  used to lose information at fixed-budget gap boundaries is gone.
-   *  Ruler positions are computed via `range` when needed for display or
-   *  for the public API. */
-  private _baselineWindow: [number, number];
-  /** Cached ruler view of `_baselineWindow`. Recomputed whenever the
-   *  baseline window changes; consumers of `range` get the snapped-to-
-   *  cell-boundary ruler equivalent, which is exact when both endpoints
-   *  sit in exonic regions and snaps to the nearest exon boundary when an
-   *  endpoint sits inside a fixed-budget gap. */
+   *  The whole figure has a static layout at the current zoom — the layout
+   *  isn't a function of where the viewport is looking. Panning by N
+   *  display pixels shifts the offset by N; nothing else changes, no
+   *  layout work runs, and every piece moves uniformly by N display
+   *  pixels under the cursor. */
+  private _zoomScale: number;
+  private _displayOffset: number;
+  /** Cached ruler view of the current viewport. Set by `setRange` so the
+   *  exact input range round-trips verbatim through `range` (avoiding
+   *  floating-point drift in the ruler ↔ baseline reverse pass). */
   private _rangeCache: [number, number] | null = null;
   private _width: number;
   private _intronScale: number;
@@ -124,33 +124,117 @@ export class ViewportController implements Viewport {
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
     this._collapsedRegions = init.collapsedRegions ?? [];
-    // Eagerly compute the canonical baseline window from the seed ruler
-    // range. Doing this in the constructor (rather than lazily) avoids
-    // a circular dependency: the lazy frame() needs `_baselineWindow`,
-    // and the lazy ruler→baseline conversion needs frame().
+    // Seed: zoom = fit-zoom, offset = 0 (figure starts at viewport-x 0).
+    // If the host supplied a `range`, we adjust to put that range on screen
+    // — done lazily below since seeding the zoom needs a throwaway frame
+    // for the ruler → baseline conversion.
+    this._zoomScale = 1;
+    this._displayOffset = 0;
     const seedRange = init.range ?? defaultRangeFor(this._mode, this.mapper);
-    this._baselineWindow = this.rulerRangeToBaselineWindow(seedRange);
+    const { zoomScale, displayOffset } = this.solveZoomOffset(seedRange);
+    this._zoomScale = zoomScale;
+    this._displayOffset = displayOffset;
   }
 
-  /** Convert a ruler range to its baseline-window equivalent, using a
-   *  throwaway frame so we don't rely on `_baselineWindow` (which may not
-   *  exist yet during construction / reseat). The throwaway frame's
-   *  ruler→baseline math depends only on segments, not on a window. */
-  private rulerRangeToBaselineWindow(
+  /** Convert a target ruler range into the (zoomScale, displayOffset)
+   *  pair that makes that range fill the viewport `[0, width]`. Used by
+   *  setRange / setMode / setWidth — the rare "set the view from a
+   *  biological range" path, NOT the pan path. */
+  private solveZoomOffset(
     range: readonly [number, number],
-  ): [number, number] {
+  ): { zoomScale: number; displayOffset: number } {
+    const bLo = this.rulerToBaselineXSeed(range[0] - 0.5);
+    const bHi = this.rulerToBaselineXSeed(range[1] + 0.5);
+    return this.solveZoomOffsetFromBaselineWindow([bLo, bHi]);
+  }
+
+  /** Same as {@link solveZoomOffset} but already in baseline-x. */
+  private solveZoomOffsetFromBaselineWindow(
+    window: readonly [number, number],
+  ): { zoomScale: number; displayOffset: number } {
+    const [bLo, bHi] = window;
     const baseline = this.baselineGeometry();
-    const tmp = new ProjectionFrame({
-      baseline,
-      baselineWindow: [0, baseline.totalWidth],
+    // Solve: viewport `width` = zoomScale × visibleFlexFigure + visibleFixedDisplay.
+    // Visible portions of pieces that overlap [bLo, bHi]; flexible
+    // extrapolation past the piece array on either end counts as
+    // flexible (same scale).
+    let visibleFlex = 0;
+    let visibleFixed = 0;
+    const firstX = 0;
+    const lastX = baseline.totalWidth;
+    // We walk the baseline geometry directly: exons are flexible at width
+    // `eb.width`; gaps are fixed at `gap.width` in genome mode (their
+    // baseline width IS their fixed display budget by construction); and
+    // flanks are flexible at `flank.width`. Transcript / protein mode
+    // gaps have width 0 and don't contribute either way.
+    for (const eb of baseline.exons) {
+      const lo = Math.max(eb.xStart, bLo);
+      const hi = Math.min(eb.xEnd, bHi);
+      if (hi > lo) visibleFlex += hi - lo;
+    }
+    for (const flank of baseline.flanks ?? []) {
+      const lo = Math.max(flank.xStart, bLo);
+      const hi = Math.min(flank.xEnd, bHi);
+      if (hi > lo) visibleFlex += hi - lo;
+    }
+    for (const gap of baseline.gaps) {
+      if (gap.width <= 0) continue;
+      if (gap.scaleRule === 'linear') {
+        const lo = Math.max(gap.xStart, bLo);
+        const hi = Math.min(gap.xEnd, bHi);
+        if (hi > lo) visibleFlex += hi - lo;
+      } else {
+        // fixed-budget gap: account the BULK (gap width minus its
+        // bracketing flank widths). The bulk's baseline width IS its
+        // fixed display budget.
+        const flanksByIntron = baseline.flanks ?? [];
+        let donor = 0;
+        let acceptor = 0;
+        for (const f of flanksByIntron) {
+          if (f.intronIdx !== gap.exonIdxA) continue;
+          if (f.side === 'donor') donor = f.width;
+          else acceptor = f.width;
+        }
+        const bulkStart = gap.xStart + donor;
+        const bulkEnd = gap.xEnd - acceptor;
+        if (bulkEnd > bulkStart && bulkStart < bHi && bulkEnd > bLo) {
+          visibleFixed += bulkEnd - bulkStart;
+        }
+      }
+    }
+    if (bLo < firstX) visibleFlex += Math.min(bHi, firstX) - bLo;
+    if (bHi > lastX) visibleFlex += bHi - Math.max(bLo, lastX);
+
+    const zoomScale =
+      visibleFlex > 0
+        ? Math.max(1e-9, (this._width - visibleFixed) / visibleFlex)
+        : 1;
+    // Once we know the zoom, the static layout is fixed; find the display
+    // offset that puts bLo at viewport-x 0.
+    const tmpFrame = this.makeFrame(zoomScale, 0);
+    const displayOffset = tmpFrame.baselineToCurrent(bLo) ?? 0;
+    // `baselineToCurrent(bLo)` returns the viewport-x of bLo when offset=0;
+    // we want bLo to land at viewport-x 0, so set offset = that value.
+    return { zoomScale, displayOffset };
+  }
+
+  /** Ruler → baseline-x using a throwaway frame at fit zoom & zero offset.
+   *  Used during construction / setMode where the canonical frame isn't
+   *  available yet. */
+  private rulerToBaselineXSeed(rulerPos: number): number {
+    const tmp = this.makeFrame(1, 0);
+    return tmp.rulerToBaselineX(rulerPos);
+  }
+
+  private makeFrame(zoomScale: number, displayOffset: number): ProjectionFrame {
+    return new ProjectionFrame({
+      baseline: this.baselineGeometry(),
+      zoomScale,
+      displayOffset,
       width: this._width,
       mode: this._mode,
       exons: this.mapper.transcript.exons,
     });
-    return [
-      tmp.rulerToBaselineX(range[0] - 0.5),
-      tmp.rulerToBaselineX(range[1] + 0.5),
-    ];
   }
 
   // ---- Read-only state ---------------------------------------------------
@@ -163,11 +247,7 @@ export class ViewportController implements Viewport {
     return this._intronScale;
   }
 
-  /** Visible ruler range (CDS bp / aa). Derived from `_baselineWindow`.
-   *  Round-trip-exact with `setRange` for ranges whose endpoints fall in
-   *  exonic regions; snaps to the nearest cell boundary when an endpoint
-   *  falls inside a fixed-budget gap (where the synthetic ruler has zero
-   *  span and the inverse is ambiguous). */
+  /** Visible ruler range (CDS bp / aa). Derived. */
   get range(): readonly [number, number] {
     if (this._rangeCache) return this._rangeCache;
     const [sLo, sHi] = this.baselineWindow();
@@ -179,9 +259,78 @@ export class ViewportController implements Viewport {
   }
 
   /** Visible baseline window `[S_lo, S_hi]` in fit-gene display pixels.
-   *  This is the canonical viewport state — `range` is derived from it. */
+   *  Derived from `(zoomScale, displayOffset, width)`. */
   baselineWindow(): readonly [number, number] {
-    return this._baselineWindow;
+    const f = this.frame();
+    const lo = f.currentToBaseline(0) ?? 0;
+    const hi = f.currentToBaseline(this._width) ?? 0;
+    return [lo, hi];
+  }
+
+  /** Live zoom scale: the multiplier applied to flexible piece figure
+   *  widths to get display widths. Constant under pan; changes only on
+   *  zoom or width / mode change. */
+  zoomScale(): number {
+    return this._zoomScale;
+  }
+
+  /** Display offset of the static figure layout inside the viewport.
+   *  The viewport `[0, width]` shows `[displayOffset, displayOffset + width]`
+   *  of the laid-out figure. Pan modifies this directly. */
+  displayOffset(): number {
+    return this._displayOffset;
+  }
+
+  /** Total display width of the laid-out figure at the current zoom.
+   *  Independent of where the viewport is looking. Pan clamping consults
+   *  this. */
+  totalFigureDisplayWidth(): number {
+    return this.frame().totalDisplayWidth();
+  }
+
+  /** Baseline (fit-gene) total width — useful for derived padding budgets
+   *  in pan / zoom clamping. */
+  naturalBaselineWidth(): number {
+    return this.baselineGeometry().totalWidth;
+  }
+
+  /** Layout display-x of a baseline-x in the static figure layout. Equal
+   *  to `baselineToCurrent(baselineX) + displayOffset`; exposed directly
+   *  so pan-clamp code can convert ruler-space padded bounds into the
+   *  layout's display-space without round-tripping through the viewport
+   *  offset. */
+  baselineToLayoutX(baselineX: number): number {
+    return (this.frame().baselineToCurrent(baselineX) ?? 0) + this._displayOffset;
+  }
+
+  /** Inverse of {@link baselineToLayoutX}: a layout display-x (= position
+   *  in the static figure layout, NOT viewport-relative) → baseline-x.
+   *  Display-space chrome uses this to translate a cursor position in its
+   *  own thumbnail (which is a scaled view of the layout) into a baseline
+   *  coordinate it can hand back via {@link setBaselineWindow}. */
+  layoutXToBaseline(layoutX: number): number {
+    return this.frame().currentToBaseline(layoutX - this._displayOffset) ?? 0;
+  }
+
+  /** Per-exon display-x extents at the current zoom — layout-relative
+   *  (offset already added). Chrome that draws the live layout in its
+   *  own width (display-space minimaps, overview tracks) uses this. */
+  currentExonLayout(): ReadonlyArray<{ exonIdx: number; xStart: number; xEnd: number }> {
+    return this.baselineGeometry().exons.map((eb) => ({
+      exonIdx: eb.exonIdx,
+      xStart: this.baselineToLayoutX(eb.xStart),
+      xEnd: this.baselineToLayoutX(eb.xEnd),
+    }));
+  }
+
+  /** Per-inter-exon-gap display-x extents at the current zoom. */
+  currentGapLayout(): ReadonlyArray<{ exonIdxA: number; exonIdxB: number; xStart: number; xEnd: number }> {
+    return this.baselineGeometry().gaps.map((g) => ({
+      exonIdxA: g.exonIdxA,
+      exonIdxB: g.exonIdxB,
+      xStart: this.baselineToLayoutX(g.xStart),
+      xEnd: this.baselineToLayoutX(g.xEnd),
+    }));
   }
 
   get width(): number {
@@ -193,17 +342,15 @@ export class ViewportController implements Viewport {
   setMode(mode: ViewMode): void {
     if (mode === this._mode) return;
     const prevMode = this._mode;
-    // Convert the current visible window via the ruler so the BIOLOGICAL
-    // window is preserved across the mode switch. Baseline geometry
-    // differs across modes, so we go through ruler as an intermediate.
     const prevRange = this.range;
     const newRange = reprojectRange(prevRange, prevMode, mode, this.mapper);
     this._mode = mode;
     this._intronScale = defaultIntronScale(mode);
     this.invalidateBaseline();
     this._rangeCache = null;
-    // Re-seed the canonical baseline window in the NEW mode's geometry.
-    this._baselineWindow = this.rulerRangeToBaselineWindow(newRange);
+    const { zoomScale, displayOffset } = this.solveZoomOffset(newRange);
+    this._zoomScale = zoomScale;
+    this._displayOffset = displayOffset;
     this.publish();
     this.notify();
   }
@@ -211,26 +358,65 @@ export class ViewportController implements Viewport {
   setRange(range: readonly [number, number]): void {
     const current = this.range;
     if (current[0] === range[0] && current[1] === range[1]) return;
-    // Convert the supplied ruler range into the canonical baseline window.
-    // Also cache the input range verbatim so `range` returns the exact
-    // value the caller passed in — the rulerToBaselineX → baselineXToRuler
-    // round-trip is mathematically identity inside exons but has tiny
-    // floating-point drift that breaks controlled-prop equality.
-    this._baselineWindow = this.rulerRangeToBaselineWindow(range);
+    const { zoomScale, displayOffset } = this.solveZoomOffset(range);
+    this._zoomScale = zoomScale;
+    this._displayOffset = displayOffset;
     this._rangeCache = [range[0], range[1]];
     this._frame = null;
     this.publish();
     this.notify();
   }
 
-  /** Direct baseline-window setter — bypasses the ruler round-trip so pan
-   *  gestures don't lose information at fixed-budget gap boundaries. The
-   *  `_rangeCache` is invalidated; subsequent `range` reads derive the
-   *  ruler equivalent from the new window. */
+  /** Set the view from a baseline window. Solves for the (zoom, offset)
+   *  pair such that the window maps to `[0, width]`. Use this when a
+   *  caller has a target baseline-x range (e.g. minimap brush). For pan
+   *  gestures, use {@link panByDisplayPx} instead — it doesn't touch
+   *  zoom. */
   setBaselineWindow(window: readonly [number, number]): void {
     const current = this.baselineWindow();
     if (current[0] === window[0] && current[1] === window[1]) return;
-    this._baselineWindow = [window[0], window[1]];
+    const { zoomScale, displayOffset } = this.solveZoomOffsetFromBaselineWindow(window);
+    this._zoomScale = zoomScale;
+    this._displayOffset = displayOffset;
+    this._rangeCache = null;
+    this._frame = null;
+    this.publish();
+    this.notify();
+  }
+
+  /** Shift the viewport by a fixed number of display pixels. The figure's
+   *  layout is unchanged — only the offset shifts. Every pixel of the
+   *  figure moves by exactly `deltaPx` in display space; there is no
+   *  scale change and no per-piece reshuffle. This is the pan primitive
+   *  the cursor-anchored drag handler should call.
+   *
+   *  `deltaPx > 0` moves the figure LEFT inside the viewport (= the
+   *  viewport scrolls RIGHT over the figure). */
+  panByDisplayPx(deltaPx: number): void {
+    if (deltaPx === 0) return;
+    this._displayOffset += deltaPx;
+    this._rangeCache = null;
+    this._frame = null;
+    this.publish();
+    this.notify();
+  }
+
+  /** Set zoomScale directly, optionally keeping a chosen viewport display-x
+   *  anchored under the same baseline position before / after. The
+   *  default anchor is the centre of the viewport. */
+  setZoomScale(zoomScale: number, anchorDisplayX?: number): void {
+    if (zoomScale === this._zoomScale) return;
+    const anchor = anchorDisplayX ?? this._width / 2;
+    // Baseline-x under the anchor at the current zoom.
+    const baselineAtAnchor =
+      this.frame().currentToBaseline(anchor) ?? 0;
+    this._zoomScale = Math.max(1e-9, zoomScale);
+    this._frame = null;
+    // Choose offset so the same baselineAtAnchor lands back under
+    // `anchor` after the zoom change.
+    const tmp = this.makeFrame(this._zoomScale, 0);
+    const displayAtAnchor = tmp.baselineToCurrent(baselineAtAnchor) ?? 0;
+    this._displayOffset = displayAtAnchor - anchor;
     this._rangeCache = null;
     this._frame = null;
     this.publish();
@@ -368,14 +554,13 @@ export class ViewportController implements Viewport {
 
   setWidth(width: number): void {
     if (this._width === width) return;
-    // Baseline geometry depends on width, so the canonical baseline
-    // window must be recomputed in the new baseline's units. Preserve
-    // the visible RULER range across the width change.
     const prevRange = this.range;
     this._width = width;
     this.invalidateBaseline();
     this._rangeCache = null;
-    this._baselineWindow = this.rulerRangeToBaselineWindow(prevRange);
+    const { zoomScale, displayOffset } = this.solveZoomOffset(prevRange);
+    this._zoomScale = zoomScale;
+    this._displayOffset = displayOffset;
     this.publish();
     this.notify();
   }
@@ -417,18 +602,15 @@ export class ViewportController implements Viewport {
     this._frame = null;
   }
 
-  /** Memoised projection frame for the active `(baseline, range, width, mode)`
-   *  tuple. Invalidated alongside the baseline (on mode/width change) and on
-   *  every `setRange`. All ruler/baseline/screen math goes through here. */
+  /** Memoised projection frame for the active `(baseline, zoom, offset,
+   *  width, mode)` tuple. Invalidated on baseline change, range change,
+   *  zoom change, and pan. Pan invalidation only touches `displayOffset` —
+   *  the underlying static layout is shared via the frame's internal
+   *  layout cache, but we still rebuild the frame so callers get a fresh
+   *  view object. */
   private frame(): ProjectionFrame {
     if (this._frame) return this._frame;
-    this._frame = new ProjectionFrame({
-      baseline: this.baselineGeometry(),
-      baselineWindow: this.baselineWindow(),
-      width: this._width,
-      mode: this._mode,
-      exons: this.mapper.transcript.exons,
-    });
+    this._frame = this.makeFrame(this._zoomScale, this._displayOffset);
     return this._frame;
   }
 
@@ -894,22 +1076,15 @@ export class ViewportController implements Viewport {
     return this.frame().exonLayout().exonScale;
   }
 
-  /** Numerical derivative of `currentToBaseline` at `currentX` — gives the
-   *  local screen-px-per-baseline-px scale at THIS specific screen
-   *  position. Exon segments report `exonScale`; fixed-budget gap bulks
-   *  report 1; padding reports the layout's `paddingScale` (which is 1 in
-   *  `anyFixed` mode, `exonScale` otherwise). Pan uses this so a drag of
-   *  Δviewbox px shifts the baseline UNDER THE CURSOR by exactly that
-   *  many screen pixels — the user's anchor doesn't drift. */
+  /** Local display-per-baseline-px scale at `currentX`. Exon and flank
+   *  segments report `exonScale`; fixed-budget gap bulks report their
+   *  reserved-display-over-baseline-width ratio (= 1 for the default
+   *  natural-gap budget); past the piece array, also `exonScale`. Pan
+   *  uses this so a drag of Δviewbox px shifts the baseline UNDER THE
+   *  CURSOR by exactly that many screen pixels — the user's anchor
+   *  doesn't drift. */
   localScreenScaleAt(currentX: number): number {
-    const eps = 0.5;
-    const frame = this.frame();
-    const b0 = frame.currentToBaseline(currentX);
-    const b1 = frame.currentToBaseline(currentX + eps);
-    if (b0 === null || b1 === null) return this.exonScale();
-    const delta = b1 - b0;
-    if (!Number.isFinite(delta) || delta === 0) return this.exonScale();
-    return eps / delta;
+    return this.frame().localScreenScaleAt(currentX);
   }
 
   /**

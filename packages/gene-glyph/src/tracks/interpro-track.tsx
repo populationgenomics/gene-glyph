@@ -173,6 +173,15 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       const baseline = viewport.baselineGeometry();
       const exonByIdx = new Map<number, ExonBaseline>();
       for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
+      // Per-intron flank widths for the splice-site preservation bridge —
+      // see the comment in `pfam-track.tsx`.
+      const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
+      for (const f of baseline.flanks ?? []) {
+        const cur = flanksByIntron.get(f.intronIdx) ?? { donor: 0, acceptor: 0 };
+        if (f.side === 'donor') cur.donor = f.width;
+        else cur.acceptor = f.width;
+        flanksByIntron.set(f.intronIdx, cur);
+      }
 
       const sorted = data.placements
         .slice()
@@ -238,6 +247,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
             labelOffset,
             labelMaxW,
             exonByIdx,
+            flanksByIntron,
             painter,
             rectsByExon,
             labelsByExon,
@@ -329,6 +339,7 @@ interface EmitArgs {
   labelOffset: number;
   labelMaxW: number;
   exonByIdx: Map<number, ExonBaseline>;
+  flanksByIntron: Map<number, { donor: number; acceptor: number }>;
   painter: Painter;
   rectsByExon: Map<number, ReactNode[]>;
   labelsByExon: Map<number, ReactNode[]>;
@@ -359,6 +370,7 @@ function emitDomain(args: EmitArgs): void {
     labelOffset,
     labelMaxW,
     exonByIdx,
+    flanksByIntron,
     painter,
     rectsByExon,
     labelsByExon,
@@ -487,31 +499,84 @@ function emitDomain(args: EmitArgs): void {
         </Fragment>,
       );
     }
+    // Bridge across inter-exon gaps. Split into three pieces (donor
+    // flank, fixed bulk, acceptor flank) so each lives in the group
+    // that scales it correctly — see the matching comment in
+    // `pfam-track.tsx` for why a single line in the inter-exon group
+    // is the wrong screen length whenever zoomScale > 1.
     for (let i = 0; i < placed.segments.length - 1; i++) {
       const a = placed.segments[i]!;
       const b = placed.segments[i + 1]!;
       if (b.xStart <= a.xEnd) continue;
       const linkerY = rectY + rectH / 2;
-      const gapKey = `${a.exonIdx}:${b.exonIdx}`;
-      let bucket = linkersByGap.get(gapKey);
-      if (!bucket) {
-        bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
-        linkersByGap.set(gapKey, bucket);
+      const exonAR = exonByIdx.get(a.exonIdx);
+      const exonBR = exonByIdx.get(b.exonIdx);
+      const flanks = flanksByIntron.get(a.exonIdx) ?? { donor: 0, acceptor: 0 };
+
+      if (exonAR && flanks.donor > 0) {
+        pushTo(
+          rectsByExon,
+          a.exonIdx,
+          <line
+            key={`ipr-${featureId}-link-donor-${a.exonIdx}`}
+            x1={exonAR.width}
+            x2={exonAR.width + flanks.donor}
+            y1={linkerY}
+            y2={linkerY}
+            stroke={fill}
+            strokeWidth={1.25}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className="vv-interpro-linker"
+          />,
+        );
       }
-      bucket.nodes.push(
-        <line
-          key={`ipr-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-          x1={0}
-          x2={b.xStart - a.xEnd}
-          y1={linkerY}
-          y2={linkerY}
-          stroke={fill}
-          strokeWidth={1.25}
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-          className="vv-interpro-linker"
-        />,
+
+      const bulkWidth = Math.max(
+        0,
+        (b.xStart - a.xEnd) - flanks.donor - flanks.acceptor,
       );
+      if (bulkWidth > 0) {
+        const gapKey = `${a.exonIdx}:${b.exonIdx}`;
+        let bucket = linkersByGap.get(gapKey);
+        if (!bucket) {
+          bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
+          linkersByGap.set(gapKey, bucket);
+        }
+        bucket.nodes.push(
+          <line
+            key={`ipr-${featureId}-link-bulk-${a.exonIdx}-${b.exonIdx}`}
+            x1={0}
+            x2={bulkWidth}
+            y1={linkerY}
+            y2={linkerY}
+            stroke={fill}
+            strokeWidth={1.25}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className="vv-interpro-linker"
+          />,
+        );
+      }
+
+      if (exonBR && flanks.acceptor > 0) {
+        pushTo(
+          rectsByExon,
+          b.exonIdx,
+          <line
+            key={`ipr-${featureId}-link-acceptor-${b.exonIdx}`}
+            x1={-flanks.acceptor}
+            x2={0}
+            y1={linkerY}
+            y2={linkerY}
+            stroke={fill}
+            strokeWidth={1.25}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className="vv-interpro-linker"
+          />,
+        );
+      }
     }
   }
 

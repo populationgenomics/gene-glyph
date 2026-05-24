@@ -1,24 +1,30 @@
 import {
+  displayToFigure,
+  figureToDisplay,
+  fitZoomScale,
+  layoutFigure,
+  localScaleAtDisplay,
+  type FigureLayout,
+  type Piece,
+} from './figure-scale.js';
+import {
   buildSegments,
-  computeSegmentLayout,
+  segmentToPiece,
   type Segment,
-  type SegmentLayout,
 } from './segments.js';
 import type { BaselineGeometry, ViewMode } from './types.js';
 
 /** Per-exon CDS bp bounds used by the frame for ruler ↔ baseline mapping in
  *  CDS modes. Protein-mode projection is linear in aa and doesn't consult
- *  these. The controller passes a view over the mapper's transcript exons
- *  so the frame stays mapper-free. */
+ *  these. */
 export interface FrameExon {
   readonly cdsStart: number;
   readonly cdsEnd: number;
 }
 
-/** Per-render layout derived from `(baseline, range, width, mode)`. Each
- *  exon gets a current-frame screen-x and a shared `exonScale` applied to
- *  baseline widths. Backwards-compatible view over the underlying
- *  {@link SegmentLayout}; CSS publication reads this shape unchanged. */
+/** Per-render layout derived from `(baseline, zoomScale, displayOffset,
+ *  width, mode)`. Each exon gets a current-frame screen-x and a shared
+ *  `exonScale` applied to baseline widths. */
 export interface ExonLayout {
   readonly exonScale: number;
   readonly exonCurrentX: readonly number[];
@@ -26,11 +32,13 @@ export interface ExonLayout {
 
 export interface ProjectionFrameInit {
   baseline: BaselineGeometry;
-  /** Visible baseline window — `[S_lo, S_hi]` in fit-gene baseline-x. The
-   *  frame is the canonical owner of this; the controller stores it in
-   *  display coordinates rather than reprojecting from a ruler range each
-   *  render. */
-  baselineWindow: readonly [number, number];
+  /** Multiplier on flexible piece widths. Constant under pan, varies
+   *  only with zoom. */
+  zoomScale: number;
+  /** Display-x of the first piece's left edge inside the viewport. The
+   *  viewport `[0, width]` shows the slice `[displayOffset, displayOffset
+   *  + width]` of the static layout. Pan adjusts this directly. */
+  displayOffset: number;
   width: number;
   mode: ViewMode;
   /** CDS bp bounds for each baseline exon, indexed by `exonIdx`. */
@@ -38,44 +46,38 @@ export interface ProjectionFrameInit {
 }
 
 /**
- * Pure value object describing the projection from baseline-x (fit-gene
- * screen pixels) onto current screen-x for one `(baseline, baselineWindow,
- * width, mode)` tuple. Ruler positions (CDS bp / aa) are computed from
- * baseline-x on demand — the frame's primary state is purely in display
- * coordinates so pan operations don't round-trip through the ruler (which
- * loses information at fixed-budget gap boundaries where the synthetic
- * ruler interpolation has zero span).
+ * Pure value object describing the projection from baseline-x onto live
+ * screen-x for one `(baseline, zoom, offset, width, mode)` tuple.
  *
- * Internally, the math walks a `Segment[]` — a single ordered sequence
- * of exonic and intron-collapsed display intervals — so the four
- * mode-aware paths (CDS bp / aa rulers, scaled-vs-fixed gap behaviour)
- * collapse to one segment walk. Holds no mapper and no mutable state
- * beyond memoised intermediates.
+ * The static layout is shared across pan: changing only `displayOffset`
+ * doesn't trigger any layout work. Ruler ↔ baseline-x is a per-segment
+ * walk; baseline-x ↔ screen-x is `figure-scale` + an offset.
  */
 export class ProjectionFrame {
   readonly baseline: BaselineGeometry;
-  readonly baselineWindow: readonly [number, number];
+  readonly zoomScale: number;
+  readonly displayOffset: number;
   readonly width: number;
   readonly mode: ViewMode;
   private readonly _segments: readonly Segment[];
-  private _layout: SegmentLayout | null = null;
+  private readonly _pieces: readonly Piece[];
+  private _layout: FigureLayout | null = null;
   private _exonLayout: ExonLayout | null = null;
 
   constructor(init: ProjectionFrameInit) {
     this.baseline = init.baseline;
-    this.baselineWindow = init.baselineWindow;
+    this.zoomScale = init.zoomScale;
+    this.displayOffset = init.displayOffset;
     this.width = init.width;
     this.mode = init.mode;
     this._segments = buildSegments(init.baseline, init.exons, init.mode);
+    this._pieces = this._segments.map(segmentToPiece);
   }
 
   /** Ruler → baseline screen-x. CDS bp in CDS modes, aa in protein mode.
-   *  Always returns a finite value: extrapolates linearly using the
-   *  baseline's global `pxPerBp` past the gene's edges, and interpolates
-   *  linearly across any collapsed-intron segment so the mapping stays
-   *  continuous in `rulerPos`. The segment walk is mode-agnostic — exon
-   *  segments and gap segments both contribute the same kind of linear
-   *  interpolation; only their scale rule under live zoom differs. */
+   *  Per-segment linear interpolation between `(rulerStart, rulerEnd)`
+   *  and `(xStart, xEnd)`. Extrapolates past the gene edges using
+   *  `baseline.pxPerBp`. */
   rulerToBaselineX(rulerPos: number): number {
     const segments = this._segments;
     if (segments.length === 0) return 0;
@@ -95,13 +97,7 @@ export class ProjectionFrame {
     return last.xEnd + (rulerPos - last.rulerEnd) * this.baseline.pxPerBp;
   }
 
-  /** Inverse of {@link rulerToBaselineX}. Maps baseline screen-x back to
-   *  a ruler position by locating the containing segment. Return is
-   *  fractional; callers round if they want a discrete CDS bp / aa
-   *  value. Gap segments interpolate a "fictitious ruler" between the
-   *  bracketing exons' boundaries — that's load-bearing for pan-animation
-   *  continuity but not biologically meaningful (callers that need to
-   *  distinguish exonic vs gap hits should not rely on this method). */
+  /** Inverse of {@link rulerToBaselineX}. */
   baselineXToRuler(S: number): number {
     const segments = this._segments;
     if (segments.length === 0 || this.baseline.pxPerBp === 0) return 0;
@@ -120,197 +116,92 @@ export class ProjectionFrame {
     return last.rulerEnd + (S - last.xEnd) / this.baseline.pxPerBp;
   }
 
-  /** Baseline screen-x → live screen-x. Each segment's screen width
-   *  follows its {@link Segment.scaleRule}: `linear` segments scale with
-   *  {@link SegmentLayout.linearScale}; `fixed-budget` segments stay at
-   *  their baseline pixel width. The padding zone before / after the
-   *  segment array uses {@link SegmentLayout.paddingScale} — 1:1 when
-   *  any segment is fixed-budget (so the figure's right edge stays
-   *  anchored to `width`), otherwise the same `linearScale` as the
-   *  exons. */
+  /** Baseline screen-x → live screen-x. Pure: layout(zoom) lookup plus
+   *  an offset subtraction. */
   baselineToCurrent(baselineX: number): number | null {
-    const segments = this._segments;
-    if (segments.length === 0) return null;
-    const { S_lo, S_hi } = this.bounds();
-    if (S_hi - S_lo <= 0) return null;
-    const layout = this.segmentLayout();
-    const scale = layout.linearScale;
-    const padScale = layout.paddingScale;
-
-    const first = segments[0]!;
-    if (baselineX < first.xStart) {
-      return layout.segmentCurrentX[0]! - (first.xStart - baselineX) * padScale;
-    }
-    for (const seg of segments) {
-      if (baselineX <= seg.xEnd) {
-        return baselineToCurrentInSegment(seg, layout.segmentCurrentX[seg.index]!, baselineX, scale);
-      }
-    }
-    const last = segments[segments.length - 1]!;
-    const lastCurrent = layout.segmentCurrentX[last.index]!;
-    const lastWidth = segmentScreenWidth(last, scale);
-    return lastCurrent + lastWidth + (baselineX - last.xEnd) * padScale;
+    if (this._segments.length === 0) return null;
+    return figureToDisplay(this.figureLayout(), baselineX) - this.displayOffset;
   }
 
-  /** Inverse of {@link baselineToCurrent}: live screen-x → baseline-x. */
+  /** Inverse: live screen-x → baseline-x. */
   currentToBaseline(currentX: number): number | null {
-    const segments = this._segments;
-    if (segments.length === 0) return null;
-    const { S_lo, S_hi } = this.bounds();
-    if (S_hi - S_lo <= 0) return null;
-    const layout = this.segmentLayout();
-    const scale = layout.linearScale;
-    const padScale = layout.paddingScale;
-    if (scale <= 0 || padScale <= 0) return null;
-
-    const first = segments[0]!;
-    const firstCurrent = layout.segmentCurrentX[first.index]!;
-    if (currentX < firstCurrent) {
-      return first.xStart - (firstCurrent - currentX) / padScale;
-    }
-    for (const seg of segments) {
-      const cur = layout.segmentCurrentX[seg.index]!;
-      const segScreen = segmentScreenWidth(seg, scale);
-      const curEnd = cur + segScreen;
-      if (currentX <= curEnd) {
-        if (segScreen <= 0) return seg.xStart;
-        return currentToBaselineInSegment(seg, cur, currentX, scale);
-      }
-    }
-    const last = segments[segments.length - 1]!;
-    const lastCurrent = layout.segmentCurrentX[last.index]!;
-    const lastWidth = segmentScreenWidth(last, scale);
-    const lastEnd = lastCurrent + lastWidth;
-    return last.xEnd + (currentX - lastEnd) / padScale;
+    if (this._segments.length === 0) return null;
+    return displayToFigure(this.figureLayout(), currentX + this.displayOffset);
   }
 
-  /** Live screen-space zoom factor: `width / visibleBaselineSpan`. Distinct
-   *  from the controller's ruler-space `zoom()` (= `naturalLen / currentLen`),
-   *  which is what gets published as `--vv-zoom`. The two differ in
-   *  `genome` mode whenever the visible range crosses an inter-exon
-   *  gap — gap baseline pixels don't scale, so the screen-space factor is
-   *  smaller than the ruler-space one. Degenerate ranges report 1. */
+  /** Local display-per-baseline-px derivative at the given current
+   *  screen-x. Inside an exon (or flank) this equals `zoomScale`; inside
+   *  a fixed-budget bulk it equals the bulk's reserved-display / baseline
+   *  ratio (= 1 by construction for the default budget). At a zero-
+   *  baseline-width breakpoint it's +Infinity. */
+  localScreenScaleAt(currentX: number): number {
+    if (this._segments.length === 0) return this.zoomScale;
+    return localScaleAtDisplay(this.figureLayout(), currentX + this.displayOffset);
+  }
+
+  /** Live screen-space zoom factor: `width / visibleBaselineSpan`.
+   *  Derived from the layout; in genome mode with fixed-budget gaps in
+   *  view it differs from `zoomScale` because part of the viewport is
+   *  consumed by fixed pixels. */
   zoomFactor(): number {
-    const { S_lo, S_hi } = this.bounds();
-    const span = S_hi - S_lo;
+    const layout = this.figureLayout();
+    const bLo = displayToFigure(layout, this.displayOffset);
+    const bHi = displayToFigure(layout, this.displayOffset + this.width);
+    const span = bHi - bLo;
     if (span <= 0) return 1;
     return this.width / span;
   }
 
-  /** Per-render exon layout — `{exonScale, exonCurrentX[exonIdx]}` derived
-   *  from the underlying segment layout. Backwards-compatible view; CSS
-   *  publication consumes this shape unchanged. Memoised on first call. */
+  /** Per-render exon layout — `{exonScale, exonCurrentX[exonIdx]}`. */
   exonLayout(): ExonLayout {
     if (this._exonLayout) return this._exonLayout;
-    const layout = this.segmentLayout();
+    const layout = this.figureLayout();
     const exonCount = this.baseline.exons.length;
     const exonCurrentX = new Array<number>(exonCount).fill(0);
-    for (const seg of this._segments) {
+    for (let i = 0; i < this._segments.length; i++) {
+      const seg = this._segments[i]!;
       if (seg.kind === 'exon' && seg.exonIdx !== undefined) {
-        exonCurrentX[seg.exonIdx] = layout.segmentCurrentX[seg.index]!;
+        exonCurrentX[seg.exonIdx] = layout.displayBounds[i]!.start - this.displayOffset;
       }
     }
-    this._exonLayout = { exonScale: layout.linearScale, exonCurrentX };
+    this._exonLayout = { exonScale: this.zoomScale, exonCurrentX };
     return this._exonLayout;
   }
 
-  /** Internal segment layout — shared `linearScale` plus per-segment
-   *  current-frame screen-x. Memoised on first call. */
-  private segmentLayout(): SegmentLayout {
+  /** Live display-x of the start of the segment with the given index. */
+  segmentCurrentX(segmentIndex: number): number {
+    return this.figureLayout().displayBounds[segmentIndex]!.start - this.displayOffset;
+  }
+
+  /** Live display width of the segment with the given index. */
+  segmentCurrentWidth(segmentIndex: number): number {
+    const b = this.figureLayout().displayBounds[segmentIndex]!;
+    return b.end - b.start;
+  }
+
+  /** Segment array — accessible for callers that want to walk piece-by-
+   *  piece (publish, intron decoration positioning). */
+  segments(): readonly Segment[] {
+    return this._segments;
+  }
+
+  /** Total display width of the figure at the current zoom — i.e., the
+   *  width of the laid-out figure independent of the viewport. Useful for
+   *  pan clamping (the figure can pan from `displayOffset = 0` down to
+   *  `displayOffset = totalDisplayWidth - viewportWidth`). */
+  totalDisplayWidth(): number {
+    return this.figureLayout().totalDisplayWidth;
+  }
+
+  /** Fit-zoom scale: the `zoomScale` that would make the whole figure
+   *  fit exactly in `width` display pixels. Cached per layout. */
+  fitZoomScale(): number {
+    return fitZoomScale(this._pieces, this.width);
+  }
+
+  private figureLayout(): FigureLayout {
     if (this._layout) return this._layout;
-    const { S_lo, S_hi } = this.bounds();
-    this._layout = computeSegmentLayout(this._segments, S_lo, S_hi, this.width);
+    this._layout = layoutFigure(this._pieces, this.zoomScale);
     return this._layout;
   }
-
-  private bounds(): { S_lo: number; S_hi: number } {
-    return { S_lo: this.baselineWindow[0], S_hi: this.baselineWindow[1] };
-  }
-}
-
-/** Effective screen width of a segment at the given linear scale. For
- *  fixed-budget intron segments with embedded flanks, the donor and
- *  acceptor flanks scale linearly while the bulk between them stays at
- *  its baseline pixel budget. */
-function segmentScreenWidth(seg: Segment, linearScale: number): number {
-  if (seg.scaleRule === 'linear') return seg.width * linearScale;
-  const donor = seg.donorFlankWidth ?? 0;
-  const acceptor = seg.acceptorFlankWidth ?? 0;
-  const bulkWidth = Math.max(0, seg.width - donor - acceptor);
-  return (donor + acceptor) * linearScale + bulkWidth;
-}
-
-/** Map a baseline-x inside a segment to its live screen-x. Splits the
- *  fixed-budget gap with embedded flanks into three zones: donor
- *  (linear), bulk (fixed), acceptor (linear). */
-function baselineToCurrentInSegment(
-  seg: Segment,
-  segCurrentX: number,
-  baselineX: number,
-  linearScale: number,
-): number {
-  if (seg.scaleRule === 'linear') {
-    return segCurrentX + (baselineX - seg.xStart) * linearScale;
-  }
-  const donor = seg.donorFlankWidth ?? 0;
-  const acceptor = seg.acceptorFlankWidth ?? 0;
-  if (donor === 0 && acceptor === 0) {
-    // Pure fixed-budget — no flanks. Linear within the segment in
-    // baseline units (i.e., 1:1 baseline → screen).
-    return segCurrentX + (baselineX - seg.xStart);
-  }
-  const local = baselineX - seg.xStart;
-  if (local <= donor) {
-    return segCurrentX + local * linearScale;
-  }
-  const bulkBaselineStart = donor;
-  const bulkBaselineEnd = seg.width - acceptor;
-  if (local <= bulkBaselineEnd) {
-    return (
-      segCurrentX +
-      donor * linearScale +
-      (local - bulkBaselineStart)
-    );
-  }
-  const bulkWidth = bulkBaselineEnd - bulkBaselineStart;
-  return (
-    segCurrentX +
-    donor * linearScale +
-    bulkWidth +
-    (local - bulkBaselineEnd) * linearScale
-  );
-}
-
-/** Inverse of {@link baselineToCurrentInSegment}: map a live screen-x
- *  inside a segment back to its baseline-x. */
-function currentToBaselineInSegment(
-  seg: Segment,
-  segCurrentX: number,
-  currentX: number,
-  linearScale: number,
-): number {
-  if (seg.scaleRule === 'linear') {
-    return seg.xStart + (currentX - segCurrentX) / linearScale;
-  }
-  const donor = seg.donorFlankWidth ?? 0;
-  const acceptor = seg.acceptorFlankWidth ?? 0;
-  if (donor === 0 && acceptor === 0) {
-    return seg.xStart + (currentX - segCurrentX);
-  }
-  const local = currentX - segCurrentX;
-  const donorScreen = donor * linearScale;
-  if (local <= donorScreen) {
-    return seg.xStart + local / linearScale;
-  }
-  const bulkWidth = seg.width - donor - acceptor;
-  const bulkScreenEnd = donorScreen + bulkWidth;
-  if (local <= bulkScreenEnd) {
-    return seg.xStart + donor + (local - donorScreen);
-  }
-  return (
-    seg.xStart +
-    seg.width -
-    acceptor +
-    (local - bulkScreenEnd) / linearScale
-  );
 }

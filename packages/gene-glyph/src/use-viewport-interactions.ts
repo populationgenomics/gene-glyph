@@ -350,6 +350,9 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     boxZoomRef.current = null;
     const c = containerRef.current;
     if (c) c.classList.remove('vv-box-zooming');
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('vv-gg-box-zooming');
+    }
     onBoxZoomPreview(null);
   }, [containerRef, onBoxZoomPreview]);
 
@@ -376,14 +379,11 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       // and snaps the viewport on release.
       const box = boxZoomRef.current;
       if (box && box.pointerId === ev.pointerId) {
-        // Cancel cleanly if the cursor leaves the figure vertically (the
-        // ticket calls this out specifically; horizontal stays clamped to
-        // edges so the gesture remains usable when the user overshoots).
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (rect && (ev.clientY < rect.top || ev.clientY > rect.bottom)) {
-          endBoxZoom();
-          return;
-        }
+        // The gesture stays alive even when the cursor strays outside the
+        // figure — the user is mid-selection and dragging past the edge
+        // should peg the selection at the edge, not cancel and start
+        // text-selecting host page content. The clientX clamps inside
+        // clientXToViewbox so the preview pegs cleanly at the SVG edges.
         if (!box.moved && Math.abs(ev.clientX - box.startClientX) < BOX_ZOOM_MIN_PX) {
           return;
         }
@@ -614,6 +614,14 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         };
         const c = containerRef.current;
         if (c) c.classList.add('vv-box-zooming');
+        // Stamp a class on document.body so a body-level CSS rule can
+        // suppress text-selection across the host page for the duration of
+        // the gesture. Without this, dragging outside the figure starts a
+        // native text-selection range against whatever HTML is under the
+        // cursor (page chrome, other figures, debug readouts).
+        if (typeof document !== 'undefined') {
+          document.body.classList.add('vv-gg-box-zooming');
+        }
         // Don't preventDefault here — the synthesized mousedown's default
         // action focuses the nearest tabindex'd ancestor (the container),
         // and we want that to fire so subsequent keyboard bindings (WASD,

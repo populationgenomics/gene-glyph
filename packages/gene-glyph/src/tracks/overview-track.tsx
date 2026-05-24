@@ -302,7 +302,8 @@ function OverviewTrackImpl({
   // gene regardless of where the live figure is parked.
   const minimapFrame = new ProjectionFrame({
     baseline: scaledGeom,
-    baselineWindow: [0, scaledGeom.totalWidth],
+    zoomScale: 1,
+    displayOffset: 0,
     width,
     mode: viewport.mode,
     exons: mapper.transcript.exons,

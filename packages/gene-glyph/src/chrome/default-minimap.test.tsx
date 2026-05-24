@@ -78,6 +78,52 @@ describe('DefaultMinimap', () => {
     expect(container.querySelector('[data-testid="gene-glyph-minimap-handle-right"]')).not.toBeNull();
   });
 
+  it('brush slides by exactly the layout-pixel delta under panByDisplayPx, with no rescaling', async () => {
+    // User-stated invariant: once a zoom level is chosen, panning the
+    // figure (or its proxy in the minimap) must not change scale in
+    // either view. The brush rectangle WIDTH is invariant; only its X
+    // shifts, by exactly the proportional amount.
+    const ref = createRef<GeneGlyphRef>();
+    const { container } = render(
+      <GeneGlyph ref={ref} transcript={transcript} width={1000}>
+        <GeneGlyph.Footer>
+          <DefaultMinimap viewerRef={ref} width={400} />
+        </GeneGlyph.Footer>
+      </GeneGlyph>,
+    );
+    await flush();
+    // Zoom in so the brush is a meaningful sub-rectangle.
+    await act(async () => {
+      ref.current!.zoomBy(5, { animate: false });
+    });
+    await flush();
+    const before = ref.current!.getViewportInfo();
+    const brushBefore = container.querySelector<SVGRectElement>(
+      '[data-testid="gene-glyph-minimap-window"]',
+    )!;
+    const xBefore = Number(brushBefore.getAttribute('x'));
+    const wBefore = Number(brushBefore.getAttribute('width'));
+    // Pan by 80 layout pixels (= 80 main-view px) RIGHT (the figure
+    // slides LEFT inside the main viewport).
+    await act(async () => {
+      ref.current!.panByDisplayPx(80);
+    });
+    await flush();
+    const after = ref.current!.getViewportInfo();
+    const brushAfter = container.querySelector<SVGRectElement>(
+      '[data-testid="gene-glyph-minimap-window"]',
+    )!;
+    const xAfter = Number(brushAfter.getAttribute('x'));
+    const wAfter = Number(brushAfter.getAttribute('width'));
+    // zoomScale must be invariant under pan.
+    expect(after.zoomScale).toBe(before.zoomScale);
+    // Brush WIDTH is invariant — same fraction of the layout is on screen.
+    expect(wAfter).toBeCloseTo(wBefore, 5);
+    // Brush X shifts by (deltaPx) × (minimapWidth / totalDisplayWidth).
+    const expectedShift = 80 * (400 / after.totalDisplayWidth);
+    expect(xAfter - xBefore).toBeCloseTo(expectedShift, 4);
+  });
+
   it('jumps the viewer when the minimap background is clicked', async () => {
     const ref = createRef<GeneGlyphRef>();
     const { container } = render(

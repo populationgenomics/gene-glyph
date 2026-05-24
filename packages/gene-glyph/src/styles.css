@@ -447,6 +447,15 @@
   cursor: crosshair;
 }
 
+/* Suppress text-selection across the host page while a box-zoom gesture is
+ * live so dragging past the figure's edge doesn't start a stray selection
+ * range against page chrome. Cleared the moment the gesture ends. */
+body.vv-gg-box-zooming,
+body.vv-gg-box-zooming * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 /* Adobe-style pan modifier: Space arms the pan, switching the figure's
  * cursor to a grab affordance even before the pointer goes down. */
 .gene-glyph.vv-pan-armed .vv-figure,
@@ -620,6 +629,15 @@
 .gene-glyph .vv-aa-track {
   pointer-events: none;
   user-select: none;
+}
+
+/* Per-cell background tile under each nucleotide letter. Tinted with the
+ * letter's palette colour at low opacity so the sequence reads as a
+ * coloured band reaching both figure edges, instead of leaving a half-cell
+ * gap where the centred letter would otherwise float in empty space. */
+.gene-glyph .vv-nt-cell,
+.gene-glyph .vv-aa-cell {
+  pointer-events: none;
 }
 
 /* Slice 17: overlay layer + default hover tooltip. The overlay layer is a

@@ -1,89 +1,98 @@
 import type { BaselineGeometry, ViewMode } from './types.js';
+import type { Piece } from './figure-scale.js';
 import type { FrameExon } from './projection-frame.js';
 
 /** Display behaviour of a segment under live zoom.
  *
- *  - **`linear`**: the segment's screen width scales with the live zoom
- *    factor. Exon bodies in every mode use this. Intronic regions in
- *    `transcript` and `protein` also use this — they collapse to a
- *    one-bp transition that scales with the surrounding exon content.
- *  - **`fixed-budget`**: the segment's screen width stays constant under
- *    zoom. The inter-exon gap in `genome` is fixed-budget so
- *    Pfam / InterPro segments in adjacent exons stay visually close at
- *    deep zoom; the gap content (dashed-intron polyline + breathing
- *    room) is allotted a constant pixel budget regardless of how zoomed
- *    in the user is. */
+ *  - **`linear`** (mapped to FigureScale `flexible`): the segment's screen
+ *    width scales with the live zoom factor. Exon bodies in every mode
+ *    use this; intron flanks (splice-site preservation pieces) too.
+ *  - **`fixed-budget`** (mapped to FigureScale `fixed`): the segment's
+ *    screen width stays constant under zoom. The inter-exon gap bulk in
+ *    `genome` is fixed-budget so Pfam / InterPro segments in adjacent
+ *    exons stay visually close at deep zoom.
+ */
 export type SegmentScaleRule = 'linear' | 'fixed-budget';
 
-/** One linear or collapsed display segment, ordered 5'→3' across the
- *  figure. Each segment owns:
- *  - a baseline-x interval `[xStart, xEnd]` (fit-gene screen pixels),
- *  - a ruler interval `[rulerStart, rulerEnd]` in the active mode's
- *    coords (CDS bp in CDS modes, aa in protein mode),
- *  - a {@link SegmentScaleRule} that controls how the screen width
- *    behaves under zoom.
+/** One linear or fixed display segment, ordered 5'→3' across the figure.
  *
- *  Segments are the geometry primitive the {@link ProjectionFrame}'s
- *  math operates on; today there are two kinds (`exon`, `intron-
- *  collapsed`), but the type is designed to admit richer kinds in
- *  future phases (`splice-site`, `expanded-intron`, etc.) without
- *  reshaping the layout math. */
+ *  Each segment owns:
+ *  - a baseline-x interval `[xStart, xEnd]` (fit-gene screen pixels) —
+ *    this doubles as the segment's figure-x interval for the live
+ *    FigureScale layout;
+ *  - a ruler interval `[rulerStart, rulerEnd]` in the active mode's
+ *    coords (CDS bp in CDS modes, aa in protein mode);
+ *  - a {@link SegmentScaleRule} that controls how the screen width
+ *    behaves under live zoom.
+ *
+ *  Phase 3 splice-site flanks are first-class segments here — the
+ *  legacy "flank widths embedded inside an intron-collapsed segment"
+ *  encoding is gone. An intron with flanks emits three segments in
+ *  order: `flank-donor` (linear), `intron-bulk` (fixed), `flank-acceptor`
+ *  (linear). An intron without flanks emits a single `intron-bulk`. */
 export interface Segment {
   /** Position in the segment array. Stable for the lifetime of the
    *  baseline; the layout math indexes by this. */
   index: number;
-  /** Segment kind. `exon` is an exon body. `intron-collapsed` is the
-   *  inter-exon gap (today's intron-decoration target). `intron-flank`
-   *  is a Phase 3 splice-site-preservation piece — linear-scale bp
-   *  adjacent to an exon's 3' or 5' end, biologically intronic. */
-  kind: 'exon' | 'intron-collapsed' | 'intron-flank';
-  /** For exon segments, the exon's index in the transcript. For intron-
-   *  collapsed segments, undefined. */
+  /** Segment kind. `exon` is an exon body. `intron-bulk` is the
+   *  bulk-collapsed portion of an intron (the intron-decoration target).
+   *  `flank-donor` / `flank-acceptor` are linear-scale intronic pieces
+   *  adjacent to the upstream / downstream exon edges (splice-site
+   *  preservation). */
+  kind: 'exon' | 'intron-bulk' | 'flank-donor' | 'flank-acceptor';
+  /** For exon segments, the exon's index in the transcript. For intron
+   *  / flank segments, undefined. */
   exonIdx?: number;
-  /** For intron-collapsed segments, the bracketing exon indices. */
+  /** For intron-bulk and flank segments, the bracketing exon indices. */
   exonIdxA?: number;
   exonIdxB?: number;
-  /** For intron-flank segments, which side of the intron this piece
-   *  lives on. `donor` sits at the upstream (5') end; `acceptor` at the
-   *  downstream (3') end. */
-  flankSide?: 'donor' | 'acceptor';
-  /** For `intron-collapsed` segments with Phase 3 splice-site flanks:
-   *  the baseline width of the donor flank (on the upstream side of
-   *  the intron) and the acceptor flank (downstream side). The bulk
-   *  sits between them. Donor and acceptor portions scale with the
-   *  live linear scale; the bulk remains at its fixed pixel budget.
-   *  Both default to 0 for legacy / non-flank segments — the whole
-   *  width then follows `scaleRule`. */
-  donorFlankWidth?: number;
-  acceptorFlankWidth?: number;
   /** Ruler endpoints in active-mode units. Exon segments cover their
-   *  exonic CDS bp range (CDS modes) or their aa range (protein). Intron-
-   *  collapsed segments interpolate ruler position linearly from upstream
-   *  exon's ruler end to downstream exon's ruler start — the fictitious
-   *  ruler that powers pan-animation continuity through the gap. */
+   *  exonic CDS bp range (CDS modes) or their aa range (protein). Intron
+   *  / flank segments share a "fictitious ruler" linearly interpolated
+   *  from the upstream exon's ruler end to the downstream exon's ruler
+   *  start, sliced proportionally to each piece's baseline width.
+   *  Powers ruler ↔ baseline-x continuity through the gap. */
   rulerStart: number;
   rulerEnd: number;
-  /** Baseline (fit-gene) screen-x interval. */
+  /** Baseline (fit-gene) screen-x interval — also the segment's figure-x
+   *  interval as far as the live FigureScale layout is concerned. */
   xStart: number;
   xEnd: number;
   width: number;
   scaleRule: SegmentScaleRule;
 }
 
+/** Project a {@link Segment} onto a FigureScale {@link Piece}: figure-x
+ *  is the segment's baseline-x interval, the scale rule translates
+ *  flexible/fixed, and fixed pieces declare their full baseline width as
+ *  their reserved display budget. */
+export function segmentToPiece(seg: Segment): Piece {
+  if (seg.scaleRule === 'linear') {
+    return {
+      figureStart: seg.xStart,
+      figureEnd: seg.xEnd,
+      scaleRule: 'flexible',
+    };
+  }
+  return {
+    figureStart: seg.xStart,
+    figureEnd: seg.xEnd,
+    scaleRule: 'fixed',
+    fixedDisplayWidth: seg.width,
+  };
+}
+
 /** Derive the segment array for a precomputed baseline. Today's baseline
  *  carries `exons[]` and `gaps[]` separately; this folds them into a
  *  single ordered sequence with explicit scale rules. The frame's math
- *  works uniformly over the result regardless of mode — protein-mode's
- *  zero-width gap segments degenerate cleanly under the segment walk
- *  rather than needing a separate code path.
+ *  works uniformly over the result regardless of mode.
  *
  *  `mode` decides how ruler endpoints are sourced:
  *  - CDS modes: rulerStart/rulerEnd come from `FrameExon.cdsStart/cdsEnd`
- *    for exon segments; for intron-collapsed segments they're the
- *    bracketing exons' bounds.
+ *    for exon segments; for intron / flank segments they're interpolated
+ *    between the bracketing exons' ruler bounds.
  *  - protein: rulerStart/rulerEnd are derived from each exon's
- *    `xStart / pxPerBp + 1` (aa equivalent) so segment-walk arithmetic
- *    matches today's `(rulerPos - 1) * pxPerBp` linear formula. */
+ *    `xStart / pxPerBp + 1` (aa equivalent). */
 export function buildSegments(
   baseline: BaselineGeometry,
   exons: readonly FrameExon[],
@@ -96,16 +105,11 @@ export function buildSegments(
   // the ruler axis. To make the segment's linear interpolation place
   // bp/aa N's *centre* at its cell centre, the segment must span from
   // the leftmost cell's left edge (`firstUnit - 0.5`) to the rightmost
-  // cell's right edge (`lastUnit + 0.5`) on the ruler axis. Otherwise
-  // the interpolation would place bp/aa N at its cell's *left edge*,
-  // off by half a unit.
+  // cell's right edge (`lastUnit + 0.5`) on the ruler axis.
   const exonRuler = (i: number): readonly [number, number] => {
     if (mode === 'protein') {
       const eb = baseline.exons[i]!;
       const pxPerAa = baseline.pxPerBp;
-      // Invert the protein-mode baseline: xStart = (aaStart-1)*pxPerAa,
-      // xEnd = aaEnd*pxPerAa. Recover the aa endpoints, then widen by
-      // ±0.5 to bracket the full cell range.
       const denom = pxPerAa > 0 ? pxPerAa : 1;
       const aaStart = eb.xStart / denom + 1;
       const aaEnd = eb.xEnd / denom;
@@ -115,17 +119,20 @@ export function buildSegments(
     return [e.cdsStart - 0.5, e.cdsEnd + 0.5];
   };
 
-  // Gaps are fixed-budget when the baseline reserves explicit gap pixels
-  // (genome); in transcript and protein the gap shares the
-  // linear ruler with the surrounding exons.
-  const gapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
+  // Gap-bulk scale rule: fixed-budget when the baseline reserved
+  // explicit gap pixels (genome); linear (1:1, zero pixels) in
+  // transcript / protein.
+  const defaultGapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
 
-  // Phase 3: each intron is one ruler-walk segment covering the whole
-  // intron in both ruler and baseline-x. The flank/bulk substructure
-  // lives in baseline.flanks (a parallel array) and is used by the
-  // layout math + rendering — not by the ruler walk, which would suffer
-  // synthetic-ruler ambiguity at exon boundaries if flanks were
-  // separate segments.
+  // Index flanks-by-intron for the per-intron 3-piece split.
+  const flanksByIntron = new Map<number, { donorWidth: number; acceptorWidth: number }>();
+  for (const flank of baseline.flanks ?? []) {
+    const cur = flanksByIntron.get(flank.intronIdx) ?? { donorWidth: 0, acceptorWidth: 0 };
+    if (flank.side === 'donor') cur.donorWidth = flank.width;
+    else cur.acceptorWidth = flank.width;
+    flanksByIntron.set(flank.intronIdx, cur);
+  }
+
   let idx = 0;
   for (let i = 0; i < baseline.exons.length; i++) {
     const eb = baseline.exons[i]!;
@@ -141,199 +148,81 @@ export function buildSegments(
       width: eb.width,
       scaleRule: 'linear',
     });
-    if (i < baseline.exons.length - 1) {
-      const gap = baseline.gaps[i]!;
-      const [, upstreamRulerEnd] = exonRuler(i);
-      const [downstreamRulerStart] = exonRuler(i + 1);
-      const perGapScale: SegmentScaleRule = gap.scaleRule ?? gapScale;
-      // Per-side flank widths embedded inside this gap (Phase 3). When
-      // present, the gap's `scaleRule === 'fixed-budget'` applies only
-      // to the bulk between the flanks; each flank portion scales with
-      // `linearScale` via the layout math.
-      let donorFlankWidth = 0;
-      let acceptorFlankWidth = 0;
-      for (const flank of baseline.flanks ?? []) {
-        if (flank.intronIdx !== i) continue;
-        if (flank.side === 'donor') donorFlankWidth = flank.width;
-        else acceptorFlankWidth = flank.width;
-      }
+    if (i >= baseline.exons.length - 1) continue;
+
+    const gap = baseline.gaps[i]!;
+    const flanks = flanksByIntron.get(i) ?? { donorWidth: 0, acceptorWidth: 0 };
+    const gapScale: SegmentScaleRule = gap.scaleRule ?? defaultGapScale;
+    const [, upstreamRulerEnd] = exonRuler(i);
+    const [downstreamRulerStart] = exonRuler(i + 1);
+
+    // Distribute the gap's synthetic ruler span across the (donor flank,
+    // bulk, acceptor flank) pieces in proportion to their baseline
+    // widths. This preserves the existing ruler ↔ baseline-x continuity:
+    // a ruler position partway through the intron still maps to the
+    // same baseline-x it did when the gap was a single segment.
+    const totalGapBaseline = gap.width;
+    const rulerSpan = downstreamRulerStart - upstreamRulerEnd;
+    const rulerPerBaseline = totalGapBaseline > 0 ? rulerSpan / totalGapBaseline : 0;
+
+    let cursorX = gap.xStart;
+    let cursorRuler = upstreamRulerEnd;
+
+    if (flanks.donorWidth > 0) {
+      const xEnd = cursorX + flanks.donorWidth;
+      const rEnd = cursorRuler + flanks.donorWidth * rulerPerBaseline;
       segments.push({
         index: idx++,
-        kind: 'intron-collapsed',
+        kind: 'flank-donor',
         exonIdxA: gap.exonIdxA,
         exonIdxB: gap.exonIdxB,
-        rulerStart: upstreamRulerEnd,
-        rulerEnd: downstreamRulerStart,
-        xStart: gap.xStart,
-        xEnd: gap.xEnd,
-        width: gap.width,
-        scaleRule: perGapScale,
-        donorFlankWidth: donorFlankWidth > 0 ? donorFlankWidth : undefined,
-        acceptorFlankWidth:
-          acceptorFlankWidth > 0 ? acceptorFlankWidth : undefined,
+        rulerStart: cursorRuler,
+        rulerEnd: rEnd,
+        xStart: cursorX,
+        xEnd,
+        width: flanks.donorWidth,
+        scaleRule: 'linear',
+      });
+      cursorX = xEnd;
+      cursorRuler = rEnd;
+    }
+
+    const bulkWidth = Math.max(0, totalGapBaseline - flanks.donorWidth - flanks.acceptorWidth);
+    if (bulkWidth > 0 || gapScale === 'fixed-budget') {
+      const xEnd = cursorX + bulkWidth;
+      const rEnd = cursorRuler + bulkWidth * rulerPerBaseline;
+      segments.push({
+        index: idx++,
+        kind: 'intron-bulk',
+        exonIdxA: gap.exonIdxA,
+        exonIdxB: gap.exonIdxB,
+        rulerStart: cursorRuler,
+        rulerEnd: rEnd,
+        xStart: cursorX,
+        xEnd,
+        width: bulkWidth,
+        scaleRule: gapScale,
+      });
+      cursorX = xEnd;
+      cursorRuler = rEnd;
+    }
+
+    if (flanks.acceptorWidth > 0) {
+      const xEnd = cursorX + flanks.acceptorWidth;
+      const rEnd = cursorRuler + flanks.acceptorWidth * rulerPerBaseline;
+      segments.push({
+        index: idx++,
+        kind: 'flank-acceptor',
+        exonIdxA: gap.exonIdxA,
+        exonIdxB: gap.exonIdxB,
+        rulerStart: cursorRuler,
+        rulerEnd: rEnd,
+        xStart: cursorX,
+        xEnd,
+        width: flanks.acceptorWidth,
+        scaleRule: 'linear',
       });
     }
   }
   return segments;
-}
-
-/** Per-render screen-space placement derived from `(segments, S_lo, S_hi,
- *  width)`. Mirrors today's {@link ExonLayout}: a single shared
- *  `linearScale` applied to segments with `scaleRule === 'linear'`, plus
- *  per-segment current-frame screen-x. Fixed-budget segments stay at
- *  baseline width. */
-export interface SegmentLayout {
-  /** Shared scale factor for `linear` segments. Equivalent to today's
-   *  `exonLayout.exonScale`. Renamed because intron-collapsed segments
-   *  also use it in transcript / protein modes. */
-  readonly linearScale: number;
-  /** Scale factor applied to the padding region outside the segment
-   *  array (before `segments[0].xStart` / after the last segment's
-   *  xEnd). In modes with fixed-budget segments (genome) this is 1:1
-   *  so padding doesn't double-count with the fixed gap budget — and
-   *  the figure's right edge stays anchored to `width` even when
-   *  panned into the padding. In modes without fixed-budget segments
-   *  (transcript / protein) it equals `linearScale` so padding scales
-   *  with the exons. */
-  readonly paddingScale: number;
-  /** Per-segment screen-x of the segment's left edge. Indexed by
-   *  {@link Segment.index}. */
-  readonly segmentCurrentX: readonly number[];
-}
-
-/** Map a visible baseline range `[S_lo, S_hi]` to per-segment screen-x
- *  positions such that:
- *
- *    1. S_lo lands at screen-x = 0.
- *    2. S_hi lands at screen-x = width.
- *    3. Every visible `fixed-budget` segment occupies exactly its
- *       baseline width on screen (so the gap content stays at a constant
- *       pixel budget regardless of zoom — same load-bearing property as
- *       today's `gapsScale === false` branch).
- *
- *  Partitions the visible baseline into "linear" (always scales) +
- *  "fixed-budget" (frozen). Reserves the fixed pixels in screen space
- *  and solves for the `linearScale` that makes the linear content fill
- *  the remainder. Walks left + right from a pivot segment so per-segment
- *  positions stay stable as the user pans across a gap.
- *
- *  Padding outside the gene's segments uses the same rule as
- *  `fixed-budget` gaps when any are present, preserving today's
- *  `gapPx === 0 ? * exonScale : direct` asymmetry exactly. (Phase 1
- *  keeps current behaviour bit-for-bit; later phases can revisit the
- *  padding rule explicitly.) */
-export function computeSegmentLayout(
-  segments: readonly Segment[],
-  S_lo: number,
-  S_hi: number,
-  width: number,
-): SegmentLayout {
-  const out = new Array<number>(segments.length).fill(0);
-  if (segments.length === 0) {
-    return { linearScale: 1, paddingScale: 1, segmentCurrentX: out };
-  }
-
-  // Internal sub-region bounds for a fixed-budget intron segment. The
-  // bulk sits in the middle, flanked by donor (upstream) and acceptor
-  // (downstream) flank pixels. For non-flank segments, donor/acceptor
-  // are both 0 and the bulk spans the whole segment.
-  const bulkRange = (seg: Segment): { start: number; end: number } => {
-    const donor = seg.donorFlankWidth ?? 0;
-    const acceptor = seg.acceptorFlankWidth ?? 0;
-    return { start: seg.xStart + donor, end: seg.xEnd - acceptor };
-  };
-
-  let visibleFixedBaseline = 0;
-  let anyFixed = false;
-  for (const seg of segments) {
-    if (seg.scaleRule !== 'fixed-budget') continue;
-    const bulk = bulkRange(seg);
-    if (bulk.end <= bulk.start) continue;
-    anyFixed = true;
-    const lo = Math.max(bulk.start, S_lo);
-    const hi = Math.min(bulk.end, S_hi);
-    if (hi > lo) visibleFixedBaseline += hi - lo;
-  }
-  // Padding zones — visible baseline outside any segment. In `anyFixed`
-  // mode the pivot logic places the padding 1:1 (baseline-px == screen-px)
-  // because mixing scaled padding with fixed-budget bulks produced a
-  // visible drift past the figure right edge. Account for that 1:1 budget
-  // here, otherwise `linearScale` over-shoots and the visible content
-  // extends past `width`.
-  const firstX = segments[0]!.xStart;
-  const lastX = segments[segments.length - 1]!.xEnd;
-  const paddingBaseline = anyFixed
-    ? Math.max(0, firstX - S_lo) + Math.max(0, S_hi - lastX)
-    : 0;
-  const visibleScalingBaseline = Math.max(
-    1e-9,
-    S_hi - S_lo - visibleFixedBaseline - paddingBaseline,
-  );
-  const linearScale = Math.max(
-    1e-9,
-    (width - visibleFixedBaseline - paddingBaseline) / visibleScalingBaseline,
-  );
-  // anyFixed → padding is 1:1; otherwise it scales with linearScale.
-  const paddingScale = anyFixed ? 1 : linearScale;
-
-  const segmentScreenWidth = (seg: Segment): number => {
-    if (seg.scaleRule === 'linear') return seg.width * linearScale;
-    // Fixed-budget with optional embedded flanks: bulk stays at fixed
-    // pixels, flanks scale linearly.
-    const donor = seg.donorFlankWidth ?? 0;
-    const acceptor = seg.acceptorFlankWidth ?? 0;
-    const bulkWidth = Math.max(0, seg.width - donor - acceptor);
-    return (donor + acceptor) * linearScale + bulkWidth;
-  };
-
-  const pivotIdx = pivotSegmentIdx(segments, S_lo);
-  const pivot = segments[pivotIdx]!;
-  let pivotCurrentX: number;
-  if (S_lo >= pivot.xStart) {
-    // S_lo inside pivot segment — anchor pivot.xStart at
-    // `-(S_lo - pivot.xStart) × segment-scale` so that the visible part
-    // of the pivot starts at screen-x = 0.
-    pivotCurrentX =
-      pivot.scaleRule === 'linear'
-        ? -(S_lo - pivot.xStart) * linearScale
-        : -(S_lo - pivot.xStart);
-  } else {
-    // S_lo upstream of the pivot — this only happens when S_lo is in
-    // the padding zone before segment 0 (every gap is a real segment,
-    // so a gap-position S_lo lands inside *that* gap segment, not
-    // upstream of the first exon). Padding extrapolation uses
-    // `paddingScale`: 1:1 in modes with fixed-budget segments (the
-    // visible padding baseline is already accounted for in the
-    // `width - paddingBaseline` numerator of `linearScale`, so
-    // applying `linearScale` here would double-count), and
-    // `linearScale` in modes without fixed-budget segments.
-    const baselineUpstream = pivot.xStart - S_lo;
-    pivotCurrentX = baselineUpstream * paddingScale;
-  }
-  out[pivot.index] = pivotCurrentX;
-
-  let cursor = pivotCurrentX + segmentScreenWidth(pivot);
-  for (let i = pivotIdx + 1; i < segments.length; i++) {
-    out[i] = cursor;
-    cursor += segmentScreenWidth(segments[i]!);
-  }
-  cursor = pivotCurrentX;
-  for (let i = pivotIdx - 1; i >= 0; i--) {
-    cursor -= segmentScreenWidth(segments[i]!);
-    out[i] = cursor;
-  }
-
-  return { linearScale, paddingScale, segmentCurrentX: out };
-}
-
-/** Find the segment containing `baselineX`, or the first segment whose
- *  right edge is at or past it if `baselineX` precedes every segment.
- *  Falls through to the last segment when `baselineX` lies past the
- *  3' end. */
-function pivotSegmentIdx(segments: readonly Segment[], baselineX: number): number {
-  if (segments.length === 0) return 0;
-  for (let i = 0; i < segments.length; i++) {
-    if (baselineX <= segments[i]!.xEnd) return i;
-  }
-  return segments.length - 1;
 }

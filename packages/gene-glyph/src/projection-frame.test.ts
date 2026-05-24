@@ -3,10 +3,9 @@ import { ProjectionFrame } from './projection-frame.js';
 import type { ViewMode, BaselineGeometry } from './types.js';
 import type { FrameExon } from './projection-frame.js';
 
-/** Test helper: construct a `ProjectionFrame` from a ruler range (the
- *  way tests are easier to read). The controller stores the baseline
- *  window directly, but for tests it's still clearest to say "range
- *  [1, 200]" and have the helper convert via a throwaway frame. */
+/** Test helper: construct a `ProjectionFrame` from a target ruler range.
+ *  Computes the (zoomScale, displayOffset) that maps the range to
+ *  `[0, width]` — same algebra the ViewportController uses internally. */
 function makeFrame(opts: {
   baseline: BaselineGeometry;
   exons: readonly FrameExon[];
@@ -14,19 +13,50 @@ function makeFrame(opts: {
   width: number;
   mode: ViewMode;
 }): ProjectionFrame {
+  // Step 1: find the baseline-x window for the requested ruler range,
+  // using a throwaway frame at fit zoom.
   const tmp = new ProjectionFrame({
     baseline: opts.baseline,
-    baselineWindow: [0, opts.baseline.totalWidth],
+    zoomScale: 1,
+    displayOffset: 0,
     width: opts.width,
     mode: opts.mode,
     exons: opts.exons,
   });
+  const bLo = tmp.rulerToBaselineX(opts.range[0] - 0.5);
+  const bHi = tmp.rulerToBaselineX(opts.range[1] + 0.5);
+  // Step 2: solve W = zoom × visibleFlex + visibleFixed for zoom.
+  let visibleFlex = 0;
+  let visibleFixed = 0;
+  for (const seg of tmp.segments()) {
+    const lo = Math.max(seg.xStart, bLo);
+    const hi = Math.min(seg.xEnd, bHi);
+    if (hi <= lo) continue;
+    if (seg.scaleRule === 'linear') visibleFlex += hi - lo;
+    else visibleFixed += seg.width;
+  }
+  if (bLo < 0) visibleFlex += Math.min(bHi, 0) - bLo;
+  if (bHi > opts.baseline.totalWidth) {
+    visibleFlex += bHi - Math.max(bLo, opts.baseline.totalWidth);
+  }
+  const zoomScale =
+    visibleFlex > 0
+      ? Math.max(1e-9, (opts.width - visibleFixed) / visibleFlex)
+      : 1;
+  // Step 3: offset = display-x of bLo at the new zoom.
+  const tmp2 = new ProjectionFrame({
+    baseline: opts.baseline,
+    zoomScale,
+    displayOffset: 0,
+    width: opts.width,
+    mode: opts.mode,
+    exons: opts.exons,
+  });
+  const displayOffset = tmp2.baselineToCurrent(bLo) ?? 0;
   return new ProjectionFrame({
     baseline: opts.baseline,
-    baselineWindow: [
-      tmp.rulerToBaselineX(opts.range[0] - 0.5),
-      tmp.rulerToBaselineX(opts.range[1] + 0.5),
-    ],
+    zoomScale,
+    displayOffset,
     width: opts.width,
     mode: opts.mode,
     exons: opts.exons,

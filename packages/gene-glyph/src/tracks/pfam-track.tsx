@@ -118,6 +118,27 @@ export function pfamTrack(
       const baseline = viewport.baselineGeometry();
       const exonByIdx = new Map<number, ExonBaseline>();
       for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
+      // Per-intron donor / acceptor flank widths (Phase 3 splice-site
+      // preservation). Indexed by intron index (= upstream exon's index).
+      // The bridge between two segments split across an intron renders
+      // its three pieces (donor flank + bulk + acceptor flank) into the
+      // three different groups that scale them correctly:
+      //   - donor flank lives inside the upstream exon `<g>` (scales
+      //     with `--vv-exon-scale-x-N` = zoomScale),
+      //   - bulk lives inside the inter-exon `<g>` (scales with
+      //     `--vv-intron-scale-x-N` = intronScale, 1 in genome),
+      //   - acceptor flank lives inside the downstream exon `<g>`.
+      // A single line drawn at baseline-x length across the whole intron
+      // inside the inter-exon group would be too SHORT in display
+      // whenever zoomScale > 1, because flank baseline-px scales with
+      // zoom but the bulk doesn't.
+      const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
+      for (const f of baseline.flanks ?? []) {
+        const cur = flanksByIntron.get(f.intronIdx) ?? { donor: 0, acceptor: 0 };
+        if (f.side === 'donor') cur.donor = f.width;
+        else cur.acceptor = f.width;
+        flanksByIntron.set(f.intronIdx, cur);
+      }
 
       const placed = data.domains
         .map((d) => placeDomain(d, viewport))
@@ -163,6 +184,7 @@ export function pfamTrack(
           labelFont,
           labelOffset,
           exonByIdx,
+          flanksByIntron,
           painter,
           rectsByExon,
           labelsByExon,
@@ -274,6 +296,7 @@ interface EmitArgs {
   labelFont: number;
   labelOffset: number;
   exonByIdx: Map<number, ExonBaseline>;
+  flanksByIntron: Map<number, { donor: number; acceptor: number }>;
   painter: Painter;
   rectsByExon: Map<number, ReactNode[]>;
   labelsByExon: Map<number, ReactNode[]>;
@@ -301,6 +324,7 @@ function emitDomain(args: EmitArgs): void {
     labelFont,
     labelOffset,
     exonByIdx,
+    flanksByIntron,
     painter,
     rectsByExon,
     labelsByExon,
@@ -356,33 +380,100 @@ function emitDomain(args: EmitArgs): void {
     );
   }
 
-  // Linker over each collapsed-intron gap between consecutive segments. Lives
-  // inside the inter-exon decoration group so its opacity collapses with the
-  // dashed gap when the viewer switches to a spliced mode (intronScale = 0).
+  // Linker over each inter-exon gap between consecutive segments. The
+  // gap may consist of up to three pieces (donor flank, fixed bulk,
+  // acceptor flank), each of which scales differently under live zoom:
+  // flanks scale with the surrounding exons (zoomScale); the bulk stays
+  // at its fixed display budget. To keep the bridge visually continuous
+  // across all zooms, we render each piece into the group that already
+  // carries the right transform.
+  //
+  //   donor flank → upstream exon's `<g>` (scales with zoomScale)
+  //   bulk        → inter-exon `<g>` (scaleX = intronScale, 1 in genome)
+  //   acceptor   → downstream exon's `<g>` (scales with zoomScale)
+  //
+  // A single line drawn at full baseline-gap length inside the inter-
+  // exon group would be the wrong screen length whenever zoomScale > 1.
   for (let i = 0; i < placed.segments.length - 1; i++) {
     const a = placed.segments[i]!;
     const b = placed.segments[i + 1]!;
     if (b.xStart <= a.xEnd) continue;
-    const gapKey = `${a.exonIdx}:${b.exonIdx}`;
-    let bucket = linkersByGap.get(gapKey);
-    if (!bucket) {
-      bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
-      linkersByGap.set(gapKey, bucket);
+    const exonA = exonByIdx.get(a.exonIdx);
+    const exonB = exonByIdx.get(b.exonIdx);
+    const flanks = flanksByIntron.get(a.exonIdx) ?? { donor: 0, acceptor: 0 };
+
+    // Donor flank piece — inside the upstream exon's `<g>`. Extends
+    // from the exon body's right edge (`x = exon.width`) into the
+    // donor flank.
+    if (exonA && flanks.donor > 0) {
+      pushTo(
+        rectsByExon,
+        a.exonIdx,
+        <line
+          key={`pfam-${featureId}-link-donor-${a.exonIdx}`}
+          x1={exonA.width}
+          x2={exonA.width + flanks.donor}
+          y1={midY}
+          y2={midY}
+          stroke={fill}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          className="vv-pfam-linker"
+        />,
+      );
     }
-    bucket.nodes.push(
-      <line
-        key={`pfam-${featureId}-link-line-${a.exonIdx}-${b.exonIdx}`}
-        x1={0}
-        x2={b.xStart - a.xEnd}
-        y1={midY}
-        y2={midY}
-        stroke={fill}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-        className="vv-pfam-linker"
-      />,
+
+    // Bulk piece — inside the inter-exon `<g>`. Spans the bulk
+    // baseline width (= the bulk's fixed display budget at fit zoom).
+    const bulkWidth = Math.max(
+      0,
+      (b.xStart - a.xEnd) - flanks.donor - flanks.acceptor,
     );
+    if (bulkWidth > 0) {
+      const gapKey = `${a.exonIdx}:${b.exonIdx}`;
+      let bucket = linkersByGap.get(gapKey);
+      if (!bucket) {
+        bucket = { exonIdxA: a.exonIdx, exonIdxB: b.exonIdx, nodes: [] };
+        linkersByGap.set(gapKey, bucket);
+      }
+      bucket.nodes.push(
+        <line
+          key={`pfam-${featureId}-link-bulk-${a.exonIdx}-${b.exonIdx}`}
+          x1={0}
+          x2={bulkWidth}
+          y1={midY}
+          y2={midY}
+          stroke={fill}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          className="vv-pfam-linker"
+        />,
+      );
+    }
+
+    // Acceptor flank piece — inside the downstream exon's `<g>`.
+    // Extends from the acceptor flank's left edge to the exon body's
+    // left edge (x = 0).
+    if (exonB && flanks.acceptor > 0) {
+      pushTo(
+        rectsByExon,
+        b.exonIdx,
+        <line
+          key={`pfam-${featureId}-link-acceptor-${b.exonIdx}`}
+          x1={-flanks.acceptor}
+          x2={0}
+          y1={midY}
+          y2={midY}
+          stroke={fill}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          className="vv-pfam-linker"
+        />,
+      );
+    }
   }
 
   // Label inside the chosen exon group: positioned at baseline mid-x relative

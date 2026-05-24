@@ -352,6 +352,50 @@ describe('ViewportController — pan preserves zoom; point under cursor stays pu
       vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
     expect(afterSpan).toBeCloseTo(beforeSpan, 4);
   });
+
+  it('panByDisplayPx preserves zoomScale EXACTLY across a fixed-budget gap boundary', () => {
+    // The user's spec property: shifting by a fixed number of display
+    // pixels can never change scale. Specifically: panning until a
+    // previously-visible fixed-budget gap leaves the viewport (and vice
+    // versa) must not re-allocate display space.
+    const vp = fitGene('genome');
+    // Start zoomed-in with the visible window inside exon 1, well past
+    // the intron gap. Then pan LEFT in small steps so the gap crosses
+    // back into view. zoomScale must remain bit-for-bit constant.
+    vp.setRange([150, 250]);
+    const initialZoom = vp.zoomScale();
+    let prevSlo = vp.baselineWindow()[0];
+    for (let step = 0; step < 80; step++) {
+      vp.panByDisplayPx(-10); // shift figure RIGHT (== view scrolls LEFT)
+      // Per-piece extents are static; zoomScale must not move.
+      expect(vp.zoomScale()).toBe(initialZoom);
+      // Sanity: the baseline-x at the viewport's left edge does shift
+      // continuously (we're actually panning), proving that scale-
+      // invariance isn't coming from a no-op.
+      const sLoNow = vp.baselineWindow()[0];
+      expect(sLoNow).toBeLessThan(prevSlo + 1e-6);
+      prevSlo = sLoNow;
+    }
+  });
+
+  it('panByDisplayPx moves every viewport-x by the same display delta', () => {
+    // Translation invariance: a point at viewport-x X before the pan
+    // sits at viewport-x X-delta after — whether it's in an exon, a
+    // gap, a flank, or padding. (Equivalently: the baseline under
+    // viewport-x X before = baseline under viewport-x X-delta after.)
+    const vp = fitGene('genome');
+    vp.setRange([50, 150]);
+    const probes = [50, 200, 360, 500, 700];
+    const before = probes.map((x) => vp.screenToBaselineX(x));
+    vp.panByDisplayPx(40);
+    for (let i = 0; i < probes.length; i++) {
+      const x = probes[i]!;
+      // `panByDisplayPx(+40)` shifts the figure LEFT by 40 viewport px,
+      // so the point that was at viewport-x X is now at viewport-x X-40.
+      const after = vp.screenToBaselineX(x - 40);
+      expect(after).toBeCloseTo(before[i]!, 6);
+    }
+  });
 });
 
 describe('ViewportController — CSS variable publication', () => {
