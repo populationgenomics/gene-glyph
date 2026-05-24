@@ -142,10 +142,13 @@ export function LiveDataDemoScenario() {
           kind: 'group',
           id: `clinvar-${sig}`,
           label: humanSig(sig),
-          // Reserve a label row so the sub-group chevron sits above its
-          // summary / detail content rather than colliding with the
-          // parent's first-child y.
-          headerHeight: 22,
+          // Each sub-group's body is a single row (summary when folded,
+          // a stacked detail block when expanded). No header reservation
+          // here — the gutter cell spans the full extent so the chevron
+          // label and the figure-side strip share the same y. `gapAbove`
+          // gives the row breathing space without pushing the strip out
+          // of alignment with its label.
+          gapAbove: 6,
           tracks: [
             clinVarTrack({
               id: `clinvar-${sig}-detail`,

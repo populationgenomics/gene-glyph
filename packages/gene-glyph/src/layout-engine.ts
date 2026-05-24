@@ -193,12 +193,12 @@ function layoutGroup(
 
   // Reserve a label row at the top of the group's extent so the gutter
   // can render the chevron + label above the first child without
-  // overlapping it. The reservation eats into the group's height budget
-  // and shifts the walked children's yTops downward; the group's own
-  // rect spans the full extent (header + body) so its enclosing gutter
-  // cell can still position relative to the whole group.
+  // overlapping it. Only takes effect when the group is *expanded*: a
+  // folded group's body is a single-row summary (or nothing), and
+  // pushing the summary down by the header would leave dead space
+  // above it instead of letting the label + strip share the row.
   const headerHeight = Math.max(0, group.headerHeight ?? 0);
-  const headerConsumed = Math.min(headerHeight, budget);
+  const headerConsumed = collapsed ? 0 : Math.min(headerHeight, budget);
   const remainingBudget = Math.max(0, budget - headerConsumed);
   const bodyYStart = yTop + headerConsumed;
 

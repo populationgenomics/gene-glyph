@@ -768,6 +768,45 @@ function GeneGlyphInner(
 
   const totalHeight = Math.max(1, layout.totalHeight);
 
+  // SVG meet-scale, derived from the figure-wrap's actual displayed width.
+  // With `preserveAspectRatio="xMidYMid meet"` and an explicit
+  // `height={totalHeight}` attribute, when the wrap is narrower than
+  // `width` (viewBox width) content is scaled uniformly *and* the spare
+  // vertical room is split as a top + bottom letterbox. That has two bad
+  // effects:
+  //   * The gutter (in raw screen px) drifts away from in-figure tracks
+  //     like ClinVar density heat-strips.
+  //   * As `totalHeight` grows (e.g. expanding a sub-group's stacked
+  //     detail), the proportional top letterbox grows with it and pushes
+  //     the whole figure down on screen.
+  // We sidestep both by measuring the wrap once layout settles and
+  // shrinking the SVG (and gutter) to `scaleY * totalHeight` — no
+  // leftover room, no letterbox, no shift. The gutter still scales its
+  // item `top` / `height` through `figureMetrics.scaleY` so chevrons
+  // line up with figure content at every zoom level.
+  const [figureMetrics, setFigureMetrics] = useState<{ scaleY: number }>(
+    () => ({ scaleY: 1 }),
+  );
+  useLayoutEffect(() => {
+    const wrap = figureWrapRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const w = wrap.getBoundingClientRect().width;
+      if (w <= 0) return;
+      const scale = Math.min(1, w / width);
+      setFigureMetrics((prev) =>
+        Math.abs(prev.scaleY - scale) > 1e-3 ? { scaleY: scale } : prev,
+      );
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const obs = new ResizeObserver(measure);
+      obs.observe(wrap);
+      return () => obs.disconnect();
+    }
+  }, [width, totalHeight]);
+  const renderedHeight = Math.max(1, Math.round(figureMetrics.scaleY * totalHeight));
+
   const selectedSet = useMemo(() => toReadonlySet(selectedFeatureIds), [selectedFeatureIds]);
   const interaction = useMemo<InteractionState>(
     () => ({
@@ -1426,7 +1465,7 @@ function GeneGlyphInner(
     <div
       className={`vv-${side}-gutter`}
       data-testid={`gene-glyph-${side}-gutter`}
-      style={{ width: gutterWidth, height: totalHeight }}
+      style={{ width: gutterWidth, height: renderedHeight }}
     >
       {gutterItems.map((item) => {
         const node = renderItem(item);
@@ -1437,17 +1476,24 @@ function GeneGlyphInner(
         // it (their yTops are shifted by the same amount in the layout
         // engine), so the parent chevron + first child no longer share a
         // y range and stop overlapping.
-        const h =
+        const h_vbox =
           item.kind === 'group' && item.headerHeight && item.headerHeight > 0
             ? item.headerHeight
             : fullHeight;
+        // Map viewBox-space (yTop / height) into the figure-SVG's
+        // actual screen space using the live `scaleY`. The SVG itself
+        // is sized to `scaleY * totalHeight` so there's no letterbox
+        // to compensate for — pure linear scale aligns the gutter cell
+        // with the figure content under it.
+        const top = figureMetrics.scaleY * item.rect.yTop;
+        const height = figureMetrics.scaleY * h_vbox;
         return (
           <div
             key={`${item.kind}-${item.id}`}
             className={`vv-gutter-item vv-gutter-${item.kind}`}
             data-vv-item-id={item.id}
             data-vv-item-kind={item.kind}
-            style={{ top: item.rect.yTop, height: h }}
+            style={{ top, height }}
           >
             {node}
           </div>
@@ -1471,7 +1517,7 @@ function GeneGlyphInner(
           viewBox={`0 0 ${width} ${totalHeight}`}
           preserveAspectRatio="xMidYMid meet"
           width="100%"
-          height={totalHeight}
+          height={renderedHeight}
           role="img"
           aria-label={aria}
           onPointerDown={interactions.onPointerDown}

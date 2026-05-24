@@ -266,7 +266,7 @@ describe('LayoutEngine — height negotiation', () => {
     expect(parentItem.rect.yBottom).toBe(56);
   });
 
-  it('reserves headerHeight even when a group is folded with a summary (RD-1110)', () => {
+  it('skips headerHeight reservation while a group is folded so label + summary share the row (RD-1110)', () => {
     const viewport = makeViewport();
     const group: TrackGroup = {
       kind: 'group',
@@ -283,10 +283,11 @@ describe('LayoutEngine — height negotiation', () => {
       totalHeightBudget: 200,
       collapsedGroupIds: new Set(['g']),
     });
-    expect(result.items[0]!.headerHeight).toBe(22);
-    // Summary rendered at yTop + headerHeight = 22, so the chevron's
-    // gutter slot at 0..22 doesn't collide with the summary row.
-    expect(result.trackRects.get('summary')!.yTop).toBe(22);
+    // Folded group: no header reservation; summary starts flush with
+    // the group's top y so the gutter chevron lines up with the strip.
+    expect(result.items[0]!.headerHeight).toBe(0);
+    expect(result.trackRects.get('summary')!.yTop).toBe(0);
+    expect(result.trackRects.get('summary')!.yBottom).toBe(18);
   });
 
   it('falls back to zero rows when a folded group has no summaryTrack', () => {
