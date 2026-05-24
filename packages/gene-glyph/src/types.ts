@@ -573,6 +573,15 @@ export interface TrackGroup {
   gapAbove?: number;
   heightBudget?: number;
   tracks: Track[];
+  /** Optional one-row summary representation used when the group is folded.
+   *  The viewer swaps `tracks` for `[summaryTrack]` while the group's id is
+   *  in `collapsedGroupIds` and falls back to today's "remove rows" behaviour
+   *  when omitted. Summary tracks follow the normal Track contract — they
+   *  declare their own `coordSystem`, `heightPolicy`, `load`, and `render`,
+   *  and live inside the figure SVG so exportSVG captures them. Convention
+   *  is `heightPolicy: 'fixed'` with a small `px` (14–20 px) so folded
+   *  groups land at a predictable height. */
+  summaryTrack?: Track;
 }
 
 export type TrackOrGroup = Track | TrackGroup;

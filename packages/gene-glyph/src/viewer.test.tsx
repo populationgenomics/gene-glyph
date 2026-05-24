@@ -563,4 +563,208 @@ describe('GeneGlyph', () => {
       expect(query).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('RD-1110 — group fold state', () => {
+    function summaryStub() {
+      return {
+        id: 'summary',
+        coordSystem: 'cds' as const,
+        heightPolicy: 'fixed' as const,
+        async load() {
+          return null;
+        },
+        height() {
+          return { px: 18, didTruncate: false };
+        },
+        render() {
+          return <g data-testid="summary-rendered" />;
+        },
+        toJSON() {
+          return { id: 'summary' };
+        },
+      };
+    }
+    function detailStub() {
+      return {
+        id: 'detail',
+        coordSystem: 'cds' as const,
+        heightPolicy: 'fixed' as const,
+        async load() {
+          return null;
+        },
+        height() {
+          return { px: 40, didTruncate: false };
+        },
+        render() {
+          return <g data-testid="detail-rendered" />;
+        },
+        toJSON() {
+          return { id: 'detail' };
+        },
+      };
+    }
+
+    it('renders detail tracks when the group id is not in defaultCollapsedGroupIds', async () => {
+      render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+        />,
+      );
+      await flushTrackLoads();
+      expect(screen.getByTestId('detail-rendered')).toBeInTheDocument();
+      expect(screen.queryByTestId('summary-rendered')).toBeNull();
+    });
+
+    it('renders summary track when the group id is in defaultCollapsedGroupIds', async () => {
+      render(
+        <GeneGlyph
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+          defaultCollapsedGroupIds={['g']}
+        />,
+      );
+      await flushTrackLoads();
+      expect(screen.queryByTestId('detail-rendered')).toBeNull();
+      expect(screen.getByTestId('summary-rendered')).toBeInTheDocument();
+    });
+
+    it('toggleGroup() switches between detail and summary and fires onCollapsedGroupChange', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const onChange = vi.fn();
+      render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+          onCollapsedGroupChange={onChange}
+        />,
+      );
+      await flushTrackLoads();
+      expect(screen.getByTestId('detail-rendered')).toBeInTheDocument();
+      await act(async () => {
+        ref.current!.toggleGroup('g');
+      });
+      await flushTrackLoads();
+      expect(onChange).toHaveBeenCalled();
+      const lastCallSet = onChange.mock.calls.at(-1)![0] as Set<string>;
+      expect(lastCallSet.has('g')).toBe(true);
+      expect(screen.queryByTestId('detail-rendered')).toBeNull();
+      expect(screen.getByTestId('summary-rendered')).toBeInTheDocument();
+      await act(async () => {
+        ref.current!.toggleGroup('g');
+      });
+      await flushTrackLoads();
+      expect(screen.getByTestId('detail-rendered')).toBeInTheDocument();
+    });
+
+    it('controlled collapsedGroupIds wins over local state', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      const onChange = vi.fn();
+      const { rerender } = render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+          collapsedGroupIds={new Set()}
+          onCollapsedGroupChange={onChange}
+        />,
+      );
+      await flushTrackLoads();
+      expect(screen.getByTestId('detail-rendered')).toBeInTheDocument();
+      // Imperative call fires onChange but the controlled prop is the
+      // source of truth — the rendered branch only changes once the host
+      // updates the prop.
+      await act(async () => {
+        ref.current!.foldGroup('g');
+      });
+      await flushTrackLoads();
+      expect(onChange).toHaveBeenCalled();
+      expect(screen.getByTestId('detail-rendered')).toBeInTheDocument();
+      rerender(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+          collapsedGroupIds={new Set(['g'])}
+          onCollapsedGroupChange={onChange}
+        />,
+      );
+      await flushTrackLoads();
+      expect(screen.queryByTestId('detail-rendered')).toBeNull();
+      expect(screen.getByTestId('summary-rendered')).toBeInTheDocument();
+    });
+
+    it('getCollapsedGroupIds returns the current set', async () => {
+      const ref = createRef<GeneGlyphRef>();
+      render(
+        <GeneGlyph
+          ref={ref}
+          transcript={transcript}
+          tracks={[
+            exonTrack({}),
+            {
+              kind: 'group',
+              id: 'g',
+              label: 'G',
+              tracks: [detailStub()],
+              summaryTrack: summaryStub(),
+            },
+          ]}
+          defaultCollapsedGroupIds={['g']}
+        />,
+      );
+      await flushTrackLoads();
+      expect([...ref.current!.getCollapsedGroupIds()]).toEqual(['g']);
+      await act(async () => {
+        ref.current!.unfoldGroup('g');
+      });
+      expect([...ref.current!.getCollapsedGroupIds()]).toEqual([]);
+    });
+  });
 });

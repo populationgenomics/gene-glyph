@@ -92,6 +92,7 @@ export {
 export type { ViewportControllerInit } from './viewport.js';
 export { layoutTracks } from './layout-engine.js';
 export type { LayoutEngineArgs, LayoutItem, LayoutResult } from './layout-engine.js';
+export { variantCategoryColor } from './symbol-encoding.js';
 export { createSvgPainter } from './painter/svg-painter.js';
 export type { SvgPainterOptions } from './painter/svg-painter.js';
 export { exonTrack } from './tracks/exon-track.js';

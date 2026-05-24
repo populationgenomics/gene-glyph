@@ -119,6 +119,75 @@ describe('LayoutEngine — height negotiation', () => {
     expect(result.trackRects.get('g-b')?.yBottom).toBe(58);
   });
 
+  it('swaps a folded group for its summaryTrack when present (RD-1110)', () => {
+    const viewport = makeViewport();
+    const group: TrackGroup = {
+      kind: 'group',
+      id: 'g',
+      label: 'Group',
+      tracks: [
+        stubTrack({ id: 'detail-a', naturalHeight: 40 }),
+        stubTrack({ id: 'detail-b', naturalHeight: 40 }),
+      ],
+      summaryTrack: stubTrack({ id: 'summary', naturalHeight: 16 }),
+    };
+    const result = layoutTracks({
+      tracks: [group],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      collapsedGroupIds: new Set(['g']),
+    });
+    // Folded → only the summary track is laid out; detail tracks have no
+    // rect at all.
+    expect(result.items[0]!.children?.map((c) => c.id)).toEqual(['summary']);
+    expect(result.trackRects.get('summary')!.yBottom).toBe(16);
+    expect(result.trackRects.has('detail-a')).toBe(false);
+    expect(result.trackRects.has('detail-b')).toBe(false);
+  });
+
+  it('lays out group detail tracks when collapsedGroupIds does not include the group', () => {
+    const viewport = makeViewport();
+    const group: TrackGroup = {
+      kind: 'group',
+      id: 'g',
+      label: 'Group',
+      tracks: [stubTrack({ id: 'detail-a', naturalHeight: 30 })],
+      summaryTrack: stubTrack({ id: 'summary', naturalHeight: 16 }),
+    };
+    const result = layoutTracks({
+      tracks: [group],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      collapsedGroupIds: new Set(),
+    });
+    expect(result.items[0]!.children?.map((c) => c.id)).toEqual(['detail-a']);
+    expect(result.trackRects.has('summary')).toBe(false);
+  });
+
+  it('falls back to zero rows when a folded group has no summaryTrack', () => {
+    const viewport = makeViewport();
+    const group: TrackGroup = {
+      kind: 'group',
+      id: 'g',
+      label: 'Group',
+      tracks: [stubTrack({ id: 'detail', naturalHeight: 40 })],
+    };
+    const result = layoutTracks({
+      tracks: [stubTrack({ id: 'top', naturalHeight: 10 }), group],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      collapsedGroupIds: new Set(['g']),
+    });
+    // Group consumes zero vertical real estate; the top track is the only
+    // thing the totalHeight reflects.
+    expect(result.totalHeight).toBe(10);
+    expect(result.items[1]!.rect.yTop).toBe(result.items[1]!.rect.yBottom);
+    expect(result.trackRects.has('detail')).toBe(false);
+  });
+
   it('passes the remaining budget as hint.maxPx to each track', () => {
     const viewport = makeViewport();
     const seenHints: number[] = [];

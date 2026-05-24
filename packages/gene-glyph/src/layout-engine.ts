@@ -37,6 +37,11 @@ export interface LayoutEngineArgs {
   totalHeightBudget: number;
   /** Top y-coordinate to lay the first track from. Defaults to 0. */
   yStart?: number;
+  /** Group ids that should render as folded. When a folded group carries
+   *  a {@link TrackGroup.summaryTrack} the engine lays out the summary
+   *  track in its place; when it doesn't, the group contributes zero
+   *  height (today's "remove rows" semantics). */
+  collapsedGroupIds?: ReadonlySet<string>;
 }
 
 /**
@@ -48,6 +53,7 @@ export interface LayoutEngineArgs {
 export function layoutTracks(args: LayoutEngineArgs): LayoutResult {
   const { tracks, viewport, data, totalHeightBudget } = args;
   const yStart = args.yStart ?? 0;
+  const collapsedGroupIds = args.collapsedGroupIds ?? EMPTY_COLLAPSED_SET;
   const items: LayoutItem[] = [];
   const trackRects = new Map<string, TrackRect>();
 
@@ -60,7 +66,14 @@ export function layoutTracks(args: LayoutEngineArgs): LayoutResult {
       const gap = item.gapAbove ?? 0;
       y += gap;
       remaining -= gap;
-      const groupRes = layoutGroup(item, viewport, data, y, groupBudget);
+      const groupRes = layoutGroup(
+        item,
+        viewport,
+        data,
+        y,
+        groupBudget,
+        collapsedGroupIds.has(item.id),
+      );
       items.push(groupRes.item);
       for (const [id, rect] of groupRes.trackRects) trackRects.set(id, rect);
       const consumed = groupRes.item.rect.yBottom - groupRes.item.rect.yTop;
@@ -104,12 +117,15 @@ function layoutTrack(
   return { item };
 }
 
+const EMPTY_COLLAPSED_SET: ReadonlySet<string> = new Set<string>();
+
 function layoutGroup(
   group: TrackGroup,
   viewport: Viewport,
   data: Map<string, unknown>,
   yTop: number,
   budget: number,
+  collapsed: boolean,
 ): { item: LayoutItem; trackRects: Map<string, TrackRect> } {
   const children: LayoutItem[] = [];
   const trackRects = new Map<string, TrackRect>();
@@ -118,7 +134,16 @@ function layoutGroup(
   let groupTruncated = false;
   let droppedTotal = 0;
 
-  for (const sub of group.tracks) {
+  // When the group is folded the engine walks the summary track in place
+  // of the detail stack. Without a summary track a folded group simply
+  // contributes zero rows — today's "remove rows" semantics.
+  const effective = collapsed
+    ? group.summaryTrack
+      ? [group.summaryTrack]
+      : []
+    : group.tracks;
+
+  for (const sub of effective) {
     if (remaining <= 0) {
       groupTruncated = true;
       break;

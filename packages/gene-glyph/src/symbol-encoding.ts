@@ -180,7 +180,7 @@ const VARIANT_CATEGORY_FALLBACK: Record<VariantCategory, string> = {
   unknown: '#cbd5e1',
 };
 
-function variantCategoryColor(category: VariantCategory): string {
+export function variantCategoryColor(category: VariantCategory): string {
   return `var(--${VARIANT_CATEGORY_VAR[category]}, ${VARIANT_CATEGORY_FALLBACK[category]})`;
 }
 

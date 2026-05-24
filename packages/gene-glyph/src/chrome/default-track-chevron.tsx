@@ -24,8 +24,16 @@ export interface DefaultTrackChevronProps {
  * state and the matching `tracks` edit.
  *
  * The chevron is purely presentational — it has no opinion about how the
- * host implements collapsing (filtering the `tracks` prop, swapping a
- * placeholder track, etc.). Built using only the public API.
+ * host implements collapsing. The canonical pattern (RD-1110) is for
+ * `onToggle` to call into the viewer's collapse API — either through the
+ * imperative ref (`viewerRef.current?.toggleGroup(item.id)`) or by
+ * updating the host's mirror of `collapsedGroupIds` — rather than editing
+ * the `tracks` prop. Wrapping the detail tracks in a `TrackGroup` with a
+ * `summaryTrack` then lets the figure swap the stacked detail for a
+ * one-row summary while the chevron is in the folded state, instead of
+ * removing the rows entirely.
+ *
+ * Built using only the public API.
  */
 export function DefaultTrackChevron({
   item,

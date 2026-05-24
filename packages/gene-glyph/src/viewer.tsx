@@ -144,6 +144,17 @@ export interface GeneGlyphProps {
    *  entries are subsumed by hard collapse. */
   collapsedRegions?: CollapsedRegion[];
   className?: string;
+  /** Controlled set of folded group ids. When supplied, the viewer reads
+   *  fold state from this prop and fires `onCollapsedGroupChange` for
+   *  chevron clicks / imperative calls without mutating local state.
+   *  RD-1110. */
+  collapsedGroupIds?: ReadonlySet<string> | Iterable<string>;
+  /** Initial set of folded groups for uncontrolled use. Ignored when
+   *  `collapsedGroupIds` is supplied. */
+  defaultCollapsedGroupIds?: Iterable<string>;
+  /** Fires after every committed change to the folded-group set
+   *  (controlled or uncontrolled). RD-1110. */
+  onCollapsedGroupChange?: (next: ReadonlySet<string>) => void;
   /** Compound-component slots: `GeneGlyph.Header`, `GeneGlyph.Footer`,
    *  `GeneGlyph.LeftGutter`, `GeneGlyph.RightGutter`. Slots are rendered as
    *  React DOM siblings of the figure SVG (header/footer above/below; gutters
@@ -327,13 +338,30 @@ export interface GeneGlyphRef {
   /** Rasterise the figure SVG to a PNG `Blob` at the requested pixel width.
    *  Height is derived from the figure's aspect ratio. Slice 19. */
   exportPNG(args?: ExportArgs & { widthPx: number }): Promise<Blob>;
+  /** Fold the group with the given id. No-op for unknown ids. RD-1110. */
+  foldGroup(id: string): void;
+  /** Unfold the group with the given id. No-op for unknown ids. RD-1110. */
+  unfoldGroup(id: string): void;
+  /** Toggle the fold state of the group with the given id. RD-1110. */
+  toggleGroup(id: string): void;
+  /** Snapshot of the currently-folded group ids. RD-1110. */
+  getCollapsedGroupIds(): ReadonlySet<string>;
 }
 
-function flattenTracks(items: TrackOrGroup[]): Track[] {
+function flattenTracks(
+  items: TrackOrGroup[],
+  collapsedGroupIds: ReadonlySet<string>,
+): Track[] {
   const out: Track[] = [];
   for (const item of items) {
     if (isTrackGroup(item)) {
-      for (const t of item.tracks) out.push(t);
+      if (collapsedGroupIds.has(item.id)) {
+        if (item.summaryTrack) out.push(item.summaryTrack);
+        // No summary track → group contributes no rows; matches today's
+        // "remove rows" semantics for folded groups without a summary.
+      } else {
+        for (const t of item.tracks) out.push(t);
+      }
     } else {
       out.push(item);
     }
@@ -423,6 +451,9 @@ function GeneGlyphInner(
     minZoom,
     maxZoom = DEFAULT_MAX_ZOOM,
     collapsedRegions: collapsedRegionsProp,
+    collapsedGroupIds: controlledCollapsedGroupIds,
+    defaultCollapsedGroupIds,
+    onCollapsedGroupChange,
     className,
     children,
   }: GeneGlyphProps,
@@ -444,7 +475,40 @@ function GeneGlyphInner(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
     [tracks],
   );
-  const flatTracks = useMemo(() => flattenTracks(trackList), [trackList]);
+
+  // Folded-group state machine. Mirrors the brush / viewportRange shape: the
+  // controlled prop wins when supplied; otherwise we keep an internal set
+  // seeded from `defaultCollapsedGroupIds`. Both branches fire
+  // `onCollapsedGroupChange` after every commit so hosts can mirror the set
+  // into URL state or persistence.
+  const collapsedControlled = controlledCollapsedGroupIds !== undefined;
+  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState<ReadonlySet<string>>(
+    () => toReadonlySet(defaultCollapsedGroupIds),
+  );
+  const collapsedGroupIds: ReadonlySet<string> = collapsedControlled
+    ? toReadonlySet(controlledCollapsedGroupIds)
+    : uncontrolledCollapsed;
+  const collapsedGroupIdsRef = useRef(collapsedGroupIds);
+  useEffect(() => {
+    collapsedGroupIdsRef.current = collapsedGroupIds;
+  }, [collapsedGroupIds]);
+  const onCollapsedGroupChangeRef = useRef(onCollapsedGroupChange);
+  useEffect(() => {
+    onCollapsedGroupChangeRef.current = onCollapsedGroupChange;
+  }, [onCollapsedGroupChange]);
+
+  const applyCollapsed = useCallback(
+    (next: ReadonlySet<string>) => {
+      if (!collapsedControlled) setUncontrolledCollapsed(next);
+      onCollapsedGroupChangeRef.current?.(next);
+    },
+    [collapsedControlled],
+  );
+
+  const flatTracks = useMemo(
+    () => flattenTracks(trackList, collapsedGroupIds),
+    [trackList, collapsedGroupIds],
+  );
   const mapper = useMemo(() => createCoordinateMapper(transcript), [transcript]);
   const initialRange = viewportRange ?? defaultViewportRange;
   const collapsedRegions = useMemo(
@@ -680,13 +744,14 @@ function GeneGlyphInner(
         viewport,
         data: trackData,
         totalHeightBudget: trackHeightBudget,
+        collapsedGroupIds,
       }),
     // `viewportVersion` re-runs layout when the viewport's committed range or
     // mode changes (gesture / imperative); `viewportRange` lets controlled
     // hosts drive layout without going through the subscription (the
     // prop-sync useMemo above writes it into `viewport` first).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trackList, viewport, trackData, trackHeightBudget, viewportVersion, viewportRange],
+    [trackList, viewport, trackData, trackHeightBudget, viewportVersion, viewportRange, collapsedGroupIds],
   );
 
   const totalHeight = Math.max(1, layout.totalHeight);
@@ -1067,6 +1132,41 @@ function GeneGlyphInner(
     [viewport],
   );
 
+  const foldGroup = useCallback(
+    (id: string) => {
+      const current = collapsedGroupIdsRef.current;
+      if (current.has(id)) return;
+      const next = new Set(current);
+      next.add(id);
+      applyCollapsed(next);
+    },
+    [applyCollapsed],
+  );
+  const unfoldGroup = useCallback(
+    (id: string) => {
+      const current = collapsedGroupIdsRef.current;
+      if (!current.has(id)) return;
+      const next = new Set(current);
+      next.delete(id);
+      applyCollapsed(next);
+    },
+    [applyCollapsed],
+  );
+  const toggleGroup = useCallback(
+    (id: string) => {
+      const current = collapsedGroupIdsRef.current;
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      applyCollapsed(next);
+    },
+    [applyCollapsed],
+  );
+  const getCollapsedGroupIds = useCallback(
+    (): ReadonlySet<string> => collapsedGroupIdsRef.current,
+    [],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1079,6 +1179,10 @@ function GeneGlyphInner(
       subscribe,
       exportSVG,
       exportPNG,
+      foldGroup,
+      unfoldGroup,
+      toggleGroup,
+      getCollapsedGroupIds,
     }),
     [
       fitTo,
@@ -1090,6 +1194,10 @@ function GeneGlyphInner(
       subscribe,
       exportSVG,
       exportPNG,
+      foldGroup,
+      unfoldGroup,
+      toggleGroup,
+      getCollapsedGroupIds,
     ],
   );
 
