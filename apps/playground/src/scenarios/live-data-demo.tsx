@@ -76,11 +76,16 @@ export function LiveDataDemoScenario() {
   const [lastClicked, setLastClicked] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(() => new Set());
   // Folded-group state — owned by the host so the URL / preferences layer
-  // could mirror it. RD-1110 starts the ClinVar group folded so dense
+  // could mirror it. The parent ClinVar group starts folded so dense
   // genes (BRCA1 ~12k records, TP53 ~3.7k) land at one row instead of
-  // hundreds of stacked rows on first paint.
+  // hundreds of stacked rows on first paint; each sub-group also starts
+  // folded so expanding the parent reveals six density heat-strips
+  // (one per significance) rather than blowing the figure up.
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set([CLINVAR_GROUP_ID]),
+    () => new Set([
+      CLINVAR_GROUP_ID,
+      ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
+    ]),
   );
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
@@ -124,23 +129,41 @@ export function LiveDataDemoScenario() {
   const tracks = useMemo<TrackOrGroup[]>(
     () => {
       const records = state.kind === 'ready' ? state.data.clinvar : [];
+      // One sub-group per significance bucket — each independently
+      // foldable, each carrying its own filtered detail + filtered
+      // summary. The parent ClinVar group sits one level above and
+      // owns a whole-record summary heat-strip so folding the parent
+      // (regardless of any child fold state) lands the figure at one
+      // row covering the entire ClinVar surface.
+      const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
+        const sigFilter = (r: ClinVarRecord) =>
+          r.significance === sig && filter(r);
+        return {
+          kind: 'group',
+          id: `clinvar-${sig}`,
+          label: humanSig(sig),
+          tracks: [
+            clinVarTrack({
+              id: `clinvar-${sig}-detail`,
+              source: records,
+              stackedVariantStyle: defaultClinVarSymbolEncoding,
+              filter: sigFilter,
+            }),
+          ],
+          summaryTrack: clinVarSummaryTrack({
+            id: `clinvar-${sig}-summary`,
+            source: records,
+            filter: sigFilter,
+          }),
+        };
+      };
       return [
         exonTrack({}),
         {
-          // Group wraps the stacked-detail track with a density heat-strip
-          // summary. While folded the figure shows the one-row summary;
-          // expanding swaps in the stacked render. RD-1110.
           kind: 'group',
           id: CLINVAR_GROUP_ID,
           label: 'ClinVar',
-          tracks: [
-            clinVarTrack({
-              id: 'clinvar',
-              source: records,
-              stackedVariantStyle: defaultClinVarSymbolEncoding,
-              filter,
-            }),
-          ],
+          tracks: SIGNIFICANCE_CHIPS.map(subgroup),
           summaryTrack: clinVarSummaryTrack({
             id: 'clinvar-summary',
             source: records,
@@ -325,20 +348,27 @@ export function LiveDataDemoScenario() {
           if (trackId === 'clinvar') setLastClicked(featureId);
         }}
       >
-        <GeneGlyph.LeftGutter width={140}>
+        <GeneGlyph.LeftGutter width={180}>
           {(item: GutterItem) => {
-            if (item.kind === 'group' && item.id === CLINVAR_GROUP_ID) {
-              return (
-                <span style={{ alignSelf: 'flex-start', paddingTop: 1 }}>
-                  <DefaultTrackChevron
-                    item={item}
-                    collapsed={collapsedGroups.has(item.id)}
-                    onToggle={() => viewerRef.current?.toggleGroup(item.id)}
-                  />
-                </span>
-              );
-            }
-            return null;
+            if (item.kind !== 'group') return null;
+            // Indent nested groups proportional to depth so the parent
+            // ClinVar chevron and its six per-significance children read
+            // as a hierarchy in the gutter.
+            return (
+              <span
+                style={{
+                  alignSelf: 'flex-start',
+                  paddingTop: 1,
+                  paddingLeft: item.depth * 14,
+                }}
+              >
+                <DefaultTrackChevron
+                  item={item}
+                  collapsed={collapsedGroups.has(item.id)}
+                  onToggle={() => viewerRef.current?.toggleGroup(item.id)}
+                />
+              </span>
+            );
           }}
         </GeneGlyph.LeftGutter>
       </GeneGlyph>
