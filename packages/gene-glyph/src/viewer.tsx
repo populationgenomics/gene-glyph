@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
   type ComponentType,
   type ForwardRefExoticComponent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -715,18 +716,151 @@ function GeneGlyphInner(
 
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
-  const handleHover = useCallback(
-    (trackId: string, featureId: string | null) => {
-      onHover?.(featureId, trackId);
-      if (featureId) {
-        setTooltipTarget({ trackId, featureId });
+  // Hover debouncing — see RD-1109. Adjacent variant glyphs separated by a
+  // pixel of empty SVG would flicker the tooltip on every cursor jitter: each
+  // pointermove crossing a gap fires mouseLeave→mouseEnter, dismissing then
+  // re-mounting the tooltip. We coalesce raw enter/leave events through a
+  // small state machine:
+  //   * Enter delay defers committing a hover until the cursor has stayed on
+  //     a feature for ~enterDelayMs — but only when the cursor is moving
+  //     fast. A confident, low-velocity hover commits immediately so the
+  //     user doesn't pay the delay when they've clearly landed.
+  //   * Exit grace keeps the tooltip mounted for ~exitGraceMs after leave so
+  //     a quick re-entry (same feature OR an adjacent one) swaps targets in
+  //     place rather than unmounting and re-mounting.
+  // Pointer-leave from the figure dismisses immediately — debouncing only
+  // applies to entry and inter-feature transitions, never to true dismissal.
+  const HOVER_ENTER_DELAY_MS = 100;
+  const HOVER_EXIT_GRACE_MS = 60;
+  const HOVER_FAST_VELOCITY_PX_MS = 0.1;
+  const tooltipTargetRef = useRef<{ trackId: string; featureId: string } | null>(null);
+  useEffect(() => {
+    tooltipTargetRef.current = tooltipTarget;
+  }, [tooltipTarget]);
+  const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingEnterRef = useRef<{ trackId: string; featureId: string } | null>(null);
+  const pointerVelocityRef = useRef<{ x: number; y: number; t: number; vel: number } | null>(null);
+
+  const clearEnterTimer = useCallback(() => {
+    if (enterTimerRef.current !== null) {
+      clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+    pendingEnterRef.current = null;
+  }, []);
+  const clearExitTimer = useCallback(() => {
+    if (exitTimerRef.current !== null) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+  }, []);
+  useEffect(() => () => {
+    clearEnterTimer();
+    clearExitTimer();
+  }, [clearEnterTimer, clearExitTimer]);
+
+  const commitHover = useCallback(
+    (next: { trackId: string; featureId: string } | null, leavingTrackId?: string) => {
+      clearEnterTimer();
+      clearExitTimer();
+      if (next) {
+        setTooltipTarget(next);
+        onHover?.(next.featureId, next.trackId);
       } else {
+        const tid = leavingTrackId ?? tooltipTargetRef.current?.trackId ?? null;
         setTooltipTarget(null);
         setTooltipPos(null);
+        if (tid) onHover?.(null, tid);
       }
     },
-    [onHover],
+    [clearEnterTimer, clearExitTimer, onHover],
   );
+
+  const handleHover = useCallback(
+    (trackId: string, featureId: string | null) => {
+      if (featureId) {
+        const next = { trackId, featureId };
+        const current = tooltipTargetRef.current;
+        // Re-entering the same feature during exit-grace: just cancel the
+        // exit so the existing tooltip stays put.
+        if (
+          exitTimerRef.current !== null &&
+          current &&
+          current.trackId === trackId &&
+          current.featureId === featureId
+        ) {
+          clearExitTimer();
+          return;
+        }
+        // If a tooltip is already mounted (or pending dismissal), swap the
+        // target in place — no remount, no delay. This is the path that
+        // covers gliding across adjacent variants.
+        if (current || exitTimerRef.current !== null) {
+          commitHover(next);
+          return;
+        }
+        // Cold start: deciding whether to mount a tooltip at all. Skip the
+        // enter delay when the cursor isn't moving fast — a low-velocity
+        // hover is a confident landing.
+        const vel = pointerVelocityRef.current?.vel ?? 0;
+        if (vel <= HOVER_FAST_VELOCITY_PX_MS) {
+          commitHover(next);
+          return;
+        }
+        clearEnterTimer();
+        pendingEnterRef.current = next;
+        enterTimerRef.current = setTimeout(() => {
+          enterTimerRef.current = null;
+          const pending = pendingEnterRef.current;
+          pendingEnterRef.current = null;
+          if (pending) commitHover(pending);
+        }, HOVER_ENTER_DELAY_MS);
+      } else {
+        // A pending enter was never committed — just drop it. No onHover
+        // call either (we never told the host the entry happened).
+        if (enterTimerRef.current !== null) {
+          clearEnterTimer();
+          return;
+        }
+        if (!tooltipTargetRef.current) return;
+        clearExitTimer();
+        exitTimerRef.current = setTimeout(() => {
+          exitTimerRef.current = null;
+          commitHover(null, trackId);
+        }, HOVER_EXIT_GRACE_MS);
+      }
+    },
+    [clearEnterTimer, clearExitTimer, commitHover],
+  );
+
+  const handleFigurePointerMove = useCallback((e: ReactPointerEvent) => {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const prev = pointerVelocityRef.current;
+    if (!prev) {
+      pointerVelocityRef.current = { x: e.clientX, y: e.clientY, t: now, vel: 0 };
+      return;
+    }
+    const dt = Math.max(1, now - prev.t);
+    const d = Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
+    const inst = d / dt;
+    // Light exponential smoothing so a single fast frame doesn't dominate.
+    const vel = prev.vel * 0.5 + inst * 0.5;
+    pointerVelocityRef.current = { x: e.clientX, y: e.clientY, t: now, vel };
+  }, []);
+
+  const handleFigurePointerLeave = useCallback(() => {
+    // Real dismissal — flush both timers and tear down the tooltip now. The
+    // host hears about it once, with the trackId of the feature that was
+    // hovered at the time of leave.
+    pointerVelocityRef.current = null;
+    if (enterTimerRef.current !== null) {
+      clearEnterTimer();
+      return;
+    }
+    if (tooltipTargetRef.current) commitHover(null);
+    else clearExitTimer();
+  }, [clearEnterTimer, clearExitTimer, commitHover]);
 
   const handleClick = useCallback(
     (trackId: string, featureId: string) => {
@@ -1196,7 +1330,12 @@ function GeneGlyphInner(
   const figureRow = (
     <div className="vv-figure-row">
       {leftGutter ? renderGutter('left', leftGutter.props.width, leftGutter.props.children) : null}
-      <div className="vv-figure-wrap" ref={figureWrapRef}>
+      <div
+        className="vv-figure-wrap"
+        ref={figureWrapRef}
+        onPointerMove={handleFigurePointerMove}
+        onPointerLeave={handleFigurePointerLeave}
+      >
         <svg
           ref={svgRef}
           className="vv-figure"
@@ -1271,7 +1410,9 @@ function GeneGlyphInner(
   return (
     <div
       ref={containerRef}
-      className={['gene-glyph', className].filter(Boolean).join(' ')}
+      className={['gene-glyph', tooltipTarget ? 'vv-hover-active' : null, className]
+        .filter(Boolean)
+        .join(' ')}
       data-testid="gene-glyph"
       data-vv-mode={mode}
       data-vv-interaction-mode={interactionMode}

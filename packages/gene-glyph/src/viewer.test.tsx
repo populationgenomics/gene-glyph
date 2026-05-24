@@ -1,6 +1,6 @@
 import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GeneGlyph, type GeneGlyphRef } from './viewer.js';
 import { variantTrack } from './tracks/variant-track.js';
 import { exonTrack } from './tracks/exon-track.js';
@@ -165,7 +165,11 @@ describe('GeneGlyph', () => {
       fireEvent.click(v1!);
       fireEvent.mouseLeave(v1!);
       expect(onHover).toHaveBeenCalledWith('v1', 'variants');
-      expect(onHover).toHaveBeenCalledWith(null, 'variants');
+      // The leave is held by hover exit-grace (RD-1109), so the null fires
+      // after the timer — wait for it before asserting.
+      await waitFor(() => {
+        expect(onHover).toHaveBeenCalledWith(null, 'variants');
+      });
       expect(onFeatureClick).toHaveBeenCalledWith('v1', 'variants');
     });
 
@@ -285,6 +289,150 @@ describe('GeneGlyph', () => {
       await waitForTransition();
       const back = ref.current!.getViewportInfo().range;
       expect(back[1] - back[0]).toBeCloseTo(100, 5);
+    });
+
+    describe('hover debouncing (RD-1109)', () => {
+      function fireFastPointerMove(el: Element, x: number) {
+        // Simulate a fast pointer glide on the figure wrap so velocity rises
+        // above the fast-path threshold and the enter delay kicks in.
+        for (let i = 0; i < 4; i++) {
+          fireEvent.pointerMove(el, { clientX: x + i * 50, clientY: 0 });
+        }
+      }
+
+      it('skips the enter delay when the cursor is not moving (slow hover commits immediately)', async () => {
+        const onHover = vi.fn();
+        const { container } = render(
+          <GeneGlyph
+            transcript={transcript}
+            tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+            onHover={onHover}
+          />,
+        );
+        await flushTrackLoads();
+        const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]')!;
+        fireEvent.mouseEnter(v1);
+        expect(onHover).toHaveBeenCalledWith('v1', 'variants');
+      });
+
+      it('defers the enter commit during a fast glide', async () => {
+        vi.useFakeTimers();
+        try {
+          const onHover = vi.fn();
+          const { container } = render(
+            <GeneGlyph
+              transcript={transcript}
+              tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+              onHover={onHover}
+            />,
+          );
+          await act(async () => {
+            await vi.runAllTimersAsync();
+          });
+          const wrap = container.querySelector<HTMLElement>('.vv-figure-wrap')!;
+          const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]')!;
+          fireFastPointerMove(wrap, 0);
+          fireEvent.mouseEnter(v1);
+          // Mid-glide: enter is queued behind the delay; nothing committed yet.
+          expect(onHover).not.toHaveBeenCalled();
+          fireEvent.mouseLeave(v1);
+          // Pending enter cancelled by leave — host never hears about v1.
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(200);
+          });
+          expect(onHover).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('swaps tooltip target without remount when moving between adjacent variants', async () => {
+        vi.useFakeTimers();
+        try {
+          const onHover = vi.fn();
+          const { container } = render(
+            <GeneGlyph
+              transcript={transcript}
+              tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+              onHover={onHover}
+            />,
+          );
+          await act(async () => {
+            await vi.runAllTimersAsync();
+          });
+          const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]')!;
+          const v2 = container.querySelector<SVGGElement>('[data-vv-feature-id="v2"]')!;
+          fireEvent.mouseEnter(v1);
+          expect(onHover).toHaveBeenLastCalledWith('v1', 'variants');
+          // Cross a 1-px gap: leave v1, enter v2 within exit grace.
+          fireEvent.mouseLeave(v1);
+          fireEvent.mouseEnter(v2);
+          // No null in between — the tooltip target swapped in place.
+          expect(onHover.mock.calls.map((c) => c[0])).toEqual(['v1', 'v2']);
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(200);
+          });
+          expect(onHover.mock.calls.map((c) => c[0])).toEqual(['v1', 'v2']);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('pointer-leave from the figure dismisses immediately', async () => {
+        vi.useFakeTimers();
+        try {
+          const onHover = vi.fn();
+          const { container } = render(
+            <GeneGlyph
+              transcript={transcript}
+              tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+              onHover={onHover}
+            />,
+          );
+          await act(async () => {
+            await vi.runAllTimersAsync();
+          });
+          const wrap = container.querySelector<HTMLElement>('.vv-figure-wrap')!;
+          const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]')!;
+          fireEvent.mouseEnter(v1);
+          expect(onHover).toHaveBeenLastCalledWith('v1', 'variants');
+          onHover.mockClear();
+          fireEvent.mouseLeave(v1);
+          fireEvent.pointerLeave(wrap);
+          // No timer advance needed — pointer-leave fires the null synchronously.
+          expect(onHover).toHaveBeenCalledWith(null, 'variants');
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('keeps the tooltip mounted across a same-feature re-entry inside exit grace', async () => {
+        vi.useFakeTimers();
+        try {
+          const onHover = vi.fn();
+          const { container } = render(
+            <GeneGlyph
+              transcript={transcript}
+              tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+              onHover={onHover}
+            />,
+          );
+          await act(async () => {
+            await vi.runAllTimersAsync();
+          });
+          const v1 = container.querySelector<SVGGElement>('[data-vv-feature-id="v1"]')!;
+          fireEvent.mouseEnter(v1);
+          fireEvent.mouseLeave(v1);
+          fireEvent.mouseEnter(v1);
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(200);
+          });
+          // Single committed enter, no dismissal in between.
+          expect(onHover.mock.calls).toEqual([['v1', 'variants']]);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
 
     it('renders an unplaced-variants chip row when variants cannot project', async () => {

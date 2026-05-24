@@ -326,6 +326,16 @@
   overflow: hidden;
 }
 
+/* RD-1109: while a feature hover is committed (debounced), force the figure
+ * cursor to `pointer` so crossing the 1–2 px gaps between adjacent glyphs
+ * doesn't flicker the cursor between crosshair and pointer. The glyph's own
+ * inline `cursor: pointer` still wins on the glyph itself; this rule only
+ * affects the inter-glyph gaps. Guarded with `:not(.vv-dragging)` so an
+ * active drag continues to show the grabbing cursor. */
+.gene-glyph.vv-hover-active:not(.vv-dragging) .vv-figure {
+  cursor: pointer;
+}
+
 .gene-glyph.vv-dragging .vv-figure,
 .gene-glyph.vv-dragging .vv-figure * {
   cursor: grabbing;
