@@ -179,6 +179,11 @@ export type {
 } from './tracks/clinvar-track.js';
 export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
+export { variantSummaryTrack } from './tracks/variant-summary-track.js';
+export type {
+  VariantSummaryTrackConfig,
+  VariantSummaryTrackData,
+} from './tracks/variant-summary-track.js';
 export { packLanes } from './pack-lanes.js';
 export type { LaneInput, PackedItem, PackResult } from './pack-lanes.js';
 export {
