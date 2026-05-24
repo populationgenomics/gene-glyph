@@ -74,28 +74,10 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // Every exon renders at its baseline width — never recomputed against
       // the active range. The wrapping `<g>` applies the live translate +
       // scale; the figure SVG's `overflow: hidden` clips edge exons that
-      // slide off-figure during pan / zoom.
-      //
-      // Extend the ribbon visually by a constant `overhangPx` of *screen*
-      // pixels on each side so per-bp markers (nt/aa letters, variant
-      // lollipops, ruler ticks) sit inside the ribbon at the 5′/3′ exon
-      // boundaries. `cdsToBaselineX` returns the bp's centre point —
-      // without the pad, the bp at cdsStart / cdsEnd anchors at the ribbon's
-      // hard edge and its 12-px-wide letter glyph hangs half off into the
-      // padding zone / intron gap.
-      //
-      // The pad lives inside the exon group's `scaleX(exon-scale)` transform,
-      // so we counter-scale via CSS `calc(... / var(--vv-exon-scale-x-N))`.
-      // That keeps the screen-pixel overhang constant across zoom — a
-      // baseline-units pad would grow linearly with zoom and swallow the
-      // inter-exon gap whole at deep zoom (no zigzag visible past ~30×).
-      const overhangPx = 6;
-      // The cell-width invariant gives each bp/aa a baseline cell of
-      // pxPerBp / pxPerAa, so the exon rect already covers the FULL extent
-      // of its first and last cells — no half-bp baseline pad is needed
-      // here. (Previously transcript mode added one because the lattice
-      // model anchored bp 1 at xStart and bp N at xEnd, leaving a half-cell
-      // gap between adjacent exons' last/first cells.)
+      // slide off-figure during pan / zoom. The ribbon spans the exon's
+      // bp range exactly (`[0, eb.width]` in local coords) so per-bp
+      // markers (nt cells, AA cells) line up flush with the visible
+      // 5′/3′ ribbon edges.
       // Phase 3: index flanks by adjacent exon so each exon group can
       // render its splice-site decorations. The donor flank sits on the
       // exon's 3' side (intron i.donor for exon i); the acceptor flank
@@ -122,14 +104,6 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // visually distinct ribbons.
       if (viewport.mode !== 'protein') {
         for (const eb of geom.exons) {
-          const scaleVar = `var(--vv-exon-scale-x-${eb.exonIdx}, 1)`;
-          const rectStyle = {
-            // SVG2: x / width as CSS properties so we can use calc with
-            // the live exon-scale CSS var. Browser support is Chrome 88+,
-            // Firefox 76+, Safari 14+.
-            x: `calc(-1 * ${overhangPx}px / ${scaleVar})`,
-            width: `calc(${eb.width}px + 2 * ${overhangPx}px / ${scaleVar})`,
-          } as unknown as CSSProperties;
           const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
           const acceptorWidth =
             flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
@@ -173,14 +147,15 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
                 )}
                 <rect
                   key={`exon-rect-${eb.exonIdx}`}
+                  x={0}
                   y={exonY}
+                  width={eb.width}
                   height={exonH}
                   fill={painter.color('vv-color-exon-fill', '#94a3b8')}
                   stroke={painter.color('vv-color-exon-stroke', '#475569')}
                   strokeWidth={1}
                   vectorEffect="non-scaling-stroke"
                   className="vv-exon-rect"
-                  style={rectStyle}
                 />
               </Fragment>,
             ),

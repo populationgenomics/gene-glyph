@@ -162,6 +162,13 @@ export function aaTrack(
 
       const lettersByExon = new Map<number, ReactNode[]>();
       const yBaseline = rect.yTop + topPad + letterFontPx * 0.85;
+      const trackHeight = rect.yBottom - rect.yTop;
+      // Each aa spans 3 CDS bp in CDS modes, or 1 aa-cell in protein mode.
+      // Baseline `pxPerBp` is per-bp in CDS modes and per-aa in protein
+      // mode, so the multiplier flips with the mode.
+      const aaCellWidth =
+        viewport.mode === 'protein' ? baseline.pxPerBp : 3 * baseline.pxPerBp;
+      const aaCellHalfWidth = aaCellWidth / 2;
 
       const placements = collectAaPlacements(data.sequence, viewport, mapper);
 
@@ -172,30 +179,43 @@ export function aaTrack(
         const fill = palette[letter] ?? palette.X;
         const arr = lettersByExon.get(exonIdx) ?? [];
         arr.push(
-          <g
-            key={`aa-${aa}`}
-            className="vv-aa-letter-wrap"
-            style={{
-              transform:
-                `translateX(${localX}px) ` +
-                `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`,
-              transformOrigin: '0 0',
-            }}
-          >
-            <text
-              x={0}
-              y={yBaseline}
-              textAnchor="middle"
-              fontSize={letterFontPx}
-              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+          <Fragment key={`aa-${aa}`}>
+            {/* Per-aa cell background — same edge-tiling trick as the
+             *  nucleotide track. */}
+            <rect
+              className="vv-aa-cell"
+              x={localX - aaCellHalfWidth}
+              y={rect.yTop}
+              width={aaCellWidth}
+              height={trackHeight}
               fill={fill}
-              className="vv-aa-letter"
-              data-vv-aa={letter}
+              fillOpacity={0.18}
               data-vv-aa-pos={aa}
+            />
+            <g
+              className="vv-aa-letter-wrap"
+              style={{
+                transform:
+                  `translateX(${localX}px) ` +
+                  `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`,
+                transformOrigin: '0 0',
+              }}
             >
-              {letter}
-            </text>
-          </g>,
+              <text
+                x={0}
+                y={yBaseline}
+                textAnchor="middle"
+                fontSize={letterFontPx}
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                fill={fill}
+                className="vv-aa-letter"
+                data-vv-aa={letter}
+                data-vv-aa-pos={aa}
+              >
+                {letter}
+              </text>
+            </g>
+          </Fragment>,
         );
         lettersByExon.set(exonIdx, arr);
       }
@@ -247,8 +267,10 @@ function collectAaPlacements(
   const [lo, hi] = viewport.range;
   const out: AaPlacement[] = [];
   if (viewport.mode === 'protein') {
-    const aaLo = Math.max(1, Math.floor(lo));
-    const aaHi = Math.min(sequence.length, Math.ceil(hi));
+    // Widen by one aa on each side so partial cells at the figure edges
+    // still draw — the SVG's overflow clip culls the surplus.
+    const aaLo = Math.max(1, Math.floor(lo) - 1);
+    const aaHi = Math.min(sequence.length, Math.ceil(hi) + 1);
     for (let aa = aaLo; aa <= aaHi; aa++) {
       const cdsCenter = (aa - 1) * 3 + 2;
       const exonHit = mapper.findExonByCds(cdsCenter);
@@ -264,9 +286,13 @@ function collectAaPlacements(
     return out;
   }
   // CDS modes: range is in CDS bp. Codon i occupies bp [3i-2, 3i];
-  // place the letter at the codon's centre bp (3i-1).
-  const firstAa = Math.max(1, Math.ceil((lo - 2) / 3) + 1);
-  const lastAa = Math.min(sequence.length, Math.floor((hi - 2) / 3) + 1);
+  // place the letter at the codon's centre bp (3i-1). The aa cell as a
+  // whole spans ruler [3i-2, 3i+1] (cell-edge convention), so aa i is
+  // (at least partially) visible iff 3i+1 > lo AND 3i-2 < hi — i.e.,
+  // i > (lo-1)/3 AND i < (hi+2)/3. Widen by one aa on each side so float
+  // drift and figure-edge partials still render.
+  const firstAa = Math.max(1, Math.floor((lo - 1) / 3));
+  const lastAa = Math.min(sequence.length, Math.ceil((hi + 2) / 3));
   for (let aa = firstAa; aa <= lastAa; aa++) {
     const cdsCenter = (aa - 1) * 3 + 2;
     if (cdsCenter > mapper.transcript.cdsLength) break;

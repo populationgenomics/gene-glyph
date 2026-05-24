@@ -12,6 +12,7 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.j
 import {
   TP53_CDS,
   TP53_HOTSPOT_CODONS,
+  TP53_INTRONIC_FLANKS,
   TP53_PROTEIN_SEQ,
 } from '../fixtures/tp53-sequence.js';
 
@@ -96,7 +97,10 @@ export function SequenceTracksScenario() {
         tracks={[
           scaleTrack({}),
           exonTrack({}),
-          nucleotideTrack({ source: TP53_CDS }),
+          nucleotideTrack({
+            source: TP53_CDS,
+            flankSource: TP53_INTRONIC_FLANKS,
+          }),
           aaTrack({ proteinSource: TP53_PROTEIN_SEQ }),
           variantTrack({ id: 'variants', source: TP53_VARIANTS }),
         ]}

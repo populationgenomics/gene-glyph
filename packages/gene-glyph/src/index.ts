@@ -106,6 +106,8 @@ export type {
   NucleotideTrackData,
   NucleotideSource,
   NucleotideLetter,
+  IntronicFlankBases,
+  IntronicFlankSource,
 } from './tracks/nucleotide-track.js';
 export { aaTrack, translate, livePxPerAa } from './tracks/aa-track.js';
 export {

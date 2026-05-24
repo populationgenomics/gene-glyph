@@ -50,3 +50,16 @@ export const TP53_HOTSPOT_CODONS: { aa: number; cdsCenter: number; residue: 'R' 
   { aa: 248, cdsCenter: 247 * 3 + 2, residue: 'R' },
   { aa: 273, cdsCenter: 272 * 3 + 2, residue: 'R' },
 ];
+
+/** Placeholder intronic flank sequences for the 9 introns of
+ *  NM_000546.6, each 10 bp on the donor and acceptor side (matching
+ *  the default `flankBp = 10` collapsed-region spec). These are NOT
+ *  the real TP53 intronic bases — they're canonical "GT… …AG"
+ *  splice-site motifs padded with `N` so the demo shows the flank
+ *  cells rendering. Replace with bases pulled from a genome reference
+ *  if you need biological accuracy in a host. */
+export const TP53_INTRONIC_FLANKS = Array.from({ length: 9 }, (_, intronIdx) => ({
+  intronIdx,
+  donor: 'GTNNNNNNNN',
+  acceptor: 'NNNNNNNNAG',
+}));

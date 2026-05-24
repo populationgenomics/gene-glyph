@@ -70,10 +70,10 @@ describe('pickAutoStep', () => {
 });
 
 describe('scaleTrack', () => {
-  it('reports fixed height equal to its configured height', () => {
+  it('reports its configured height when no intronic flanks are in play', () => {
     const { viewport } = setup();
     const t = scaleTrack({ height: 22 });
-    expect(t.heightPolicy).toBe('fixed');
+    expect(t.heightPolicy).toBe('zoom-dependent');
     expect(t.height({ data: null, viewport, hint: { maxPx: 200 } })).toEqual({
       px: 22,
       didTruncate: false,

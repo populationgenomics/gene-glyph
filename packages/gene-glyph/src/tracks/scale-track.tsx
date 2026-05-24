@@ -108,20 +108,43 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
   return {
     id,
     coordSystem: 'cds',
-    heightPolicy: 'fixed',
+    heightPolicy: 'zoom-dependent',
 
     async load(_args: TrackLoadArgs): Promise<ScaleTrackData> {
       return { ready: true };
     },
 
-    height(_args: TrackHeightArgs<ScaleTrackData>): TrackHeightResult {
-      return { px: trackHeight, didTruncate: false };
+    height({ viewport }: TrackHeightArgs<ScaleTrackData>): TrackHeightResult {
+      // Intronic flank ticks rotate their labels 90° CCW so the
+      // `c.N+M` text stacks vertically inside the narrow flank zone.
+      // The rotated text reaches up the y-axis instead of out the x,
+      // so the track needs enough height to clear the longest label —
+      // otherwise the figure SVG's `overflow: hidden` clips it.
+      const baseline = viewport.baselineGeometry();
+      const hasFlanks =
+        viewport.mode === 'genome' && (baseline.flanks?.length ?? 0) > 0;
+      const px =
+        labelRotation === 90 || hasFlanks
+          ? Math.max(trackHeight, DEFAULT_ROTATED_HEIGHT)
+          : trackHeight;
+      return { px, didTruncate: false };
     },
 
     render(args: TrackRenderArgs<ScaleTrackData>): ReactNode {
       const { rect, viewport, mapper, painter } = args;
       const unit = unitForMode(viewport.mode);
       const rulerLength = rulerLengthForMode(viewport);
+      // When intronic flank ticks are in view (genome mode + a
+      // collapsed-region spec), we rotate them 90° CCW so the `+N`/`-N`
+      // labels fit in the narrow flank zone. Rotating *only* the
+      // intronic ones produces a mixed rail of horizontal exonic +
+      // vertical intronic labels that reads as visually chaotic; pin
+      // the rotation per-render so the whole track rotates together
+      // (or stays together horizontal when no flanks are visible).
+      const hasVisibleFlanks =
+        viewport.mode === 'genome' &&
+        (viewport.baselineGeometry().flanks?.length ?? 0) > 0;
+      const effectiveRotation = hasVisibleFlanks ? 90 : labelRotation;
       // Zoom-sensitive tick density: pick the step against the *live*
       // px-per-ruler-unit so the average on-screen spacing between major
       // ticks stays near `minLabelSpacingPx` regardless of zoom. As the
@@ -170,26 +193,24 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // between consecutive ticks (which doesn't change with zoom)
       // is correctly compared against label widths in the same units.
       // `liveScale` is the screen-px-per-baseline-px factor inside
-      // exonic regions at the current zoom. At fit-gene it's 1; at
-      // deep zoom it grows so 1 bp of exonic baseline maps to many
-      // screen pixels. Used to convert label widths and padding
-      // (originally in screen px) to baseline-equivalents for the
-      // crash check, which operates on baseline-x distances between
-      // ticks. Approximated by the ruler-length ratio (naturalLen /
-      // currentLen) — exact in transcript / protein modes; slightly
-      // overestimates exonic-only scale in genome mode with bulks
-      // (close enough; the alternative would be exposing the
-      // internal `exonScale` on the public Viewport interface).
-      const naturalRangeForScale = viewport.naturalRange();
-      const naturalLen = naturalRangeForScale[1] - naturalRangeForScale[0];
-      const liveScale = visibleRulerSpan > 0 ? naturalLen / visibleRulerSpan : 1;
+      // exonic / flank regions at the current zoom. Ticks anchored to
+      // exonic bp and intronic-flank bp both lay out at this scale
+      // (the bulk's fixed-budget segment doesn't host ticks), so we
+      // pull the real `exonScale` straight off the viewport. The
+      // earlier `naturalLen / visibleRulerSpan` approximation broke
+      // down at deep zoom inside the flank zones — fixed-budget bulks
+      // contribute zero ruler span but a chunk of baseline width, so
+      // the approximation overestimated `liveScale`, making the
+      // collision check think labels were comfortably apart when they
+      // were actually overlapping by 20+ screen pixels.
+      const liveScale = viewport.exonScale();
       // labelPadPx is a screen-px constant ("12 px of breathing room
       // between adjacent labels"); convert to baseline-equivalent to
       // compare against tick baseline-x distances at any zoom.
       const labelPadBaseline = labelPadPx / liveScale;
       const charPx = labelFontSize * 0.6;
       const halfWidthOf = (tick: TickRow, withSuffix: boolean): number => {
-        if (labelRotation === 90) {
+        if (effectiveRotation === 90) {
           // Rotated labels stand vertically — their on-screen horizontal
           // footprint is the font height (≈ labelFontSize), independent
           // of character count. The suffix only widens the rotated
@@ -265,13 +286,27 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // to losing the suffix entirely.
       const showSuffix = unitSuffix === 'last' && majors.length > 0;
 
-      const majorPositions = new Set(majors.map((t) => t.rulerPos));
-      const minors =
-        minorStep > 0
-          ? collectTicks(viewport, mapper, minorStep).filter(
-              (t) => !majorPositions.has(t.rulerPos),
-            )
-          : [];
+      // Identity for the major-vs-minor filter. Intronic donor and
+      // acceptor positions can land on the SAME `rulerPos` (donor `+k`
+      // and acceptor `-(flank.bp + 1 - k)` both evaluate to the same
+      // synthetic ruler value, since they're symmetric around the
+      // upstream/downstream cdsEnd/cdsStart pair), so a rulerPos-only
+      // key would drop the donor minor whenever the mirrored acceptor
+      // tick survives as a major (and vice versa). Disambiguate by
+      // including the intronic side+offset in the key for flank ticks.
+      const keyOf = (t: TickRow): string =>
+        t.intronic
+          ? `i:${t.intronic.cPos}:${t.intronic.offset}`
+          : `e:${t.rulerPos}`;
+      const majorKeys = new Set(majors.map(keyOf));
+      // Intronic ticks that didn't survive the major-crash walk fall
+      // through to the minor row so every flank bp still gets a tick
+      // mark (parity with exonic minor coverage). They're already in
+      // baseline-x at the cell centre and stay unlabelled.
+      const minors = [
+        ...(minorStep > 0 ? collectTicks(viewport, mapper, minorStep) : []),
+        ...intronicMajors,
+      ].filter((t) => !majorKeys.has(keyOf(t)));
 
       const baseline = viewport.baselineGeometry();
       const exonByIdx = new Map<number, ExonBaseline>();
@@ -334,8 +369,10 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
                 // the text element rotates inside the counter-scaled
                 // frame — the rotation composes with the cancel-out
                 // scaling so the text stays at natural font height +
-                // width regardless of zoom.
-                const rotated = labelRotation === 90;
+                // width regardless of zoom. Rotation is per-render
+                // (uniform across exonic and intronic ticks); see
+                // `effectiveRotation` above.
+                const rotated = effectiveRotation === 90;
                 return (
                   <g
                     key={`scale-label-wrap-${t.rulerPos}`}
@@ -483,8 +520,12 @@ function collectIntronicTicks(
       const upstream = exons[flank.intronIdx];
       if (!upstream) continue;
       // Donor flank covers HGVS c.{upstream.cdsEnd}+1 .. +flank.bp.
+      // Cell `offset` occupies `[flank.xStart + (offset-1)*pxPerBp,
+      // flank.xStart + offset*pxPerBp]`; centre the tick on the cell so
+      // it lines up with the nucleotide glyph (exonic ticks use
+      // `cdsToBaselineX(pos)`, which is also cell-centred).
       for (let offset = 1; offset <= flank.bp; offset++) {
-        const baselineX = flank.xStart + (offset - 1) * pxPerBp;
+        const baselineX = flank.xStart + (offset - 0.5) * pxPerBp;
         rows.push({
           rulerPos: upstream.cdsEnd + offset / (flank.bp + 1),
           exonIdx: flank.intronIdx,
@@ -496,8 +537,10 @@ function collectIntronicTicks(
       const downstream = exons[flank.intronIdx + 1];
       if (!downstream) continue;
       // Acceptor flank covers HGVS c.{downstream.cdsStart}-flank.bp .. -1.
+      // Cell offset `-k` sits at index `flank.bp - k` from `flank.xStart`;
+      // centre the tick on that cell.
       for (let k = flank.bp; k >= 1; k--) {
-        const baselineX = flank.xStart + (flank.bp - k) * pxPerBp;
+        const baselineX = flank.xStart + (flank.bp - k + 0.5) * pxPerBp;
         rows.push({
           rulerPos: downstream.cdsStart - k / (flank.bp + 1),
           exonIdx: flank.intronIdx + 1,
@@ -576,15 +619,18 @@ function formatLabel(
   labelFormat: 'c-notation' | 'genomic',
   mapper: CoordinateMapper,
 ): string {
-  // Intronic ticks always render in HGVS c. with explicit offset
-  // (regardless of the host's labelFormat — there's no clean genomic
-  // analogue for `c.N+M` other than the underlying chromosomal bp,
-  // which is what `labelFormat: 'genomic'` already produces for
-  // exonic ticks).
+  // Intronic ticks abbreviate to a bare `+N` / `-N`. The anchor
+  // c.cdsEnd / c.cdsStart label sits at the exon edge immediately
+  // adjacent, so the cPos prefix would be redundant inside the flank
+  // zone — and dropping it shaves ~5 characters off each rotated
+  // label, letting more ticks survive the crash walk before they
+  // overlap. Regardless of the host's labelFormat: there's no clean
+  // genomic analogue for `c.N+M` other than the underlying chromosomal
+  // bp (which `labelFormat: 'genomic'` already produces for exonic
+  // ticks).
   if (tick.intronic) {
-    const { cPos, offset } = tick.intronic;
-    const sign = offset > 0 ? '+' : '';
-    return `c.${cPos.toLocaleString('en-US')}${sign}${offset}`;
+    const { offset } = tick.intronic;
+    return offset > 0 ? `+${offset}` : `${offset}`;
   }
   const formatted = Math.round(tick.rulerPos).toLocaleString('en-US');
   if (unit === 'aa') {

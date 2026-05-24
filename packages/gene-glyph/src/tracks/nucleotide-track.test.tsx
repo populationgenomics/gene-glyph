@@ -39,6 +39,30 @@ function setup(transcript: Transcript, mode: 'genome' | 'transcript' | 'protein'
   return { mapper, viewport, painter, interaction };
 }
 
+function setupWithFlanks(transcript: Transcript, flankBp = 4) {
+  const mapper = createCoordinateMapper(transcript);
+  const collapsedRegions = [];
+  for (let i = 0; i < transcript.exons.length - 1; i++) {
+    collapsedRegions.push({
+      start: { cPos: transcript.exons[i]!.cdsEnd, offset: flankBp + 1 },
+      end: { cPos: transcript.exons[i + 1]!.cdsStart, offset: -(flankBp + 1) },
+    });
+  }
+  const viewport = new ViewportController({
+    mapper,
+    width: 600,
+    mode: 'genome',
+    collapsedRegions,
+  });
+  const painter = createSvgPainter({ mode: 'screen' });
+  const interaction: InteractionState = {
+    hoveredFeatureId: null,
+    selectedFeatureIds: new Set(),
+    brushRange: null,
+  };
+  return { mapper, viewport, painter, interaction };
+}
+
 describe('nucleotideTrack', () => {
   it('reports zero height below the px-per-bp threshold (fit-gene zoom)', () => {
     // 60 bp over 600 px ≈ 10 px/bp at fit-gene, but inter-exon gap eats
@@ -192,6 +216,111 @@ describe('nucleotideTrack', () => {
     const letters = [...container.querySelectorAll<SVGTextElement>('.vv-nt-letter')];
     expect(letters[3]!.textContent).toBe('N');
     expect(letters[3]!.getAttribute('data-vv-nt')).toBe('N');
+  });
+
+  it('renders intronic flank cells when a flank source is supplied', async () => {
+    const { mapper, viewport, painter, interaction } = setupWithFlanks(midGene, 4);
+    const t = nucleotideTrack({
+      source: 'A'.repeat(30) + 'C'.repeat(30),
+      flankSource: [{ intronIdx: 0, donor: 'GTAC', acceptor: 'TTAG' }],
+    });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 14 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const flankLetters = [
+      ...container.querySelectorAll<SVGTextElement>('.vv-nt-letter-flank'),
+    ];
+    // 4 donor + 4 acceptor = 8 flank glyphs.
+    expect(flankLetters.length).toBe(8);
+    const donor = flankLetters.filter(
+      (l) => l.getAttribute('data-vv-flank-side') === 'donor',
+    );
+    const acceptor = flankLetters.filter(
+      (l) => l.getAttribute('data-vv-flank-side') === 'acceptor',
+    );
+    expect(donor.map((l) => l.textContent).join('')).toBe('GTAC');
+    expect(acceptor.map((l) => l.textContent).join('')).toBe('TTAG');
+    // Donor flank glyphs ride upstream exon 0; acceptor flank glyphs ride
+    // downstream exon 1 (their host exon group, since the flanks live
+    // inside the adjacent exon's <g>).
+    for (const l of donor) {
+      expect(l.closest('.vv-exon-group')?.getAttribute('data-vv-exon-idx')).toBe('0');
+    }
+    for (const l of acceptor) {
+      expect(l.closest('.vv-exon-group')?.getAttribute('data-vv-exon-idx')).toBe('1');
+    }
+  });
+
+  it('falls back to N when the flank source is short', async () => {
+    const { mapper, viewport, painter, interaction } = setupWithFlanks(midGene, 4);
+    const t = nucleotideTrack({
+      source: 'A'.repeat(30) + 'C'.repeat(30),
+      // Donor only 2 bp instead of 4; remaining cells should fill with N.
+      flankSource: [{ intronIdx: 0, donor: 'GT', acceptor: 'NNNNAG' }],
+    });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 14 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const donor = [
+      ...container.querySelectorAll<SVGTextElement>(
+        '.vv-nt-letter-flank[data-vv-flank-side="donor"]',
+      ),
+    ];
+    expect(donor.map((l) => l.textContent).join('')).toBe('GTNN');
+  });
+
+  it('skips flank rendering entirely when no flank source is given', async () => {
+    const { mapper, viewport, painter, interaction } = setupWithFlanks(midGene, 4);
+    const t = nucleotideTrack({ source: 'A'.repeat(30) + 'C'.repeat(30) });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 14 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    expect(container.querySelectorAll('.vv-nt-letter-flank').length).toBe(0);
   });
 
   it('honours a host-supplied palette override', async () => {
