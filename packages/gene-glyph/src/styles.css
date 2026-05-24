@@ -419,10 +419,6 @@
   pointer-events: none;
 }
 
-.gene-glyph .vv-brush-rect-gap {
-  stroke: none;
-}
-
 .gene-glyph.vv-brushing,
 .gene-glyph.vv-brushing .vv-figure,
 .gene-glyph.vv-brushing .vv-figure * {

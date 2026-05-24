@@ -159,6 +159,10 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
    *  becomes a pan instead. Tracked at the window so the modifier is in
    *  scope whether the container is focused or not. */
   const spaceHeldRef = useRef(false);
+  /** True while the cursor is over the figure SVG. Drives whether we
+   *  preventDefault on Space so the page doesn't scroll under the user's
+   *  pan gesture — without trampling Space everywhere on the host page. */
+  const pointerOverSvgRef = useRef(false);
 
   // Stable clamp helper bound to current opts.
   const clampOpts = useMemo(() => ({ minZoom, maxZoom }), [minZoom, maxZoom]);
@@ -490,13 +494,13 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         spaceHeldRef.current = true;
         const c = containerRef.current;
         if (c) c.classList.add('vv-pan-armed');
-        // Only suppress the page's default space-scroll when the container
-        // is the focus target; otherwise we'd interfere with the host page.
-        if (
-          c &&
-          target instanceof Node &&
-          (c === target || c.contains(target))
-        ) {
+        // Suppress the page's default Space-scroll when the figure has
+        // focus OR the cursor is currently over the figure. We avoid a
+        // blanket preventDefault so Space stays usable on the rest of
+        // the host page.
+        const targetInsideContainer =
+          c && target instanceof Node && (c === target || c.contains(target));
+        if (targetInsideContainer || pointerOverSvgRef.current) {
           ev.preventDefault();
         }
       }
@@ -514,12 +518,23 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const c = containerRef.current;
       if (c) c.classList.remove('vv-pan-armed');
     };
+    const onPointerOver = () => {
+      pointerOverSvgRef.current = true;
+    };
+    const onPointerLeave = () => {
+      pointerOverSvgRef.current = false;
+    };
+    const svg = svgRef.current;
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
+    if (svg) {
+      svg.addEventListener('pointerenter', onPointerOver);
+      svg.addEventListener('pointerleave', onPointerLeave);
+    }
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -527,6 +542,10 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
+      if (svg) {
+        svg.removeEventListener('pointerenter', onPointerOver);
+        svg.removeEventListener('pointerleave', onPointerLeave);
+      }
     };
   }, [
     applyRange,
@@ -579,7 +598,9 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       // the Adobe "Hand tool" pattern: Space arms the pan, plain drag picks
       // the primary "make a selection" affordance.
       const wantsPan =
-        spaceHeldRef.current || (e.pointerType !== 'mouse' && e.pointerType !== '');
+        spaceHeldRef.current ||
+        e.pointerType === 'touch' ||
+        e.pointerType === 'pen';
       if (!wantsPan) {
         const vx = clientXToViewbox(e.clientX);
         if (vx === null) return;
@@ -593,7 +614,11 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         };
         const c = containerRef.current;
         if (c) c.classList.add('vv-box-zooming');
-        e.preventDefault();
+        // Don't preventDefault here — the synthesized mousedown's default
+        // action focuses the nearest tabindex'd ancestor (the container),
+        // and we want that to fire so subsequent keyboard bindings (WASD,
+        // arrows, Space) reach the container's onKeyDown / our window
+        // listeners with the figure as the focus context.
         return;
       }
       const drag = dragRef.current;

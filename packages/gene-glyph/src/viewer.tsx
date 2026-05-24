@@ -1009,72 +1009,36 @@ function GeneGlyphInner(
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
     if (!(hi > lo)) return null;
-    const projection =
-      viewport.mode === 'protein'
-        ? viewport.projectProteinRange(lo, hi)
-        : viewport.projectCdsRange(lo, hi);
-    if (projection.segments.length === 0) return null;
-    const geom = viewport.baselineGeometry();
-    const cellsByExon = new Map<number, { xStart: number; xEnd: number }>();
-    for (const seg of projection.segments) {
-      const eb = geom.exons[seg.exonIdx];
-      if (!eb) continue;
-      const xStart = Math.max(0, seg.xStart - eb.xStart);
-      const xEnd = Math.min(eb.width, seg.xEnd - eb.xStart);
-      if (!(xEnd > xStart)) continue;
-      cellsByExon.set(seg.exonIdx, { xStart, xEnd });
-    }
-    const parts: ReactNode[] = [];
-    const sortedIdx = [...cellsByExon.keys()].sort((p, q) => p - q);
-    for (const i of sortedIdx) {
-      const c = cellsByExon.get(i)!;
-      parts.push(
-        painter.placeInExonGroup(
-          i,
-          <rect
-            key={`brush-exon-${i}`}
-            className="vv-brush-rect"
-            x={c.xStart}
-            y={0}
-            width={c.xEnd - c.xStart}
-            height={totalHeight}
-            vectorEffect="non-scaling-stroke"
-          />,
-        ),
-      );
-    }
-    // Fill inter-exon gaps in genome mode so the brush reads as a
-    // single continuous strip across adjacent touched exons. In spliced /
-    // protein modes the gap collapses (intronScale=0) so the gap rect is
-    // invisible there anyway.
-    for (let k = 0; k < sortedIdx.length - 1; k++) {
-      const a0 = sortedIdx[k]!;
-      const b0 = sortedIdx[k + 1]!;
-      if (b0 !== a0 + 1) continue;
-      const gap = geom.gaps[a0];
-      if (!gap || gap.width <= 0) continue;
-      parts.push(
-        painter.placeInInterExon(
-          a0,
-          b0,
-          <rect
-            key={`brush-gap-${a0}-${b0}`}
-            className="vv-brush-rect vv-brush-rect-gap"
-            x={0}
-            y={0}
-            width={gap.width}
-            height={totalHeight}
-            vectorEffect="non-scaling-stroke"
-          />,
-        ),
-      );
-    }
+    // Brush is a single contiguous range in the active ruler. Render it as
+    // one viewport-x rect bridging from the lo cell's left edge to the hi
+    // cell's right edge — bypassing the per-exon segmentation that used to
+    // produce visible stroke seams between adjacent brushed exons and
+    // misaligned inter-exon gap fills under Phase-3 soft-collapse layout.
+    // baselineToLayoutX walks the mixed linear-flank + fixed-bulk geometry
+    // correctly, so the rect's screen extent matches the figure's real
+    // layout in every mode.
+    const baseLo = viewport.cdsToBaselineX(lo - 0.5);
+    const baseHi = viewport.cdsToBaselineX(hi + 0.5);
+    const offset = viewport.displayOffset();
+    const xLo = viewport.baselineToLayoutX(baseLo) - offset;
+    const xHi = viewport.baselineToLayoutX(baseHi) - offset;
+    if (xHi <= 0 || xLo >= viewport.width) return null;
+    const clampedLo = Math.max(0, xLo);
+    const clampedHi = Math.min(viewport.width, xHi);
+    if (!(clampedHi > clampedLo)) return null;
     return (
       <g className="vv-brush-overlay" data-testid="gene-glyph-brush" aria-hidden>
-        {parts}
+        <rect
+          className="vv-brush-rect"
+          x={clampedLo}
+          y={0}
+          width={clampedHi - clampedLo}
+          height={totalHeight}
+          vectorEffect="non-scaling-stroke"
+        />
       </g>
     );
-  }, [brush, viewport, painter, totalHeight, viewportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [brush, viewport, totalHeight, viewportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One shimmer rect per loading track. Lives inside the figure SVG (so it's
   // included in exportSVG snapshots only when the user explicitly chooses to
