@@ -27,6 +27,84 @@ export function MyPage() {
 
 The viewer is a compound component. Tracks, slots, and controlled state are added in later slices.
 
+## Folding a track group with a summary representation
+
+Dense feature tracks (e.g., the full ClinVar set for BRCA1, ~12k records) can
+recover their vertical real estate while staying visible by wrapping the
+detail track in a `TrackGroup` that carries a `summaryTrack`. While the
+group's id is in the viewer's `collapsedGroupIds` set, the figure swaps the
+detail tracks for the summary track — one row instead of hundreds.
+
+```tsx
+import {
+  GeneGlyph,
+  clinVarTrack,
+  clinVarSummaryTrack,
+  defaultClinVarSymbolEncoding,
+  exonTrack,
+  DefaultTrackChevron,
+} from '@populationgenomics/gene-glyph';
+import type {
+  GeneGlyphRef,
+  GutterItem,
+  TrackOrGroup,
+} from '@populationgenomics/gene-glyph';
+import { useRef, useState } from 'react';
+
+export function MyPage({ transcript, records }) {
+  const ref = useRef<GeneGlyphRef | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(['clinvar-group']),
+  );
+  const tracks: TrackOrGroup[] = [
+    exonTrack({}),
+    {
+      kind: 'group',
+      id: 'clinvar-group',
+      label: 'ClinVar',
+      tracks: [
+        clinVarTrack({
+          id: 'clinvar',
+          source: records,
+          stackedVariantStyle: defaultClinVarSymbolEncoding,
+        }),
+      ],
+      summaryTrack: clinVarSummaryTrack({
+        id: 'clinvar-summary',
+        source: records,
+      }),
+    },
+  ];
+
+  return (
+    <GeneGlyph
+      ref={ref}
+      transcript={transcript}
+      tracks={tracks}
+      collapsedGroupIds={collapsedGroups}
+      onCollapsedGroupChange={setCollapsedGroups}
+    >
+      <GeneGlyph.LeftGutter width={140}>
+        {(item: GutterItem) =>
+          item.kind === 'group' ? (
+            <DefaultTrackChevron
+              item={item}
+              collapsed={collapsedGroups.has(item.id)}
+              onToggle={() => ref.current?.toggleGroup(item.id)}
+            />
+          ) : null
+        }
+      </GeneGlyph.LeftGutter>
+    </GeneGlyph>
+  );
+}
+```
+
+`variantSummaryTrack` and `clinVarSummaryTrack` are the two summary
+primitives shipped today; any `Track` satisfying the standard contract
+works as a `summaryTrack`. Groups without a `summaryTrack` fall back to the
+"remove rows" behaviour when folded.
+
 ## Default mouse / keyboard bindings
 
 | Gesture | Action |
