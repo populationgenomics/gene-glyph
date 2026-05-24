@@ -11,6 +11,7 @@ function groupItem(overrides: Partial<GutterItem> = {}): GutterItem {
     rect: { yTop: 0, yBottom: 24 },
     didTruncate: false,
     droppedCount: 0,
+    depth: 0,
     ...overrides,
   };
 }

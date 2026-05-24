@@ -174,6 +174,11 @@ export interface GutterItem {
   rect: TrackRect;
   didTruncate: boolean;
   droppedCount: number;
+  /** Zero-based nesting depth. Top-level entries are at depth 0; entries
+   *  inside one nested group are at depth 1; and so on. Hosts use this to
+   *  indent the gutter so nested groups read as a hierarchy without the
+   *  host having to re-walk the track tree. */
+  depth: number;
 }
 
 export interface LeftGutterProps {
@@ -353,19 +358,23 @@ function flattenTracks(
   collapsedGroupIds: ReadonlySet<string>,
 ): Track[] {
   const out: Track[] = [];
-  for (const item of items) {
-    if (isTrackGroup(item)) {
-      if (collapsedGroupIds.has(item.id)) {
-        if (item.summaryTrack) out.push(item.summaryTrack);
-        // No summary track → group contributes no rows; matches today's
-        // "remove rows" semantics for folded groups without a summary.
+  const walk = (entries: TrackOrGroup[]) => {
+    for (const entry of entries) {
+      if (isTrackGroup(entry)) {
+        if (collapsedGroupIds.has(entry.id)) {
+          if (entry.summaryTrack) out.push(entry.summaryTrack);
+          // No summary track → group contributes no leaves; matches
+          // today's "remove rows" semantics for folded groups without
+          // a summary.
+        } else {
+          walk(entry.tracks);
+        }
       } else {
-        for (const t of item.tracks) out.push(t);
+        out.push(entry);
       }
-    } else {
-      out.push(item);
     }
-  }
+  };
+  walk(items);
   return out;
 }
 
@@ -399,28 +408,23 @@ function findSlot<P>(
 
 function gutterItemsFor(items: LayoutItem[]): GutterItem[] {
   const out: GutterItem[] = [];
-  for (const item of items) {
-    out.push({
-      kind: item.kind,
-      id: item.id,
-      label: item.label,
-      rect: item.rect,
-      didTruncate: item.didTruncate,
-      droppedCount: item.droppedCount,
-    });
-    if (item.kind === 'group' && item.children) {
-      for (const child of item.children) {
-        out.push({
-          kind: child.kind,
-          id: child.id,
-          label: child.label,
-          rect: child.rect,
-          didTruncate: child.didTruncate,
-          droppedCount: child.droppedCount,
-        });
+  const walk = (entries: LayoutItem[], depth: number) => {
+    for (const item of entries) {
+      out.push({
+        kind: item.kind,
+        id: item.id,
+        label: item.label,
+        rect: item.rect,
+        didTruncate: item.didTruncate,
+        droppedCount: item.droppedCount,
+        depth,
+      });
+      if (item.kind === 'group' && item.children) {
+        walk(item.children, depth + 1);
       }
     }
-  }
+  };
+  walk(items, 0);
   return out;
 }
 

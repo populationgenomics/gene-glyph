@@ -649,7 +649,13 @@ function pickLabelSegment(placed: PlacedDomain): RangeSegment | null {
  * the same vocabulary as the Pfam track. Lane count is data-dependent, so a
  * sub-track with no visible domains collapses to zero height (no empty row).
  */
-export function interProTrack(config: InterProTrackConfig = {}): TrackGroup {
+/** InterPro returns a flat group — every member is a leaf {@link Track}.
+ *  The refined return type preserves that invariant for callers that
+ *  read `group.tracks[i].load(...)` directly without going through
+ *  {@link isTrackGroup}. */
+export function interProTrack(
+  config: InterProTrackConfig = {},
+): TrackGroup & { tracks: Track[] } {
   const baseId = config.id ?? 'interpro';
   const groups = config.groups ?? DEFAULT_GROUPS;
   const style: InterProRenderStyle = config.style ?? 'minimal';

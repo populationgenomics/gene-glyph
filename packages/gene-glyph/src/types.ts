@@ -572,7 +572,13 @@ export interface TrackGroup {
   defaultExpanded?: boolean;
   gapAbove?: number;
   heightBudget?: number;
-  tracks: Track[];
+  /** Group members. Each entry is either a leaf {@link Track} or a nested
+   *  {@link TrackGroup}; nesting is unbounded, so the standard pattern
+   *  "parent group containing per-bucket sub-groups, each with its own
+   *  detail + summary" is expressible without flattening the structure
+   *  at the host. The layout engine recurses through nested groups and
+   *  consults the same `collapsedGroupIds` set at every level. */
+  tracks: TrackOrGroup[];
   /** Optional one-row summary representation used when the group is folded.
    *  The viewer swaps `tracks` for `[summaryTrack]` while the group's id is
    *  in `collapsedGroupIds` and falls back to today's "remove rows" behaviour

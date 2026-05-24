@@ -166,6 +166,70 @@ describe('LayoutEngine — height negotiation', () => {
     expect(result.trackRects.has('summary')).toBe(false);
   });
 
+  it('recurses through nested groups; folded child swaps to its summary while parent stays expanded', () => {
+    const viewport = makeViewport();
+    const child: TrackGroup = {
+      kind: 'group',
+      id: 'child',
+      label: 'Child',
+      tracks: [stubTrack({ id: 'child-detail', naturalHeight: 40 })],
+      summaryTrack: stubTrack({ id: 'child-summary', naturalHeight: 14 }),
+    };
+    const parent: TrackGroup = {
+      kind: 'group',
+      id: 'parent',
+      label: 'Parent',
+      tracks: [stubTrack({ id: 'parent-leaf', naturalHeight: 10 }), child],
+      summaryTrack: stubTrack({ id: 'parent-summary', naturalHeight: 18 }),
+    };
+    const result = layoutTracks({
+      tracks: [parent],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      collapsedGroupIds: new Set(['child']),
+    });
+    // Parent stays expanded → its children list includes the leaf + the
+    // (still-a-group) child whose own children collapsed to its summary.
+    const parentItem = result.items[0]!;
+    expect(parentItem.children?.map((c) => c.id)).toEqual(['parent-leaf', 'child']);
+    const childItem = parentItem.children!.find((c) => c.id === 'child')!;
+    expect(childItem.kind).toBe('group');
+    expect(childItem.children?.map((c) => c.id)).toEqual(['child-summary']);
+    expect(result.trackRects.get('child-summary')!.yBottom - result.trackRects.get('child-summary')!.yTop).toBe(14);
+    expect(result.trackRects.has('child-detail')).toBe(false);
+  });
+
+  it('folding the parent swaps the whole subtree for the parent summary, regardless of child fold state', () => {
+    const viewport = makeViewport();
+    const child: TrackGroup = {
+      kind: 'group',
+      id: 'child',
+      label: 'Child',
+      tracks: [stubTrack({ id: 'child-detail', naturalHeight: 40 })],
+      summaryTrack: stubTrack({ id: 'child-summary', naturalHeight: 14 }),
+    };
+    const parent: TrackGroup = {
+      kind: 'group',
+      id: 'parent',
+      label: 'Parent',
+      tracks: [child],
+      summaryTrack: stubTrack({ id: 'parent-summary', naturalHeight: 18 }),
+    };
+    const result = layoutTracks({
+      tracks: [parent],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      // Both parent + child are in the set, but the parent's fold wins —
+      // its subtree is skipped wholesale in favour of the parent summary.
+      collapsedGroupIds: new Set(['parent', 'child']),
+    });
+    expect(result.items[0]!.children?.map((c) => c.id)).toEqual(['parent-summary']);
+    expect(result.trackRects.has('child-summary')).toBe(false);
+    expect(result.trackRects.has('child-detail')).toBe(false);
+  });
+
   it('falls back to zero rows when a folded group has no summaryTrack', () => {
     const viewport = makeViewport();
     const group: TrackGroup = {
