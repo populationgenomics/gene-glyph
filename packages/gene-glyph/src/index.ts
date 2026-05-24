@@ -184,6 +184,11 @@ export type {
   VariantSummaryTrackConfig,
   VariantSummaryTrackData,
 } from './tracks/variant-summary-track.js';
+export { clinVarSummaryTrack } from './tracks/clinvar-summary-track.js';
+export type {
+  ClinVarSummaryTrackConfig,
+  ClinVarSummaryTrackData,
+} from './tracks/clinvar-summary-track.js';
 export { packLanes } from './pack-lanes.js';
 export type { LaneInput, PackedItem, PackResult } from './pack-lanes.js';
 export {
