@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GeneGlyph,
   clinVarTrack,
@@ -7,6 +7,7 @@ import {
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
+  ClinVarSignificance,
   TooltipRenderArgs,
   Transcript,
 } from '@populationgenomics/gene-glyph';
@@ -53,10 +54,34 @@ type LoadState =
   | { kind: 'ready'; data: LiveGeneData }
   | { kind: 'error'; message: string };
 
+const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
+  'pathogenic',
+  'likely_pathogenic',
+  'uncertain_significance',
+  'likely_benign',
+  'benign',
+  'conflicting',
+];
+
 export function LiveDataDemoScenario() {
   const [gene, setGene] = useState<GeneSymbol>('TP53');
   const [state, setState] = useState<LoadState>({ kind: 'idle' });
   const [lastClicked, setLastClicked] = useState<string | null>(null);
+  const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(() => new Set());
+
+  const filter = useCallback(
+    (r: ClinVarRecord) => !excluded.has(r.significance),
+    [excluded],
+  );
+
+  const toggleExcluded = (sig: ClinVarSignificance) => {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(sig)) next.delete(sig);
+      else next.add(sig);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,9 +118,10 @@ export function LiveDataDemoScenario() {
         // default at fit-gene collapses everything into one giant cluster
         // mark; the stacked view shows every variant individually.
         stackedVariantStyle: defaultClinVarSymbolEncoding,
+        filter,
       }),
     ],
-    [state],
+    [state, filter],
   );
 
   const renderTooltip = (args: TooltipRenderArgs) => {
@@ -220,6 +246,43 @@ export function LiveDataDemoScenario() {
             last clicked: <strong>{lastClicked}</strong>
           </span>
         )}
+      </div>
+      <div
+        data-testid="live-data-significance-filter"
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          marginBottom: 8,
+          fontSize: '0.85rem',
+          color: '#475569',
+        }}
+      >
+        <span style={{ opacity: 0.75 }}>significance:</span>
+        {SIGNIFICANCE_CHIPS.map((sig) => {
+          const active = !excluded.has(sig);
+          return (
+            <button
+              key={sig}
+              type="button"
+              data-testid={`live-data-chip-${sig}`}
+              data-active={active}
+              onClick={() => toggleExcluded(sig)}
+              style={{
+                padding: '2px 8px',
+                fontSize: '0.78rem',
+                borderRadius: 999,
+                border: '1px solid #cbd5e1',
+                background: active ? '#e0f2fe' : '#f1f5f9',
+                color: active ? '#0c4a6e' : '#94a3b8',
+                cursor: 'pointer',
+              }}
+            >
+              {humanSig(sig)}
+            </button>
+          );
+        })}
       </div>
       <GeneGlyph
         transcript={transcript}
