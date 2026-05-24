@@ -284,6 +284,108 @@ describe('clinVarTrack', () => {
     expect(popover).toBeNull();
   });
 
+  describe('filter prop (RD-1102)', () => {
+    it('cluster path drops records that fail the predicate before clustering', () => {
+      // Without a filter the three exon-1 records (pathogenic + VUS + likely
+      // benign) collapse into a single cluster at fit-gene zoom. A filter
+      // that keeps only pathogenic survivors leaves a lone singleton mark
+      // in that region — no cluster, since the other two records are gone.
+      const t = clinVarTrack({
+        source: records,
+        filter: (r) => r.significance === 'pathogenic',
+      });
+      const { mapper, viewport, painter, interaction } = setup();
+      const Probe = () => (
+        <svg>
+          {t.render({
+            data: { records },
+            rect: { yTop: 0, yBottom: 28 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+      const { container } = render(<Probe />);
+      const marks = container.querySelectorAll<SVGGElement>('.vv-clinvar-mark');
+      // cv-1 is the only pathogenic survivor; cv-4 (benign) is filtered out.
+      expect(marks.length).toBe(1);
+      expect(marks[0]!.getAttribute('data-vv-feature-id')).toBe('cv-1');
+      expect(container.querySelector('.vv-clinvar-mark.is-cluster')).toBeNull();
+    });
+
+    it('swapping the filter on the same track id re-clusters the surviving set', async () => {
+      const { mapper, viewport, painter, interaction } = setup();
+      const renderProbe = (track: ReturnType<typeof clinVarTrack>) => (
+        <svg>
+          {track.render({
+            data: { records },
+            rect: { yTop: 0, yBottom: 28 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+      const tAll = clinVarTrack({ source: records });
+      const { container, rerender } = render(renderProbe(tAll));
+      expect(container.querySelectorAll('.vv-clinvar-mark').length).toBe(2);
+      expect(container.querySelector('.vv-clinvar-mark.is-cluster')).not.toBeNull();
+
+      // Tighten the filter to a single significance class — host-side
+      // pattern of recreating the track config with a new predicate.
+      const tStrict = clinVarTrack({
+        source: records,
+        filter: (r) => r.significance === 'pathogenic',
+      });
+      rerender(renderProbe(tStrict));
+      const marks = container.querySelectorAll('.vv-clinvar-mark');
+      expect(marks.length).toBe(1);
+      expect(container.querySelector('.vv-clinvar-mark.is-cluster')).toBeNull();
+    });
+
+    it('stacked render re-packs against the filtered set instead of the cached layout', async () => {
+      const t = clinVarTrack({
+        source: records,
+        stackedVariantStyle: defaultClinVarSymbolEncoding,
+        filter: (r) => r.significance === 'pathogenic' || r.significance === 'benign',
+      });
+      const { mapper, viewport, painter, interaction } = setup();
+      // load() ignores the filter — it pre-packs the FULL set so unfiltered
+      // hosts keep the cache. The render path must override that.
+      const data = await t.load({
+        viewport,
+        mapper,
+        signal: new AbortController().signal,
+        protein: null,
+      });
+      expect(data.stackLayout!.placements.length).toBe(4);
+      const Probe = () => (
+        <svg>
+          {t.render({
+            data,
+            rect: { yTop: 0, yBottom: 80 },
+            viewport,
+            mapper,
+            interaction,
+            painter,
+          })}
+        </svg>
+      );
+      const { container } = render(<Probe />);
+      const glyphs = container.querySelectorAll('.vv-clinvar-mark-stacked');
+      // cv-1 (pathogenic) + cv-4 (benign) survive; the VUS and likely-benign
+      // entries drop out of the live-packed layout.
+      expect(glyphs).toHaveLength(2);
+      const ids = Array.from(glyphs)
+        .map((g) => g.getAttribute('data-vv-feature-id'))
+        .sort();
+      expect(ids).toEqual(['cv-1', 'cv-4']);
+    });
+  });
+
   it('packStackedClinVar groups by significance lane', () => {
     const { viewport, mapper } = setup();
     const { placed } = placeClinVarRecords(records, viewport, mapper);

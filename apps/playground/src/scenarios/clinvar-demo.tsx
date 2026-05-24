@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   GeneGlyph,
   clinVarTrack,
@@ -7,6 +7,7 @@ import {
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
+  ClinVarSignificance,
   TooltipRenderArgs,
 } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
@@ -27,17 +28,45 @@ import { TP53_CLINVAR } from '../fixtures/tp53-clinvar.js';
  * stays offline for e2e; production hosts wire `createClinVarDataSource`
  * instead.
  */
+const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
+  'pathogenic',
+  'likely_pathogenic',
+  'uncertain_significance',
+  'likely_benign',
+  'benign',
+  'conflicting',
+];
+
 export function ClinVarDemoScenario() {
   const [lastClicked, setLastClicked] = useState<string | null>(null);
+  // Host-owned filter state. Empty set = no filter (all significances).
+  const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(() => new Set());
+
+  // Stable predicate reference so the gene-glyph filter memo doesn't churn
+  // on every render — the function identity changes only when `excluded`
+  // does, which is the signal we want the viewer to react to.
+  const filter = useCallback(
+    (r: ClinVarRecord) => !excluded.has(r.significance),
+    [excluded],
+  );
 
   const tracks = useMemo(
     () => [
       exonTrack({}),
       pfamTrack({}),
-      clinVarTrack({ id: 'clinvar', source: TP53_CLINVAR }),
+      clinVarTrack({ id: 'clinvar', source: TP53_CLINVAR, filter }),
     ],
-    [],
+    [filter],
   );
+
+  const toggleExcluded = (sig: ClinVarSignificance) => {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(sig)) next.delete(sig);
+      else next.add(sig);
+      return next;
+    });
+  };
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     if (args.trackId !== 'clinvar') return null;
@@ -63,7 +92,9 @@ export function ClinVarDemoScenario() {
         Click a diamond to expand the cluster into its member variants. Zoom in
         (<code>=</code>) on the DNA-binding domain and the clusters dissolve as
         the per-pixel spacing grows past the cluster threshold. Marks colour by
-        the strongest clinical significance present.
+        the strongest clinical significance present. Toggle the significance
+        chips to narrow the visible record set — the track re-clusters against
+        the survivors via the host-supplied <code>filter</code> predicate.
       </p>
       <div
         style={{
@@ -79,6 +110,35 @@ export function ClinVarDemoScenario() {
         <span data-testid="clinvar-last-clicked" style={{ fontVariantNumeric: 'tabular-nums' }}>
           last clicked: <strong>{lastClicked ?? '—'}</strong>
         </span>
+        <div
+          data-testid="clinvar-significance-filter"
+          style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
+        >
+          <span style={{ opacity: 0.75 }}>significance:</span>
+          {SIGNIFICANCE_CHIPS.map((sig) => {
+            const active = !excluded.has(sig);
+            return (
+              <button
+                key={sig}
+                type="button"
+                data-testid={`clinvar-chip-${sig}`}
+                data-active={active}
+                onClick={() => toggleExcluded(sig)}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '0.78rem',
+                  borderRadius: 999,
+                  border: '1px solid #cbd5e1',
+                  background: active ? '#e0f2fe' : '#f1f5f9',
+                  color: active ? '#0c4a6e' : '#94a3b8',
+                  cursor: 'pointer',
+                }}
+              >
+                {humanSig(sig)}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <GeneGlyph
         transcript={TP53_TRANSCRIPT}

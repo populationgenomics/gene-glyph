@@ -73,6 +73,34 @@ test.describe('Slice 21 — ClinVar density-clustered track', () => {
     expect(afterClusters).toBeLessThan(beforeClusters);
   });
 
+  test('toggling host-side significance filter re-clusters surviving records (RD-1102)', async ({
+    page,
+  }) => {
+    const s = await scenario(page);
+    const pathogenicMarks = s.locator('.vv-clinvar-mark[data-vv-significance="pathogenic"]');
+    // At fit-gene zoom the TP53 hotspots dominate; we expect at least one
+    // pathogenic-coloured mark on screen.
+    expect(await pathogenicMarks.count()).toBeGreaterThan(0);
+
+    // Toggle off pathogenic + likely_pathogenic — the viewer re-clusters
+    // against the survivors purely from the new filter predicate.
+    await s.locator('[data-testid="clinvar-chip-pathogenic"]').click();
+    await s.locator('[data-testid="clinvar-chip-likely_pathogenic"]').click();
+    await page.waitForTimeout(50);
+
+    // No remaining cluster carries a pathogenic representative once the
+    // pathogenic + likely_pathogenic members are filtered out. The cluster
+    // gets re-coloured to the next-highest survivor (VUS / conflicting /
+    // benign), so the count of pathogenic-tagged marks drops to zero.
+    expect(await pathogenicMarks.count()).toBe(0);
+
+    // Re-enabling restores them.
+    await s.locator('[data-testid="clinvar-chip-pathogenic"]').click();
+    await s.locator('[data-testid="clinvar-chip-likely_pathogenic"]').click();
+    await page.waitForTimeout(50);
+    expect(await pathogenicMarks.count()).toBeGreaterThan(0);
+  });
+
   test('drag-to-zoom starting over a ClinVar cluster narrows the viewport (RD-1102 / RD-1106)', async ({
     page,
   }) => {

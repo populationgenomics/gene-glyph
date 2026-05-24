@@ -2,7 +2,7 @@
  * this file (ClinVarBody / ClusterDiamond / ClusterPopover) are private and
  * only used by `clinVarTrack` below; HMR doesn't apply to the track factory's
  * own exports so the rule's caution doesn't fit here. */
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import {
   isDataSource,
@@ -73,6 +73,13 @@ export interface ClinVarTrackConfig {
   stackedVariantStyle?: SymbolEncoding<ClinVarRecord>;
   /** Per-row pitch for the stacked render. Defaults to `2 * markRadius + 2`. */
   stackLanePx?: number;
+  /** Optional predicate applied to the loaded record set before clustering
+   *  and packing. Returning `false` drops the record from every display
+   *  surface (cluster marks, stacked glyphs, cluster popover, on-figure
+   *  count). Pure display filter — hosts that want to permanently exclude
+   *  records should narrow `source` instead. Applied at render time so the
+   *  host can swap predicates without invalidating the cached load. */
+  filter?: (record: ClinVarRecord) => boolean;
 }
 
 export interface ClinVarTrackData {
@@ -356,6 +363,7 @@ export function clinVarTrack(
   const source = config.source;
   const stackedEncoding = config.stackedVariantStyle;
   const stackLanePx = config.stackLanePx ?? 2 * markRadius + 2;
+  const filter = config.filter;
   const stackTopPad = 2;
   const stackBottomPad = 2;
 
@@ -398,6 +406,7 @@ export function clinVarTrack(
             markRadius={markRadius}
             laneHeight={stackLanePx}
             topPad={stackTopPad}
+            filter={filter}
             args={args}
           />
         );
@@ -408,6 +417,7 @@ export function clinVarTrack(
           trackId={id}
           clusterPx={clusterPx}
           markRadius={markRadius}
+          filter={filter}
           args={args}
         />
       );
@@ -450,6 +460,7 @@ interface ClinVarStackedBodyProps {
   markRadius: number;
   laneHeight: number;
   topPad: number;
+  filter?: (record: ClinVarRecord) => boolean;
   args: TrackRenderArgs<ClinVarTrackData>;
 }
 
@@ -459,17 +470,27 @@ function ClinVarStackedBody({
   markRadius,
   laneHeight,
   topPad,
+  filter,
   args,
 }: ClinVarStackedBodyProps): ReactNode {
   const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } =
     args;
-  const layout =
-    data.stackLayout ??
-    packStackedClinVar(
-      placeClinVarRecords(data.records, viewport, mapper).placed,
+  // When a host filter is in play, the pre-computed `data.stackLayout` (which
+  // was packed against the full record set in `load`) no longer reflects the
+  // visible set — re-pack the survivors live. Without a filter we keep the
+  // cached layout to avoid the per-render pack cost.
+  const records = useMemo(
+    () => (filter ? data.records.filter(filter) : data.records),
+    [data.records, filter],
+  );
+  const layout = useMemo(() => {
+    if (!filter && data.stackLayout) return data.stackLayout;
+    return packStackedClinVar(
+      placeClinVarRecords(records, viewport, mapper).placed,
       encoding,
       markRadius,
     );
+  }, [records, filter, data.stackLayout, viewport, mapper, encoding, markRadius]);
 
   const byExon = new Map<number, PlacedClinVarStacked[]>();
   for (const p of layout.placements) {
@@ -578,25 +599,34 @@ interface ClinVarBodyProps {
   trackId: string;
   clusterPx: number;
   markRadius: number;
+  filter?: (record: ClinVarRecord) => boolean;
   args: TrackRenderArgs<ClinVarTrackData>;
 }
 
-function ClinVarBody({ trackId, clusterPx, markRadius, args }: ClinVarBodyProps): ReactNode {
+function ClinVarBody({ trackId, clusterPx, markRadius, filter, args }: ClinVarBodyProps): ReactNode {
   const { data, rect, viewport, mapper, painter, onFeatureHover, onFeatureClick } = args;
   const [openClusterKey, setOpenClusterKey] = useState<string | null>(null);
 
-  // Close the popover when the data changes underneath us — a re-query or
-  // mode switch may delete the cluster we were pointing at, and stale-state
-  // would render an orphan overlay.
-  const dataRef = useRef(data.records);
+  // Surviving records after the host filter. Memoise so identity is stable
+  // across renders that don't change `data.records` or the filter — otherwise
+  // the popover-reset effect below would fire on every re-render.
+  const records = useMemo(
+    () => (filter ? data.records.filter(filter) : data.records),
+    [data.records, filter],
+  );
+
+  // Close the popover when the data changes underneath us — a re-query, mode
+  // switch, or filter change may delete the cluster we were pointing at, and
+  // stale state would render an orphan overlay.
+  const recordsRef = useRef(records);
   useEffect(() => {
-    if (dataRef.current !== data.records) {
-      dataRef.current = data.records;
+    if (recordsRef.current !== records) {
+      recordsRef.current = records;
       setOpenClusterKey(null);
     }
-  }, [data.records]);
+  }, [records]);
 
-  const { placed } = placeClinVarRecords(data.records, viewport, mapper);
+  const { placed } = placeClinVarRecords(records, viewport, mapper);
   const clusters = clusterClinVar(placed, clusterPx);
 
   const baseline = viewport.baselineGeometry();
