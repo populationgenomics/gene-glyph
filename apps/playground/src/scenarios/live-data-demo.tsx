@@ -142,6 +142,10 @@ export function LiveDataDemoScenario() {
           kind: 'group',
           id: `clinvar-${sig}`,
           label: humanSig(sig),
+          // Reserve a label row so the sub-group chevron sits above its
+          // summary / detail content rather than colliding with the
+          // parent's first-child y.
+          headerHeight: 22,
           tracks: [
             clinVarTrack({
               id: `clinvar-${sig}-detail`,
@@ -163,6 +167,10 @@ export function LiveDataDemoScenario() {
           kind: 'group',
           id: CLINVAR_GROUP_ID,
           label: 'ClinVar',
+          // Same label-row reservation at the parent level — keeps the
+          // ClinVar chevron in its own slot above the six sub-group
+          // chevrons.
+          headerHeight: 22,
           tracks: SIGNIFICANCE_CHIPS.map(subgroup),
           summaryTrack: clinVarSummaryTrack({
             id: 'clinvar-summary',

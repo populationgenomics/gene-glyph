@@ -22,6 +22,12 @@ export interface LayoutItem {
   /** Group members, populated when `kind === 'group'`. Recursive — a
    *  group's children may themselves be groups (RD-1110 follow-up). */
   children?: LayoutItem[];
+  /** For groups: vertical pixels reserved at the top of the group's
+   *  extent for its label slot (mirrors {@link TrackGroup.headerHeight}).
+   *  The gutter uses this to size the parent's chevron cell so it
+   *  doesn't overlap the first child's cell. Undefined / 0 means flush
+   *  layout (the parent's label shares the first child's row). */
+  headerHeight?: number;
 }
 
 export interface LayoutResult {
@@ -174,22 +180,34 @@ function layoutGroup(
   const collapsed = collapsedGroupIds.has(group.id);
   // When the group is folded the engine walks the summary track in place
   // of the detail stack. Without a summary track a folded group simply
-  // contributes zero rows — today's "remove rows" semantics. Nesting is
-  // unbounded: a folded parent skips its sub-groups entirely; an
-  // expanded parent passes through to walk its child entries, each of
-  // which consults `collapsedGroupIds` independently.
+  // contributes its header row (the parent chevron stays reachable even
+  // with no body to paint). Nesting is unbounded: a folded parent skips
+  // its sub-groups entirely; an expanded parent passes through to walk
+  // its child entries, each of which consults `collapsedGroupIds`
+  // independently.
   const effective: TrackOrGroup[] = collapsed
     ? group.summaryTrack
       ? [group.summaryTrack]
       : []
     : group.tracks;
 
+  // Reserve a label row at the top of the group's extent so the gutter
+  // can render the chevron + label above the first child without
+  // overlapping it. The reservation eats into the group's height budget
+  // and shifts the walked children's yTops downward; the group's own
+  // rect spans the full extent (header + body) so its enclosing gutter
+  // cell can still position relative to the whole group.
+  const headerHeight = Math.max(0, group.headerHeight ?? 0);
+  const headerConsumed = Math.min(headerHeight, budget);
+  const remainingBudget = Math.max(0, budget - headerConsumed);
+  const bodyYStart = yTop + headerConsumed;
+
   const walked = walkEntries(
     effective,
     viewport,
     data,
-    yTop,
-    budget,
+    bodyYStart,
+    remainingBudget,
     collapsedGroupIds,
     trackRects,
   );
@@ -199,10 +217,11 @@ function layoutGroup(
       kind: 'group',
       id: group.id,
       label: group.label,
-      rect: { yTop, yBottom: yTop + walked.consumed },
+      rect: { yTop, yBottom: bodyYStart + walked.consumed },
       didTruncate: walked.truncated,
       droppedCount: walked.droppedTotal,
       children: walked.items,
+      headerHeight: headerConsumed,
     },
   };
 }

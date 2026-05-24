@@ -230,6 +230,65 @@ describe('LayoutEngine — height negotiation', () => {
     expect(result.trackRects.has('child-detail')).toBe(false);
   });
 
+  it('reserves a header row at the top of each group via TrackGroup.headerHeight (RD-1110)', () => {
+    const viewport = makeViewport();
+    const child: TrackGroup = {
+      kind: 'group',
+      id: 'child',
+      label: 'Child',
+      headerHeight: 20,
+      tracks: [stubTrack({ id: 'leaf', naturalHeight: 16 })],
+    };
+    const parent: TrackGroup = {
+      kind: 'group',
+      id: 'parent',
+      label: 'Parent',
+      headerHeight: 20,
+      tracks: [child],
+    };
+    const result = layoutTracks({
+      tracks: [parent],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+    });
+    const parentItem = result.items[0]!;
+    expect(parentItem.headerHeight).toBe(20);
+    expect(parentItem.rect.yTop).toBe(0);
+    // Parent body starts at 20 (parent header). Child body starts at 40
+    // (parent header + child header). Leaf at 40..56.
+    const childItem = parentItem.children![0]!;
+    expect(childItem.rect.yTop).toBe(20);
+    expect(childItem.headerHeight).toBe(20);
+    const leafRect = result.trackRects.get('leaf')!;
+    expect(leafRect.yTop).toBe(40);
+    expect(leafRect.yBottom).toBe(56);
+    expect(parentItem.rect.yBottom).toBe(56);
+  });
+
+  it('reserves headerHeight even when a group is folded with a summary (RD-1110)', () => {
+    const viewport = makeViewport();
+    const group: TrackGroup = {
+      kind: 'group',
+      id: 'g',
+      label: 'G',
+      headerHeight: 22,
+      tracks: [stubTrack({ id: 'detail', naturalHeight: 60 })],
+      summaryTrack: stubTrack({ id: 'summary', naturalHeight: 18 }),
+    };
+    const result = layoutTracks({
+      tracks: [group],
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+      collapsedGroupIds: new Set(['g']),
+    });
+    expect(result.items[0]!.headerHeight).toBe(22);
+    // Summary rendered at yTop + headerHeight = 22, so the chevron's
+    // gutter slot at 0..22 doesn't collide with the summary row.
+    expect(result.trackRects.get('summary')!.yTop).toBe(22);
+  });
+
   it('falls back to zero rows when a folded group has no summaryTrack', () => {
     const viewport = makeViewport();
     const group: TrackGroup = {

@@ -179,6 +179,13 @@ export interface GutterItem {
    *  indent the gutter so nested groups read as a hierarchy without the
    *  host having to re-walk the track tree. */
   depth: number;
+  /** For groups with a {@link TrackGroup.headerHeight} reservation: the
+   *  height of the label row inside the group's vertical extent. The
+   *  viewer sizes the gutter cell to this when set, so the parent
+   *  chevron sits in its own slot rather than overlapping its first
+   *  child's cell. Undefined / 0 means the cell spans the group's full
+   *  extent (flush layout, matching pre-RD-1110-followup behaviour). */
+  headerHeight?: number;
 }
 
 export interface LeftGutterProps {
@@ -418,6 +425,7 @@ function gutterItemsFor(items: LayoutItem[]): GutterItem[] {
         didTruncate: item.didTruncate,
         droppedCount: item.droppedCount,
         depth,
+        headerHeight: item.headerHeight,
       });
       if (item.kind === 'group' && item.children) {
         walk(item.children, depth + 1);
@@ -1423,7 +1431,16 @@ function GeneGlyphInner(
       {gutterItems.map((item) => {
         const node = renderItem(item);
         if (node === null || node === undefined || node === false) return null;
-        const h = Math.max(0, item.rect.yBottom - item.rect.yTop);
+        const fullHeight = Math.max(0, item.rect.yBottom - item.rect.yTop);
+        // When a group reserved a header slot via `TrackGroup.headerHeight`,
+        // size its gutter cell to that slot — children are laid out below
+        // it (their yTops are shifted by the same amount in the layout
+        // engine), so the parent chevron + first child no longer share a
+        // y range and stop overlapping.
+        const h =
+          item.kind === 'group' && item.headerHeight && item.headerHeight > 0
+            ? item.headerHeight
+            : fullHeight;
         return (
           <div
             key={`${item.kind}-${item.id}`}

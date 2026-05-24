@@ -579,6 +579,14 @@ export interface TrackGroup {
    *  at the host. The layout engine recurses through nested groups and
    *  consults the same `collapsedGroupIds` set at every level. */
   tracks: TrackOrGroup[];
+  /** Vertical pixels reserved at the top of the group's extent for its
+   *  label / chevron row, so the gutter can render a parent chevron
+   *  above its children without overlapping the first child. The layout
+   *  engine positions the first child (or summary when folded) at
+   *  `yTop + headerHeight`. Default 0 — flush layout, matching the
+   *  pre-nesting `interProTrack` behaviour where the group label
+   *  shares the first sub-track's row. */
+  headerHeight?: number;
   /** Optional one-row summary representation used when the group is folded.
    *  The viewer swaps `tracks` for `[summaryTrack]` while the group's id is
    *  in `collapsedGroupIds` and falls back to today's "remove rows" behaviour
