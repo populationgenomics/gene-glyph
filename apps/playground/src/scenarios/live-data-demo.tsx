@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DefaultTrackChevron,
   GeneGlyph,
+  clinVarSummaryTrack,
   clinVarTrack,
   defaultClinVarSymbolEncoding,
   exonTrack,
@@ -8,7 +10,10 @@ import {
 import type {
   ClinVarRecord,
   ClinVarSignificance,
+  GeneGlyphRef,
+  GutterItem,
   TooltipRenderArgs,
+  TrackOrGroup,
   Transcript,
 } from '@populationgenomics/gene-glyph';
 import { fetchGeneData, type LiveGeneData } from '../lib/gnomad.js';
@@ -63,11 +68,21 @@ const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
   'conflicting',
 ];
 
+const CLINVAR_GROUP_ID = 'clinvar-group';
+
 export function LiveDataDemoScenario() {
   const [gene, setGene] = useState<GeneSymbol>('TP53');
   const [state, setState] = useState<LoadState>({ kind: 'idle' });
   const [lastClicked, setLastClicked] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(() => new Set());
+  // Folded-group state — owned by the host so the URL / preferences layer
+  // could mirror it. RD-1110 starts the ClinVar group folded so dense
+  // genes (BRCA1 ~12k records, TP53 ~3.7k) land at one row instead of
+  // hundreds of stacked rows on first paint.
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set([CLINVAR_GROUP_ID]),
+  );
+  const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   const filter = useCallback(
     (r: ClinVarRecord) => !excluded.has(r.significance),
@@ -106,21 +121,34 @@ export function LiveDataDemoScenario() {
     return () => controller.abort();
   }, [gene]);
 
-  const tracks = useMemo(
-    () => [
-      exonTrack({}),
-      clinVarTrack({
-        id: 'clinvar',
-        source: state.kind === 'ready' ? state.data.clinvar : [],
-        // Stacked render — each variant becomes a glyph packed into
-        // significance-keyed lanes. With genes carrying thousands of
-        // ClinVar entries (TP53 ~3.7k, BRCA1 ~12k) the density-clustered
-        // default at fit-gene collapses everything into one giant cluster
-        // mark; the stacked view shows every variant individually.
-        stackedVariantStyle: defaultClinVarSymbolEncoding,
-        filter,
-      }),
-    ],
+  const tracks = useMemo<TrackOrGroup[]>(
+    () => {
+      const records = state.kind === 'ready' ? state.data.clinvar : [];
+      return [
+        exonTrack({}),
+        {
+          // Group wraps the stacked-detail track with a density heat-strip
+          // summary. While folded the figure shows the one-row summary;
+          // expanding swaps in the stacked render. RD-1110.
+          kind: 'group',
+          id: CLINVAR_GROUP_ID,
+          label: 'ClinVar',
+          tracks: [
+            clinVarTrack({
+              id: 'clinvar',
+              source: records,
+              stackedVariantStyle: defaultClinVarSymbolEncoding,
+              filter,
+            }),
+          ],
+          summaryTrack: clinVarSummaryTrack({
+            id: 'clinvar-summary',
+            source: records,
+            filter,
+          }),
+        },
+      ];
+    },
     [state, filter],
   );
 
@@ -285,15 +313,35 @@ export function LiveDataDemoScenario() {
         })}
       </div>
       <GeneGlyph
+        ref={viewerRef}
         transcript={transcript}
         tracks={tracks}
         defaultMode="transcript"
         trackHeightBudget={420}
+        collapsedGroupIds={collapsedGroups}
+        onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
         onFeatureClick={(featureId, trackId) => {
           if (trackId === 'clinvar') setLastClicked(featureId);
         }}
-      />
+      >
+        <GeneGlyph.LeftGutter width={140}>
+          {(item: GutterItem) => {
+            if (item.kind === 'group' && item.id === CLINVAR_GROUP_ID) {
+              return (
+                <span style={{ alignSelf: 'flex-start', paddingTop: 1 }}>
+                  <DefaultTrackChevron
+                    item={item}
+                    collapsed={collapsedGroups.has(item.id)}
+                    onToggle={() => viewerRef.current?.toggleGroup(item.id)}
+                  />
+                </span>
+              );
+            }
+            return null;
+          }}
+        </GeneGlyph.LeftGutter>
+      </GeneGlyph>
     </section>
   );
 }

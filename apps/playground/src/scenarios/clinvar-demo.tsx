@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  DefaultTrackChevron,
   GeneGlyph,
+  clinVarSummaryTrack,
   clinVarTrack,
   exonTrack,
   pfamTrack,
@@ -8,7 +10,10 @@ import {
 import type {
   ClinVarRecord,
   ClinVarSignificance,
+  GeneGlyphRef,
+  GutterItem,
   TooltipRenderArgs,
+  TrackOrGroup,
 } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
 import { TP53_CLINVAR } from '../fixtures/tp53-clinvar.js';
@@ -37,10 +42,20 @@ const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
   'conflicting',
 ];
 
+const CLINVAR_GROUP_ID = 'clinvar-group';
+
 export function ClinVarDemoScenario() {
   const [lastClicked, setLastClicked] = useState<string | null>(null);
   // Host-owned filter state. Empty set = no filter (all significances).
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(() => new Set());
+  // Folded-group state. RD-1110 starts the ClinVar group expanded in this
+  // offline scenario so the docs example shows the detail render by
+  // default; clicking the chevron swaps in the density heat-strip
+  // summary.
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   // Stable predicate reference so the gene-glyph filter memo doesn't churn
   // on every render — the function identity changes only when `excluded`
@@ -50,11 +65,21 @@ export function ClinVarDemoScenario() {
     [excluded],
   );
 
-  const tracks = useMemo(
+  const tracks = useMemo<TrackOrGroup[]>(
     () => [
       exonTrack({}),
       pfamTrack({}),
-      clinVarTrack({ id: 'clinvar', source: TP53_CLINVAR, filter }),
+      {
+        kind: 'group',
+        id: CLINVAR_GROUP_ID,
+        label: 'ClinVar',
+        tracks: [clinVarTrack({ id: 'clinvar', source: TP53_CLINVAR, filter })],
+        summaryTrack: clinVarSummaryTrack({
+          id: 'clinvar-summary',
+          source: TP53_CLINVAR,
+          filter,
+        }),
+      },
     ],
     [filter],
   );
@@ -141,15 +166,35 @@ export function ClinVarDemoScenario() {
         </div>
       </div>
       <GeneGlyph
+        ref={viewerRef}
         transcript={TP53_TRANSCRIPT}
         protein={TP53_PROTEIN}
         tracks={tracks}
         trackHeightBudget={220}
+        collapsedGroupIds={collapsedGroups}
+        onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
         onFeatureClick={(featureId: string, trackId: string) => {
           if (trackId === 'clinvar') setLastClicked(featureId);
         }}
-      />
+      >
+        <GeneGlyph.LeftGutter width={120}>
+          {(item: GutterItem) => {
+            if (item.kind === 'group' && item.id === CLINVAR_GROUP_ID) {
+              return (
+                <span style={{ alignSelf: 'flex-start', paddingTop: 1 }}>
+                  <DefaultTrackChevron
+                    item={item}
+                    collapsed={collapsedGroups.has(item.id)}
+                    onToggle={() => viewerRef.current?.toggleGroup(item.id)}
+                  />
+                </span>
+              );
+            }
+            return null;
+          }}
+        </GeneGlyph.LeftGutter>
+      </GeneGlyph>
     </section>
   );
 }
