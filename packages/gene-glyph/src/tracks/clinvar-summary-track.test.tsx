@@ -114,4 +114,61 @@ describe('clinVarSummaryTrack', () => {
     expect(sigs.has('pathogenic')).toBe(false);
     expect(sigs.has('likely_pathogenic')).toBe(false);
   });
+
+  it('emits butterfly ribbons: pathogenic above centerline, benign below, VUS as neutral strip', () => {
+    const mixed: ClinVarRecord[] = [
+      makeRecord('p1', 1010, 'pathogenic'),
+      makeRecord('v1', 1011, 'uncertain_significance'),
+      makeRecord('b1', 2010, 'benign'),
+    ];
+    const mapper = createCoordinateMapper(transcript);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const painter = createSvgPainter({ mode: 'screen' });
+    const track = clinVarSummaryTrack({ source: mixed });
+    const yTop = 0;
+    const yBottom = 18;
+    const yCenter = (yTop + yBottom) / 2;
+    const node = track.render({
+      data: { records: mixed },
+      rect: { yTop, yBottom },
+      viewport,
+      mapper,
+      interaction: emptyInteraction(),
+      painter,
+    });
+    const { container } = render(
+      <svg viewBox="0 0 720 18" width={720} height={18}>
+        {node}
+      </svg>,
+    );
+
+    // Directional cells: pathogenic and benign — no VUS/conflicting in this set.
+    const cells = container.querySelectorAll('.vv-clinvar-summary-cell');
+    const sigs = new Set(
+      [...cells].map((c) => c.getAttribute('data-vv-significance')),
+    );
+    expect(sigs).toEqual(new Set(['pathogenic', 'benign']));
+
+    // Neutral strip element exists for the VUS record.
+    expect(container.querySelector('.vv-clinvar-summary-neutral')).not.toBeNull();
+
+    // Pathogenic ribbon's peak (smallest y on its top spline) sits above the
+    // centerline; benign ribbon's peak (largest y) sits below.
+    const pathCell = container.querySelector('[data-vv-significance="pathogenic"]')!;
+    const benCell = container.querySelector('[data-vv-significance="benign"]')!;
+    const minY = (path: SVGPathElement): number => {
+      const d = path.getAttribute('d') ?? '';
+      const ys = [...d.matchAll(/[-\d.]+\s+([-\d.]+)/g)].map((m) => Number(m[1]));
+      return Math.min(...ys);
+    };
+    const maxY = (path: SVGPathElement): number => {
+      const d = path.getAttribute('d') ?? '';
+      const ys = [...d.matchAll(/[-\d.]+\s+([-\d.]+)/g)].map((m) => Number(m[1]));
+      return Math.max(...ys);
+    };
+    const pathTop = pathCell.querySelector('path:last-child') as SVGPathElement;
+    const benBottom = benCell.querySelector('path:last-child') as SVGPathElement;
+    expect(minY(pathTop)).toBeLessThan(yCenter);
+    expect(maxY(benBottom)).toBeGreaterThan(yCenter);
+  });
 });

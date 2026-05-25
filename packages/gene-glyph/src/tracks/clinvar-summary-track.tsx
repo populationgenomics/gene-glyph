@@ -84,97 +84,272 @@ export function clinVarSummaryTrack(
       const width = viewport.width;
       const binCount = Math.max(1, Math.ceil(width / binPx));
 
-      // 1. Identify which significance categories have records in the visible screen window
-      const activeSigs = new Set<ClinVarSignificance>();
-      for (const p of placed) {
-        if (!Number.isFinite(p.screenX)) continue;
-        if (p.screenX < 0 || p.screenX > width) continue;
-        activeSigs.add(p.record.significance);
-      }
+      // One stack band per significance, ordered bottom-to-top from least to
+      // most pathogenic. `other` records are lumped with VUS (no clinical
+      // direction). Conflicting sits between VUS and LP, matching the
+      // SIGNIFICANCE_RANK ordering used elsewhere.
+      const benRaw = new Int32Array(binCount);
+      const lbRaw = new Int32Array(binCount);
+      const vusRaw = new Int32Array(binCount);
+      const confRaw = new Int32Array(binCount);
+      const lpRaw = new Int32Array(binCount);
+      const pathRaw = new Int32Array(binCount);
+      let placedInWindow = 0;
 
-      // If no records are placed, render nothing
-      if (placed.length === 0 || activeSigs.size === 0) return null;
-
-      // 2. Find the global maxCount across all bins and significances to establish standard saturation scaling
-      const globalCounts = new Int32Array(binCount);
       for (const p of placed) {
         if (!Number.isFinite(p.screenX)) continue;
         if (p.screenX < 0 || p.screenX > width) continue;
         const bin = Math.min(binCount - 1, Math.floor(p.screenX / binPx));
-        globalCounts[bin] = (globalCounts[bin] ?? 0) + 1;
+        const sig = p.record.significance;
+        if (sig === 'pathogenic') pathRaw[bin]!++;
+        else if (sig === 'likely_pathogenic') lpRaw[bin]!++;
+        else if (sig === 'conflicting') confRaw[bin]!++;
+        else if (sig === 'uncertain_significance' || sig === 'other') vusRaw[bin]!++;
+        else if (sig === 'likely_benign') lbRaw[bin]!++;
+        else if (sig === 'benign') benRaw[bin]!++;
+        placedInWindow++;
       }
-      let maxCount = 0;
-      for (let i = 0; i < binCount; i++) {
-        if (globalCounts[i]! > maxCount) maxCount = globalCounts[i]!;
-      }
-      // Dynamic vertical scaling: when zoomed in and variants are sparse (e.g. maxCount = 1 or 2),
-      // we scale down the saturation cap (down to a minimum of 1) so individual peaks remain beautifully
-      // tall and clearly visible at deep zoom levels. When zoomed out, we clamp the saturation cap
-      // to at least SATURATION_COUNT (6) to prevent a massive hotspot from flattening the rest of the gene.
-      const saturation = Math.max(1, Math.min(SATURATION_COUNT, maxCount));
 
-      // 3. For each active significance, render a gorgeous smooth sparkline density spline
-      const sparklines: ReactNode[] = [];
-      const yBaseline = rect.yBottom - 1;
-      const trackHeightVal = rect.yBottom - rect.yTop - 2;
+      if (placedInWindow === 0) return null;
 
-      for (const sig of activeSigs) {
-        const sigCounts = new Int32Array(binCount);
-        for (const p of placed) {
-          if (p.record.significance !== sig) continue;
-          if (!Number.isFinite(p.screenX)) continue;
-          if (p.screenX < 0 || p.screenX > width) continue;
-          const bin = Math.min(binCount - 1, Math.floor(p.screenX / binPx));
-          sigCounts[bin] = (sigCounts[bin] ?? 0) + 1;
-        }
-
-        // Apply a moving average (Gaussian-like) smooth kernel on counts to make the curve organic
-        const smoothed = new Float32Array(binCount);
+      // 1-2-1 smoothing kernel — gives the ribbons their organic curve.
+      const smooth = (raw: Int32Array): Float32Array => {
+        const out = new Float32Array(binCount);
         for (let i = 0; i < binCount; i++) {
-          const val0 = i > 0 ? sigCounts[i - 1]! : 0;
-          const val1 = sigCounts[i]!;
-          const val2 = i < binCount - 1 ? sigCounts[i + 1]! : 0;
-          smoothed[i] = val0 * 0.25 + val1 * 0.5 + val2 * 0.25;
+          const v0 = i > 0 ? raw[i - 1]! : 0;
+          const v1 = raw[i]!;
+          const v2 = i < binCount - 1 ? raw[i + 1]! : 0;
+          out[i] = v0 * 0.25 + v1 * 0.5 + v2 * 0.25;
         }
+        return out;
+      };
+      const benS = smooth(benRaw);
+      const lbS = smooth(lbRaw);
+      const vusS = smooth(vusRaw);
+      const confS = smooth(confRaw);
+      const lpS = smooth(lpRaw);
+      const pathS = smooth(pathRaw);
 
+      // Build a smooth area whose top edge tracks `cum`, anchored to
+      // `baseline`. `direction = 'up'` draws above the baseline (smaller y);
+      // `'down'` draws below it (larger y).
+      const buildRibbon = (
+        cum: Float32Array,
+        saturation: number,
+        maxH: number,
+        baseline: number,
+        direction: 'up' | 'down',
+      ): { area: string; line: string } | null => {
+        const sign = direction === 'up' ? -1 : 1;
+        const clampSide = direction === 'up' ? 'above' : 'below';
         const points: { x: number; y: number }[] = [];
-        // Add left padding point anchored to baseline
-        points.push({ x: -binPx * 0.5, y: yBaseline });
-
+        points.push({ x: -binPx * 0.5, y: baseline });
+        let nonzero = false;
         for (let i = 0; i < binCount; i++) {
           const x = (i + 0.5) * binPx;
-          const h = Math.min(1, smoothed[i]! / saturation) * (trackHeightVal - 1);
-          points.push({ x, y: yBaseline - h });
+          const h = Math.min(1, cum[i]! / saturation) * maxH;
+          if (h > 0) nonzero = true;
+          points.push({ x, y: baseline + sign * h });
         }
+        points.push({ x: width + binPx * 0.5, y: baseline });
+        if (!nonzero) return null;
+        const spline = buildSmoothSpline(points, baseline, clampSide);
+        if (!spline) return null;
+        const last = points[points.length - 1]!;
+        const first = points[0]!;
+        const area =
+          spline + ` L ${last.x} ${baseline} L ${first.x} ${baseline} Z`;
+        return { area, line: spline };
+      };
 
-        // Add right padding point anchored to baseline
-        points.push({ x: width + binPx * 0.5, y: yBaseline });
+      const hasOwn = (own: Int32Array): boolean => {
+        for (let i = 0; i < binCount; i++) if (own[i]! > 0) return true;
+        return false;
+      };
 
-        const spline = buildSmoothSpline(points, yBaseline);
-        if (!spline) continue;
+      // Single-significance fallback: when the host narrows the data to one
+      // significance (per-sig subgroups in the multi-row ClinVar layout),
+      // the butterfly has no bias to show and would render asymmetric or
+      // tiny. Detect this and emit the original single upward ribbon in the
+      // significance's native colour, full band height.
+      const allBuckets: {
+        raw: Int32Array;
+        smoothed: Float32Array;
+        sig: ClinVarSignificance;
+      }[] = [
+        { raw: pathRaw, smoothed: pathS, sig: 'pathogenic' },
+        { raw: lpRaw, smoothed: lpS, sig: 'likely_pathogenic' },
+        { raw: vusRaw, smoothed: vusS, sig: 'uncertain_significance' },
+        { raw: confRaw, smoothed: confS, sig: 'conflicting' },
+        { raw: lbRaw, smoothed: lbS, sig: 'likely_benign' },
+        { raw: benRaw, smoothed: benS, sig: 'benign' },
+      ];
+      const activeBuckets = allBuckets.filter(({ raw }) => hasOwn(raw));
 
-        const fillD = spline + ` L ${points[points.length - 1]!.x} ${yBaseline} L ${points[0]!.x} ${yBaseline} Z`;
-        const color = clinVarSignificanceColor(sig);
+      if (activeBuckets.length === 1) {
+        const only = activeBuckets[0]!;
+        let maxC = 0;
+        for (let i = 0; i < binCount; i++) {
+          if (only.smoothed[i]! > maxC) maxC = only.smoothed[i]!;
+        }
+        const saturation = Math.max(1, Math.min(SATURATION_COUNT, maxC));
+        const yBaseline = rect.yBottom - 1;
+        const trackHeightVal = rect.yBottom - rect.yTop - 2;
+        const built = buildRibbon(
+          only.smoothed,
+          saturation,
+          Math.max(1, trackHeightVal - 1),
+          yBaseline,
+          'up',
+        );
+        if (!built) return null;
+        const color = clinVarSignificanceColor(only.sig);
+        return (
+          <g
+            className="vv-clinvar-summary-track"
+            data-vv-track-id={id}
+            data-testid={`gene-glyph-track-${id}`}
+            data-vv-track-kind="clinvar-summary"
+            data-vv-bin-px={binPx}
+            key={id}
+          >
+            <g
+              key={only.sig}
+              className={`vv-clinvar-summary-cell vv-clinvar-summary-${only.sig}`}
+              data-vv-significance={only.sig}
+            >
+              <path d={built.area} fill={color} fillOpacity={1} />
+              <path d={built.line} fill="none" stroke={color} strokeWidth={1.5} />
+            </g>
+          </g>
+        );
+      }
 
-        // Render both the beautiful filled area and outline path
-        sparklines.push(
+      // Butterfly layout: pathogenic (P + LP) streams upward from a
+      // centerline, benign (B + LB) streams downward. The visible asymmetry
+      // = bias signal. VUS + conflicting collapse to a thin grey strip on
+      // the centerline — present-but-non-directional, so they shouldn't
+      // dominate the view the way a stacked rollup made them.
+      const cumLpUp = new Float32Array(binCount); // lp alone
+      const cumPathUp = new Float32Array(binCount); // lp + path
+      const cumLbDn = new Float32Array(binCount); // lb alone
+      const cumBenDn = new Float32Array(binCount); // lb + ben
+      const neutralS = new Float32Array(binCount); // vus + conf
+
+      let maxDir = 0;
+      let maxNeutral = 0;
+      for (let i = 0; i < binCount; i++) {
+        cumLpUp[i] = lpS[i]!;
+        cumPathUp[i] = lpS[i]! + pathS[i]!;
+        cumLbDn[i] = lbS[i]!;
+        cumBenDn[i] = lbS[i]! + benS[i]!;
+        neutralS[i] = vusS[i]! + confS[i]!;
+        if (cumPathUp[i]! > maxDir) maxDir = cumPathUp[i]!;
+        if (cumBenDn[i]! > maxDir) maxDir = cumBenDn[i]!;
+        if (neutralS[i]! > maxNeutral) maxNeutral = neutralS[i]!;
+      }
+      // Shared directional saturation so a region heavily skewed toward one
+      // side reads taller than a balanced region.
+      const saturationDir = Math.max(1, Math.min(SATURATION_COUNT, maxDir));
+      const saturationNeutral = Math.max(1, Math.min(SATURATION_COUNT, maxNeutral));
+
+      const yCenter = (rect.yTop + rect.yBottom) / 2;
+      const halfHeight = Math.max(1, (rect.yBottom - rect.yTop) / 2 - 1);
+      // Neutral strip is deliberately small — it's a "data present, no
+      // direction" indicator, not the main signal. Cap at ~25% of half-band
+      // or 2px, whichever is smaller.
+      const neutralHalfMax = Math.min(2, halfHeight * 0.25);
+
+      // Summary-track local override: LP/LB read as a blend of their
+      // definitive call and VUS so the stack reads as a continuous
+      // benign-uncertain-pathogenic gradient, rather than two pairs of
+      // discrete hues. The neutral strip uses the global conflicting colour
+      // (now grey) directly.
+      const colorPath = clinVarSignificanceColor('pathogenic');
+      const colorBen = clinVarSignificanceColor('benign');
+      const colorVus = clinVarSignificanceColor('uncertain_significance');
+      const colorLp = `color-mix(in oklab, ${colorPath} 50%, ${colorVus})`;
+      const colorLb = `color-mix(in oklab, ${colorBen} 50%, ${colorVus})`;
+      const colorNeutral = clinVarSignificanceColor('conflicting');
+
+      const children: ReactNode[] = [];
+
+      // Neutral strip drawn first — directional ribbons opaque-paint over it
+      // where they exist, so the grey is only visible where it's the *only*
+      // signal in a bin (which is exactly when the host needs to know
+      // "data present, no clinical direction").
+      if (maxNeutral > 0) {
+        const up = buildRibbon(neutralS, saturationNeutral, neutralHalfMax, yCenter, 'up');
+        const dn = buildRibbon(neutralS, saturationNeutral, neutralHalfMax, yCenter, 'down');
+        if (up || dn) {
+          children.push(
+            <g
+              key="neutral"
+              className="vv-clinvar-summary-neutral"
+              data-vv-neutral-strip="true"
+            >
+              {up && (
+                <path d={up.area} fill={colorNeutral} fillOpacity={0.7} />
+              )}
+              {dn && (
+                <path d={dn.area} fill={colorNeutral} fillOpacity={0.7} />
+              )}
+            </g>,
+          );
+        }
+      }
+
+      // Pathogenic side (above centerline). Painter's algo: P (largest
+      // cumulative) drawn first, LP overpaints the lower part.
+      const upperLayers: {
+        cum: Float32Array;
+        own: Int32Array;
+        sig: ClinVarSignificance;
+        color: string;
+      }[] = [
+        { cum: cumPathUp, own: pathRaw, sig: 'pathogenic', color: colorPath },
+        { cum: cumLpUp, own: lpRaw, sig: 'likely_pathogenic', color: colorLp },
+      ];
+      for (const { cum, own, sig, color } of upperLayers) {
+        if (!hasOwn(own)) continue;
+        const built = buildRibbon(cum, saturationDir, halfHeight, yCenter, 'up');
+        if (!built) continue;
+        children.push(
           <g
             key={sig}
             className={`vv-clinvar-summary-cell vv-clinvar-summary-${sig}`}
             data-vv-significance={sig}
           >
-            <path
-              d={fillD}
-              fill={color}
-              fillOpacity={0.22}
-            />
-            <path
-              d={spline}
-              fill="none"
-              stroke={color}
-              strokeWidth={1.5}
-            />
-          </g>
+            <path d={built.area} fill={color} fillOpacity={1} />
+            <path d={built.line} fill="none" stroke={color} strokeWidth={1} />
+          </g>,
+        );
+      }
+
+      // Benign side (below centerline). Painter's algo: B drawn first, LB
+      // overpaints the part closer to the centerline.
+      const lowerLayers: {
+        cum: Float32Array;
+        own: Int32Array;
+        sig: ClinVarSignificance;
+        color: string;
+      }[] = [
+        { cum: cumBenDn, own: benRaw, sig: 'benign', color: colorBen },
+        { cum: cumLbDn, own: lbRaw, sig: 'likely_benign', color: colorLb },
+      ];
+      for (const { cum, own, sig, color } of lowerLayers) {
+        if (!hasOwn(own)) continue;
+        const built = buildRibbon(cum, saturationDir, halfHeight, yCenter, 'down');
+        if (!built) continue;
+        children.push(
+          <g
+            key={sig}
+            className={`vv-clinvar-summary-cell vv-clinvar-summary-${sig}`}
+            data-vv-significance={sig}
+          >
+            <path d={built.area} fill={color} fillOpacity={1} />
+            <path d={built.line} fill="none" stroke={color} strokeWidth={1} />
+          </g>,
         );
       }
 
@@ -187,7 +362,7 @@ export function clinVarSummaryTrack(
           data-vv-bin-px={binPx}
           key={id}
         >
-          {sparklines}
+          {children}
         </g>
       );
     },
@@ -202,7 +377,11 @@ export function clinVarSummaryTrack(
   };
 }
 
-function buildSmoothSpline(points: { x: number; y: number }[], yBaseline: number): string {
+function buildSmoothSpline(
+  points: { x: number; y: number }[],
+  yBaseline: number,
+  clampSide: 'above' | 'below' = 'above',
+): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
   if (points.length === 2) {
@@ -224,8 +403,14 @@ function buildSmoothSpline(points: { x: number; y: number }[], yBaseline: number
     const cp2x = p2.x - (p3.x - p1.x) * tension;
     const cp2y = p2.y - (p3.y - p1.y) * tension;
 
-    const clampCp1y = Math.min(yBaseline, cp1y);
-    const clampCp2y = Math.min(yBaseline, cp2y);
+    // 'above' = curve sits above the baseline (smaller y in SVG); prevent
+    // control points dipping below it. 'below' = mirror: curve sits below,
+    // prevent control points rising above it.
+    const clamp = clampSide === 'above'
+      ? (y: number) => Math.min(yBaseline, y)
+      : (y: number) => Math.max(yBaseline, y);
+    const clampCp1y = clamp(cp1y);
+    const clampCp2y = clamp(cp2y);
 
     d += ` C ${cp1x} ${clampCp1y}, ${cp2x} ${clampCp2y}, ${p2.x} ${p2.y}`;
   }

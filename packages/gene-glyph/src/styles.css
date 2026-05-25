@@ -56,12 +56,16 @@
 
   /* ClinVar clinical-significance palette. Hosts can override on either the
    * gene-glyph root or a parent surface to retheme without recompiling. */
-  --vv-clinvar-color-pathogenic: hsl(343, 90%, 60%);
+  /* Pathogenic and benign sit a step darker than their "likely-*" partners
+   * so lightness contrast separates the definitive from the tentative call.
+   * Conflicting is neutral grey — "no clear direction" rather than a
+   * competing hue. */
+  --vv-clinvar-color-pathogenic: hsl(343, 85%, 42%);
   --vv-clinvar-color-likely-pathogenic: hsl(24, 95%, 62%);
   --vv-clinvar-color-uncertain: hsl(38, 92%, 50%);
   --vv-clinvar-color-likely-benign: hsl(150, 60%, 55%);
-  --vv-clinvar-color-benign: hsl(162, 70%, 45%);
-  --vv-clinvar-color-conflicting: hsl(245, 85%, 70%);
+  --vv-clinvar-color-benign: hsl(162, 75%, 28%);
+  --vv-clinvar-color-conflicting: #94a3b8;
   --vv-clinvar-color-other: #64748b;
   --vv-clinvar-dot-stroke: #ffffff;
   --vv-clinvar-count-fill: #ffffff;
