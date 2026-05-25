@@ -38,7 +38,16 @@ const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
   'conflicting',
 ];
 
+const STAR_LEVELS = [0, 1, 2, 3, 4] as const;
+type StarLevel = (typeof STAR_LEVELS)[number];
+
 const CLINVAR_GROUP_ID = 'clinvar-group';
+
+function recordStars(r: ClinVarRecord): StarLevel {
+  const raw = ((r.meta ?? {}) as { goldStars?: number }).goldStars ?? 0;
+  const clamped = Math.max(0, Math.min(4, Math.floor(raw)));
+  return clamped as StarLevel;
+}
 
 type LoadState =
   | { kind: 'idle' }
@@ -55,6 +64,9 @@ export function EmbedView() {
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(
+    () => new Set(),
+  );
+  const [excludedStars, setExcludedStars] = useState<ReadonlySet<StarLevel>>(
     () => new Set(),
   );
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
@@ -85,18 +97,19 @@ export function EmbedView() {
   }, [requestedId, force]);
 
   const filter = useCallback(
-    (r: ClinVarRecord) => !excluded.has(r.significance),
-    [excluded],
+    (r: ClinVarRecord) =>
+      !excluded.has(r.significance) && !excludedStars.has(recordStars(r)),
+    [excluded, excludedStars],
   );
   const records = state.kind === 'ready' ? state.data.clinvar : [];
   // The selection survives chip toggles: when the user excludes the
-  // selected variant's significance the detail card and ring just hide
-  // until they re-enable that chip.
+  // selected variant's significance or star tier the detail card and
+  // ring just hide until they re-enable the matching chip.
   const selectedRecord = useMemo(() => {
     if (!selectedId) return null;
     const r = records.find((r) => r.id === selectedId) ?? null;
-    return r && !excluded.has(r.significance) ? r : null;
-  }, [selectedId, records, excluded]);
+    return r && filter(r) ? r : null;
+  }, [selectedId, records, filter]);
   const selectedFeatureIds = useMemo(
     () => (selectedRecord ? new Set([selectedRecord.id]) : new Set<string>()),
     [selectedRecord],
@@ -109,6 +122,24 @@ export function EmbedView() {
       return next;
     });
   };
+  const toggleExcludedStar = (n: StarLevel) => {
+    setExcludedStars((prev) => {
+      const next = new Set(prev);
+      if (next.has(n)) next.delete(n);
+      else next.add(n);
+      return next;
+    });
+  };
+
+  // Hash of the active exclusions. Folded into each detail track's
+  // `configKey` so the viewer notices when the host predicate changes
+  // shape — without that, `load()`'s packed `stackLayout` is reused
+  // and the figure's height stays stuck on the pre-filter row count.
+  const filterKey = useMemo(() => {
+    const sig = [...excluded].sort().join(',');
+    const stars = [...excludedStars].sort((a, b) => a - b).join(',');
+    return `s=${sig};r=${stars}`;
+  }, [excluded, excludedStars]);
 
   const tracks = useMemo<TrackOrGroup[]>(() => {
     const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
@@ -124,6 +155,7 @@ export function EmbedView() {
             source: records,
             stackedVariantStyle: defaultClinVarSymbolEncoding,
             filter: sigFilter,
+            configKey: filterKey,
           }),
         ],
         summaryTrack: clinVarSummaryTrack({
@@ -148,7 +180,7 @@ export function EmbedView() {
         }),
       },
     ];
-  }, [records, filter]);
+  }, [records, filter, filterKey]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -217,49 +249,94 @@ export function EmbedView() {
     >
       <StatusBar state={state} requestedId={requestedId} />
       {state.kind === 'ready' && (
-        <div
-          data-testid="embed-significance-filter"
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            margin: '8px 0',
-            color: '#475569',
-          }}
-        >
-          <span style={{ opacity: 0.75 }}>significance:</span>
-          {SIGNIFICANCE_CHIPS.map((sig) => {
-            const active = !excluded.has(sig);
-            return (
-              <button
-                key={sig}
-                type="button"
-                data-testid={`embed-chip-${sig}`}
-                data-active={active}
-                onClick={() => toggleExcluded(sig)}
-                style={{
-                  padding: '2px 8px',
-                  fontSize: '0.78rem',
-                  borderRadius: 999,
-                  border: '1px solid #cbd5e1',
-                  background: active ? '#e0f2fe' : '#f1f5f9',
-                  color: active ? '#0c4a6e' : '#94a3b8',
-                  cursor: 'pointer',
-                }}
-              >
-                {humanSig(sig)}
-              </button>
-            );
-          })}
-        </div>
+        <>
+          <div
+            data-testid="embed-significance-filter"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              margin: '8px 0',
+              color: '#475569',
+            }}
+          >
+            <span style={{ opacity: 0.75 }}>significance:</span>
+            {SIGNIFICANCE_CHIPS.map((sig) => {
+              const active = !excluded.has(sig);
+              return (
+                <button
+                  key={sig}
+                  type="button"
+                  data-testid={`embed-chip-${sig}`}
+                  data-active={active}
+                  onClick={() => toggleExcluded(sig)}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '0.78rem',
+                    borderRadius: 999,
+                    border: '1px solid #cbd5e1',
+                    background: active ? '#e0f2fe' : '#f1f5f9',
+                    color: active ? '#0c4a6e' : '#94a3b8',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {humanSig(sig)}
+                </button>
+              );
+            })}
+          </div>
+          <div
+            data-testid="embed-stars-filter"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              margin: '8px 0',
+              color: '#475569',
+            }}
+          >
+            <span style={{ opacity: 0.75 }}>review:</span>
+            {STAR_LEVELS.map((n) => {
+              const active = !excludedStars.has(n);
+              const label = n === 0 ? '☆' : '★'.repeat(n);
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  data-testid={`embed-chip-stars-${n}`}
+                  data-active={active}
+                  onClick={() => toggleExcludedStar(n)}
+                  aria-label={
+                    n === 0
+                      ? 'no review stars'
+                      : `${n} review star${n === 1 ? '' : 's'}`
+                  }
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '0.78rem',
+                    borderRadius: 999,
+                    border: '1px solid #cbd5e1',
+                    background: active ? '#e0f2fe' : '#f1f5f9',
+                    color: active ? '#0c4a6e' : '#94a3b8',
+                    cursor: 'pointer',
+                    letterSpacing: 1,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
       <GeneGlyph
         ref={viewerRef}
         transcript={transcript}
         tracks={tracks}
         defaultMode="transcript"
-        trackHeightBudget={420}
+        trackHeightBudget={16000}
         collapsedGroupIds={collapsedGroups}
         onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
