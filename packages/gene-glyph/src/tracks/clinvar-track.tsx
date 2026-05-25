@@ -378,7 +378,12 @@ export function clinVarTrack(
         : source.slice();
       let stackLayout: ClinVarStackLayout | undefined;
       if (stackedEncoding) {
-        const { placed } = placeClinVarRecords(records, viewport, mapper);
+        // Pack the filtered survivors so `height()` reads a row count
+        // matching what `render` will actually draw. Without this, per-
+        // significance tracks reserve lanes for every other significance
+        // and the figure grows by a multiple of the visible rows.
+        const visible = filter ? records.filter(filter) : records;
+        const { placed } = placeClinVarRecords(visible, viewport, mapper);
         stackLayout = packStackedClinVar(placed, stackedEncoding, markRadius);
       }
       return { records, stackLayout };

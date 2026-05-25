@@ -353,15 +353,16 @@ describe('clinVarTrack', () => {
         filter: (r) => r.significance === 'pathogenic' || r.significance === 'benign',
       });
       const { mapper, viewport, painter, interaction } = setup();
-      // load() ignores the filter — it pre-packs the FULL set so unfiltered
-      // hosts keep the cache. The render path must override that.
+      // load() applies the filter before packing so `height()` (which reads
+      // `stackLayout.rowCount`) reserves space for the visible rows only.
+      // The render path re-packs as a safety net — same filter, same layout.
       const data = await t.load({
         viewport,
         mapper,
         signal: new AbortController().signal,
         protein: null,
       });
-      expect(data.stackLayout!.placements.length).toBe(4);
+      expect(data.stackLayout!.placements.length).toBe(2);
       const Probe = () => (
         <svg>
           {t.render({
