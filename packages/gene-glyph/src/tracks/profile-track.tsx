@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type {
   CoordSystem,
   CoordinateMapper,
@@ -59,6 +59,11 @@ export interface ProfileTrackConfig {
   render: ProfileRender;
   /** Track band height in pixels. Default 24. */
   heightPx?: number;
+  /** Vertical pixels reserved above the track during layout. Stacked
+   *  profile tracks otherwise share an edge — a histogram whose
+   *  tallest bars reach the band top visually merges into a heatmap
+   *  directly above it. Default 0. */
+  gapAbove?: number;
   /** Colour ramp. Required for `'heatmap'` (a viridis-shaped default
    *  ships if omitted). Ignored for `'histogram'` unless the host wants
    *  per-bar colour — pass a function that returns the bar fill. */
@@ -82,6 +87,11 @@ export interface ProfileTrackConfig {
    *  slate. Ignored when `colorRamp` is set (bars are then keyed by
    *  their aggregated value instead). */
   histogramFill?: string;
+  /** Optional stroke colour for a thin frame rect drawn around the
+   *  track band. Spans the full figure width (sits outside the per-
+   *  exon transform groups so it doesn't slide with pan / zoom).
+   *  Default `null` (no frame). */
+  borderColor?: string;
 }
 
 export interface ProfileTrackData {
@@ -132,11 +142,13 @@ export function profileTrack(
   const renderKind = config.render;
   const histogramFill = config.histogramFill ?? '#64748b';
   const histogramStroke = config.histogramStroke;
+  const borderColor = config.borderColor;
 
   return {
     id,
     coordSystem,
     heightPolicy: 'fixed',
+    gapAbove: config.gapAbove,
 
     async load(_args: TrackLoadArgs): Promise<ProfileTrackData> {
       if (typeof config.source === 'function') {
@@ -198,7 +210,62 @@ export function profileTrack(
     render(args: TrackRenderArgs<ProfileTrackData>): ReactNode {
       const { data, rect, viewport, mapper, painter } = args;
       const [posLo, posHi] = visibleTrackRange(viewport, coordSystem, data.maxPosition);
-      if (posHi < posLo) return null;
+
+      const baseline = viewport.baselineGeometry();
+      const exonByIdx = new Map<number, ExonBaseline>();
+      for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
+
+      const yTop = rect.yTop;
+      const yBottom = rect.yBottom;
+      const bandHeight = yBottom - yTop;
+
+      // Axis line at the band's bottom edge, spanning the gene baseline
+      // (first exon's left to last exon's right). Rendered via CSS
+      // variables so it tracks pan / zoom alongside the exon ribbon, and
+      // emitted unconditionally when `borderColor` is set — empty zoom
+      // ranges with no buckets still show the axis so the histogram's
+      // floor stays visible. Bars are shifted up by 1 px below so they
+      // don't touch the line.
+      const axisGap = borderColor ? 1 : 0;
+      const histBaselineY = yBottom - axisGap;
+      const axisLine =
+        borderColor && baseline.exons.length > 0
+          ? (() => {
+              const first = baseline.exons[0]!;
+              const last = baseline.exons[baseline.exons.length - 1]!;
+              const lineStyle: CSSProperties = {
+                x: `var(--vv-exon-x-${first.exonIdx}, 0px)`,
+                width:
+                  `calc(var(--vv-exon-x-${last.exonIdx}, 0px)` +
+                  ` + ${last.width}px * var(--vv-exon-scale-x-${last.exonIdx}, 1)` +
+                  ` - var(--vv-exon-x-${first.exonIdx}, 0px))`,
+              } as unknown as CSSProperties;
+              return (
+                <rect
+                  className="vv-profile-axis"
+                  y={yBottom - 0.5}
+                  height={1}
+                  fill={borderColor}
+                  style={lineStyle}
+                  shapeRendering="crispEdges"
+                  pointerEvents="none"
+                />
+              );
+            })()
+          : null;
+
+      if (posHi < posLo) {
+        return axisLine ? (
+          <g
+            className={`vv-profile-track vv-profile-${renderKind}`}
+            data-vv-track-id={id}
+            data-vv-profile-render={renderKind}
+            key={id}
+          >
+            {axisLine}
+          </g>
+        ) : null;
+      }
 
       const pxPerTrackUnit = livePxPerTrackUnit(viewport, coordSystem);
       const step = pickStep(pxPerTrackUnit);
@@ -211,17 +278,22 @@ export function profileTrack(
         sampleAt,
         aggregate,
       });
-      if (buckets.length === 0) return null;
+      if (buckets.length === 0) {
+        return axisLine ? (
+          <g
+            className={`vv-profile-track vv-profile-${renderKind}`}
+            data-vv-track-id={id}
+            data-vv-profile-render={renderKind}
+            data-vv-profile-step={step}
+            data-vv-profile-aggregate={aggregate}
+            key={id}
+          >
+            {axisLine}
+          </g>
+        ) : null;
+      }
 
       const { domain, scaleFn } = resolveYScale(yScaleConfig, data.autoDomain, buckets);
-
-      const baseline = viewport.baselineGeometry();
-      const exonByIdx = new Map<number, ExonBaseline>();
-      for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
-
-      const yTop = rect.yTop;
-      const yBottom = rect.yBottom;
-      const bandHeight = yBottom - yTop;
 
       // Group buckets by exon so per-exon CSS transforms can pan / zoom
       // the geometry without re-rendering individual <rect>/<path> nodes.
@@ -253,7 +325,7 @@ export function profileTrack(
             : renderHistogramBuckets(
                 bucks,
                 yTop,
-                yBottom,
+                histBaselineY,
                 scaleFn,
                 domain,
                 colorRamp,
@@ -279,6 +351,7 @@ export function profileTrack(
           data-vv-profile-aggregate={aggregate}
           key={id}
         >
+          {axisLine}
           {exonGroups}
         </g>
       );
@@ -291,12 +364,14 @@ export function profileTrack(
         coordSystem,
         render: renderKind,
         heightPx,
+        gapAbove: config.gapAbove,
         colorRamp: config.colorRamp,
         yScale: yScaleConfig,
         aggregate,
         length: config.length,
         histogramStroke,
         histogramFill,
+        borderColor,
       };
     },
   };

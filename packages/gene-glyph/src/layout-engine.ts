@@ -128,6 +128,15 @@ function walkEntries(
       droppedTotal += groupRes.item.droppedCount;
       if (groupRes.item.didTruncate) truncated = true;
     } else {
+      const gap = entry.gapAbove ?? 0;
+      if (gap > 0) {
+        y += gap;
+        remaining -= gap;
+        if (remaining <= 0) {
+          truncated = true;
+          break;
+        }
+      }
       const r = layoutTrack(entry, viewport, data, y, remaining);
       items.push(r.item);
       trackRects.set(entry.id, r.item.rect);

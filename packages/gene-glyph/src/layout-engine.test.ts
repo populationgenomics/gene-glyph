@@ -32,6 +32,7 @@ interface StubTrackConfig {
   id: string;
   naturalHeight: number;
   droppedCount?: number;
+  gapAbove?: number;
 }
 
 function stubTrack(cfg: StubTrackConfig): Track<StubTrackConfig, null> {
@@ -39,6 +40,7 @@ function stubTrack(cfg: StubTrackConfig): Track<StubTrackConfig, null> {
     id: cfg.id,
     coordSystem: 'cds',
     heightPolicy: 'fixed',
+    gapAbove: cfg.gapAbove,
     async load() {
       return null;
     },
@@ -72,6 +74,24 @@ describe('LayoutEngine — height negotiation', () => {
     expect(result.totalHeight).toBe(80);
     expect(result.items[0]!.rect).toEqual({ yTop: 0, yBottom: 30 });
     expect(result.items[1]!.rect).toEqual({ yTop: 30, yBottom: 80 });
+  });
+
+  it('reserves Track.gapAbove pixels above leaf tracks (mirrors TrackGroup.gapAbove)', () => {
+    const viewport = makeViewport();
+    const tracks = [
+      stubTrack({ id: 'a', naturalHeight: 18 }),
+      stubTrack({ id: 'b', naturalHeight: 36, gapAbove: 4 }),
+    ];
+    const result = layoutTracks({
+      tracks,
+      viewport,
+      data: new Map(),
+      totalHeightBudget: 200,
+    });
+    expect(result.items[0]!.rect).toEqual({ yTop: 0, yBottom: 18 });
+    // b starts 4 px below a's bottom (gap eaten upfront, before layout).
+    expect(result.items[1]!.rect).toEqual({ yTop: 22, yBottom: 58 });
+    expect(result.totalHeight).toBe(58);
   });
 
   it('truncates tracks that exceed the remaining budget and flags didTruncate', () => {

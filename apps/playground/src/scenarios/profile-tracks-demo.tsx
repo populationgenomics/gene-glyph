@@ -100,8 +100,12 @@ export function ProfileTracksScenario() {
             coordSystem: 'protein',
             render: 'histogram',
             heightPx: 36,
+            // Reserve a sliver of clear space so the tallest hotspot bars
+            // don't visually touch the heatmap above.
+            gapAbove: 4,
             length: TP53_PROTEIN.length,
             histogramFill: '#0ea5e9',
+            borderColor: '#cbd5e1',
           }),
         ]}
         trackHeightBudget={260}

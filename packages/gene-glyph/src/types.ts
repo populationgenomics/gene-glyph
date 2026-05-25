@@ -531,6 +531,12 @@ export interface Track<TConfig = unknown, TData = unknown> {
   readonly label?: string;
   readonly coordSystem: CoordSystem;
   readonly heightPolicy: HeightPolicy;
+  /** Vertical pixels reserved above this track during layout. Mirrors
+   *  {@link TrackGroup.gapAbove} for leaf tracks — useful when two
+   *  adjacent tracks would otherwise visually merge at their shared
+   *  edge (e.g. a histogram whose tallest bars touch the heatmap above
+   *  it). Default 0 (flush layout). */
+  readonly gapAbove?: number;
   load(args: TrackLoadArgs): Promise<TData>;
   height(args: TrackHeightArgs<TData>): TrackHeightResult;
   /** Per-intron-gap hidden-feature counts contributed by this track. The
