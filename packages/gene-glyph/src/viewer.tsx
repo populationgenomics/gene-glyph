@@ -542,10 +542,11 @@ function GeneGlyphInner(
         range: initialRange,
         collapsedRegions,
       }),
-    // `mode` and `initialRange` only seed construction; later changes reach
-    // the viewport via the prop-sync effects below.
+    // `mode`, `width`, and `initialRange` only seed construction; later
+    // changes reach the viewport via the prop-sync effects below
+    // (`setMode`, `setWidth`, controlled-`viewportRange`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mapper, width, collapsedRegions],
+    [mapper, collapsedRegions],
   );
   const painter = useMemo(() => createSvgPainter({ mode: 'screen' }), []);
 
@@ -768,35 +769,23 @@ function GeneGlyphInner(
 
   const totalHeight = Math.max(1, layout.totalHeight);
 
-  // SVG meet-scale, derived from the figure-wrap's actual displayed width.
-  // With `preserveAspectRatio="xMidYMid meet"` and an explicit
-  // `height={totalHeight}` attribute, when the wrap is narrower than
-  // `width` (viewBox width) content is scaled uniformly *and* the spare
-  // vertical room is split as a top + bottom letterbox. That has two bad
-  // effects:
-  //   * The gutter (in raw screen px) drifts away from in-figure tracks
-  //     like ClinVar density heat-strips.
-  //   * As `totalHeight` grows (e.g. expanding a sub-group's stacked
-  //     detail), the proportional top letterbox grows with it and pushes
-  //     the whole figure down on screen.
-  // We sidestep both by measuring the wrap once layout settles and
-  // shrinking the SVG (and gutter) to `scaleY * totalHeight` — no
-  // leftover room, no letterbox, no shift. The gutter still scales its
-  // item `top` / `height` through `figureMetrics.scaleY` so chevrons
-  // line up with figure content at every zoom level.
-  const [figureMetrics, setFigureMetrics] = useState<{ scaleY: number }>(
-    () => ({ scaleY: 1 }),
-  );
+  // Drive the viewport width from the figure-wrap's measured CSS width so
+  // the figure's horizontal extent is whatever the embedder gives it, not
+  // a fixed viewBox-unit constant. Tracks position content in viewport
+  // units (1:1 with CSS px); the viewBox is sized to match the measured
+  // width + `totalHeight`, so there's no aspect-ratio mismatch and no
+  // pillarbox / letterbox. The `width` prop seeds the viewport before the
+  // measurement lands (SSR / first paint / jsdom) and remains the fallback
+  // when ResizeObserver isn't available.
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+  const effectiveWidth = measuredWidth ?? width;
   useLayoutEffect(() => {
     const wrap = figureWrapRef.current;
     if (!wrap) return;
     const measure = () => {
       const w = wrap.getBoundingClientRect().width;
       if (w <= 0) return;
-      const scale = Math.min(1, w / width);
-      setFigureMetrics((prev) =>
-        Math.abs(prev.scaleY - scale) > 1e-3 ? { scaleY: scale } : prev,
-      );
+      setMeasuredWidth((prev) => (prev !== null && Math.abs(prev - w) <= 0.5 ? prev : w));
     };
     measure();
     if (typeof ResizeObserver !== 'undefined') {
@@ -804,8 +793,11 @@ function GeneGlyphInner(
       obs.observe(wrap);
       return () => obs.disconnect();
     }
-  }, [width, totalHeight]);
-  const renderedHeight = Math.max(1, Math.round(figureMetrics.scaleY * totalHeight));
+  }, []);
+  useLayoutEffect(() => {
+    viewport.setWidth(effectiveWidth);
+  }, [viewport, effectiveWidth]);
+  const renderedHeight = Math.max(1, totalHeight);
 
   const selectedSet = useMemo(() => toReadonlySet(selectedFeatureIds), [selectedFeatureIds]);
   const interaction = useMemo<InteractionState>(
@@ -1151,9 +1143,9 @@ function GeneGlyphInner(
         description: exportDescription,
         args: svgArgs,
       });
-      const viewBox = svg.getAttribute('viewBox') ?? `0 0 ${width} ${totalHeight}`;
+      const viewBox = svg.getAttribute('viewBox') ?? `0 0 ${effectiveWidth} ${totalHeight}`;
       const parts = viewBox.split(/[\s,]+/).map(Number);
-      const vbW = Number.isFinite(parts[2]) ? (parts[2] as number) : width;
+      const vbW = Number.isFinite(parts[2]) ? (parts[2] as number) : effectiveWidth;
       const vbH = Number.isFinite(parts[3]) ? (parts[3] as number) : totalHeight;
       return exportPngBlob({
         svgString,
@@ -1162,7 +1154,7 @@ function GeneGlyphInner(
         viewBoxHeight: vbH,
       });
     },
-    [aria, exportDescription, width, totalHeight],
+    [aria, exportDescription, effectiveWidth, totalHeight],
   );
 
   const subscribe = useCallback(
@@ -1480,13 +1472,12 @@ function GeneGlyphInner(
           item.kind === 'group' && item.headerHeight && item.headerHeight > 0
             ? item.headerHeight
             : fullHeight;
-        // Map viewBox-space (yTop / height) into the figure-SVG's
-        // actual screen space using the live `scaleY`. The SVG itself
-        // is sized to `scaleY * totalHeight` so there's no letterbox
-        // to compensate for — pure linear scale aligns the gutter cell
-        // with the figure content under it.
-        const top = figureMetrics.scaleY * item.rect.yTop;
-        const height = figureMetrics.scaleY * h_vbox;
+        // The SVG renders 1:1 with its viewBox now (viewBox dimensions
+        // track the wrap's measured CSS width + `totalHeight`), so
+        // gutter items take their `yTop` / `height` straight from the
+        // layout result.
+        const top = item.rect.yTop;
+        const height = h_vbox;
         return (
           <div
             key={`${item.kind}-${item.id}`}
@@ -1514,7 +1505,7 @@ function GeneGlyphInner(
         <svg
           ref={svgRef}
           className="vv-figure"
-          viewBox={`0 0 ${width} ${totalHeight}`}
+          viewBox={`0 0 ${effectiveWidth} ${totalHeight}`}
           preserveAspectRatio="xMidYMid meet"
           width="100%"
           height={renderedHeight}
