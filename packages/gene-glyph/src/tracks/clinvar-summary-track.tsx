@@ -36,16 +36,11 @@ export interface ClinVarSummaryTrackData {
 
 const DEFAULT_HEIGHT = 18;
 const DEFAULT_BIN_PX = 4;
-
-const CLINVAR_SIGNIFICANCE_ORDER: ClinVarSignificance[] = [
-  'benign',
-  'likely_benign',
-  'uncertain_significance',
-  'conflicting',
-  'likely_pathogenic',
-  'pathogenic',
-  'other',
-];
+/** Density at which a bin saturates. Chosen so a single record
+ *  per 4-px bin reads as a faint wash and a handful of records per bin reads
+ *  as fully saturated — at TP53 / BRCA1 zoom levels both ends of the scale
+ *  are reachable. */
+const SATURATION_COUNT = 6;
 
 /**
  * One-row density heat-strip for ClinVar records. Bins the figure's visible
@@ -89,116 +84,79 @@ export function clinVarSummaryTrack(
       const width = viewport.width;
       const binCount = Math.max(1, Math.ceil(width / binPx));
 
-      // 1. Identify active significance categories and their counts per bin
-      const binCounts: Record<ClinVarSignificance, Int32Array> = {} as any;
-      for (const sig of CLINVAR_SIGNIFICANCE_ORDER) {
-        binCounts[sig] = new Int32Array(binCount);
+      // 1. Identify which significance categories have records in the visible screen window
+      const activeSigs = new Set<ClinVarSignificance>();
+      for (const p of placed) {
+        if (!Number.isFinite(p.screenX)) continue;
+        if (p.screenX < 0 || p.screenX > width) continue;
+        activeSigs.add(p.record.significance);
       }
 
-      let hasData = false;
+      // If no records are placed, render nothing
+      if (placed.length === 0 || activeSigs.size === 0) return null;
+
+      // 2. Find the global maxCount across all bins and significances to establish standard saturation scaling
+      const globalCounts = new Int32Array(binCount);
       for (const p of placed) {
         if (!Number.isFinite(p.screenX)) continue;
         if (p.screenX < 0 || p.screenX > width) continue;
         const bin = Math.min(binCount - 1, Math.floor(p.screenX / binPx));
-        const sig = p.record.significance;
-        if (binCounts[sig]) {
-          binCounts[sig][bin]++;
-          hasData = true;
-        }
+        globalCounts[bin] = (globalCounts[bin] ?? 0) + 1;
       }
-
-      // If no records are placed, render nothing
-      if (!hasData) return null;
-
-      // 2. Apply moving average (Gaussian-like) smoothing to the counts of each category
-      const smoothedCounts: Record<ClinVarSignificance, Float32Array> = {} as any;
-      for (const sig of CLINVAR_SIGNIFICANCE_ORDER) {
-        const counts = binCounts[sig];
-        const smoothed = new Float32Array(binCount);
-        for (let i = 0; i < binCount; i++) {
-          const val0 = i > 0 ? counts[i - 1]! : 0;
-          const val1 = counts[i]!;
-          const val2 = i < binCount - 1 ? counts[i + 1]! : 0;
-          smoothed[i] = val0 * 0.25 + val1 * 0.5 + val2 * 0.25;
-        }
-        smoothedCounts[sig] = smoothed;
-      }
-
-      // 3. Compute cumulative heights at each bin and find the local max stacked sum for dynamic Y auto-scaling
-      const stackedHeights = new Float32Array(binCount);
+      let maxCount = 0;
       for (let i = 0; i < binCount; i++) {
-        let sum = 0;
-        for (const sig of CLINVAR_SIGNIFICANCE_ORDER) {
-          sum += smoothedCounts[sig][i];
-        }
-        stackedHeights[i] = sum;
+        if (globalCounts[i]! > maxCount) maxCount = globalCounts[i]!;
       }
+      // Dynamic vertical scaling: when zoomed in and variants are sparse (e.g. maxCount = 1 or 2),
+      // we scale down the saturation cap (down to a minimum of 1) so individual peaks remain beautifully
+      // tall and clearly visible at deep zoom levels. When zoomed out, we clamp the saturation cap
+      // to at least SATURATION_COUNT (6) to prevent a massive hotspot from flattening the rest of the gene.
+      const saturation = Math.max(1, Math.min(SATURATION_COUNT, maxCount));
 
-      let maxStackedSum = 0;
-      for (let i = 0; i < binCount; i++) {
-        if (stackedHeights[i] > maxStackedSum) {
-          maxStackedSum = stackedHeights[i];
-        }
-      }
-
-      // Auto-scale saturation based on maximum stacked height, minimum of 1.0 (to avoid division by zero and handle low density beautifully)
-      const saturation = Math.max(1, maxStackedSum);
-
-      // 4. Render each significance category as a stacked ribbon from bottom to top
+      // 3. For each active significance, render a gorgeous smooth sparkline density spline
       const sparklines: ReactNode[] = [];
       const yBaseline = rect.yBottom - 1;
       const trackHeightVal = rect.yBottom - rect.yTop - 2;
 
-      // Track the cumulative height from the bottom up
-      const currentBottomHeights = new Float32Array(binCount);
-
-      for (const sig of CLINVAR_SIGNIFICANCE_ORDER) {
-        const smoothed = smoothedCounts[sig];
-
-        // Skip categories that have no data in the current view
-        let sigHasData = false;
-        for (let i = 0; i < binCount; i++) {
-          if (smoothed[i] > 0) {
-            sigHasData = true;
-            break;
-          }
+      for (const sig of activeSigs) {
+        const sigCounts = new Int32Array(binCount);
+        for (const p of placed) {
+          if (p.record.significance !== sig) continue;
+          if (!Number.isFinite(p.screenX)) continue;
+          if (p.screenX < 0 || p.screenX > width) continue;
+          const bin = Math.min(binCount - 1, Math.floor(p.screenX / binPx));
+          sigCounts[bin] = (sigCounts[bin] ?? 0) + 1;
         }
-        if (!sigHasData) continue;
 
-        // Build top and bottom points for the current ribbon
-        const topPoints: { x: number; y: number }[] = [];
-        const bottomPoints: { x: number; y: number }[] = [];
+        // Apply a moving average (Gaussian-like) smooth kernel on counts to make the curve organic
+        const smoothed = new Float32Array(binCount);
+        for (let i = 0; i < binCount; i++) {
+          const val0 = i > 0 ? sigCounts[i - 1]! : 0;
+          const val1 = sigCounts[i]!;
+          const val2 = i < binCount - 1 ? sigCounts[i + 1]! : 0;
+          smoothed[i] = val0 * 0.25 + val1 * 0.5 + val2 * 0.25;
+        }
 
-        // Left padding point anchored to baseline
-        topPoints.push({ x: -binPx * 0.5, y: yBaseline });
-        bottomPoints.push({ x: -binPx * 0.5, y: yBaseline });
+        const points: { x: number; y: number }[] = [];
+        // Add left padding point anchored to baseline
+        points.push({ x: -binPx * 0.5, y: yBaseline });
 
         for (let i = 0; i < binCount; i++) {
           const x = (i + 0.5) * binPx;
-          const hBottom = (currentBottomHeights[i] / saturation) * (trackHeightVal - 1);
-          const hTop = ((currentBottomHeights[i] + smoothed[i]) / saturation) * (trackHeightVal - 1);
-
-          bottomPoints.push({ x, y: yBaseline - hBottom });
-          topPoints.push({ x, y: yBaseline - hTop });
-
-          // Update current bottom height for the next category
-          currentBottomHeights[i] += smoothed[i];
+          const h = Math.min(1, smoothed[i]! / saturation) * (trackHeightVal - 1);
+          points.push({ x, y: yBaseline - h });
         }
 
-        // Right padding point anchored to baseline
-        topPoints.push({ x: width + binPx * 0.5, y: yBaseline });
-        bottomPoints.push({ x: width + binPx * 0.5, y: yBaseline });
+        // Add right padding point anchored to baseline
+        points.push({ x: width + binPx * 0.5, y: yBaseline });
 
-        // Calculate curves
-        const splineTop = buildSmoothSpline(topPoints, yBaseline);
-        const bottomPointsReversed = [...bottomPoints].reverse();
-        const splineBottomReversed = buildSmoothSpline(bottomPointsReversed, yBaseline);
+        const spline = buildSmoothSpline(points, yBaseline);
+        if (!spline) continue;
 
-        if (!splineTop || !splineBottomReversed) continue;
-
-        const fillD = splineTop + ' L' + splineBottomReversed.substring(1) + ' Z';
+        const fillD = spline + ` L ${points[points.length - 1]!.x} ${yBaseline} L ${points[0]!.x} ${yBaseline} Z`;
         const color = clinVarSignificanceColor(sig);
 
+        // Render both the beautiful filled area and outline path
         sparklines.push(
           <g
             key={sig}
@@ -208,10 +166,10 @@ export function clinVarSummaryTrack(
             <path
               d={fillD}
               fill={color}
-              fillOpacity={0.4}
+              fillOpacity={0.22}
             />
             <path
-              d={splineTop}
+              d={spline}
               fill="none"
               stroke={color}
               strokeWidth={1.5}
