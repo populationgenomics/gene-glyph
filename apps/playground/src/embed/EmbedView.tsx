@@ -6,17 +6,20 @@ import {
   clinVarTrack,
   defaultClinVarSymbolEncoding,
   exonTrack,
+  interProTrack,
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
   ClinVarSignificance,
   GeneGlyphRef,
   GutterItem,
+  ProteinAnnotations,
   TooltipRenderArgs,
   TrackOrGroup,
   Transcript,
 } from '@populationgenomics/gene-glyph';
 import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
+import { fetchProteinAnnotations } from '../lib/protein.js';
 
 /**
  * Single-figure embed view. Reads `?transcript=ENST…` from the URL,
@@ -76,6 +79,7 @@ export function EmbedView() {
         ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
       ]),
   );
+  const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -95,6 +99,24 @@ export function EmbedView() {
       });
     return () => controller.abort();
   }, [requestedId, force]);
+
+  // Separate fetch for InterPro / Pfam protein annotations — slower and
+  // less critical than the ClinVar load, so we don't gate the main
+  // figure on it. The track renders empty when `protein` is null.
+  useEffect(() => {
+    if (!requestedId) return;
+    const controller = new AbortController();
+    setProtein(null);
+    fetchProteinAnnotations(requestedId, controller.signal)
+      .then((p) => {
+        if (controller.signal.aborted) return;
+        setProtein(p);
+      })
+      .catch(() => {
+        // Swallow — the figure still renders without protein annotations.
+      });
+    return () => controller.abort();
+  }, [requestedId]);
 
   const filter = useCallback(
     (r: ClinVarRecord) =>
@@ -167,11 +189,13 @@ export function EmbedView() {
     };
     return [
       exonTrack({}),
+      interProTrack({}),
       {
         kind: 'group',
         id: CLINVAR_GROUP_ID,
         label: 'ClinVar',
         headerHeight: 22,
+        gapAbove: 12,
         tracks: SIGNIFICANCE_CHIPS.map(subgroup),
         summaryTrack: clinVarSummaryTrack({
           id: 'clinvar-summary',
@@ -334,6 +358,7 @@ export function EmbedView() {
       <GeneGlyph
         ref={viewerRef}
         transcript={transcript}
+        protein={protein ?? undefined}
         tracks={tracks}
         defaultMode="transcript"
         trackHeightBudget={16000}

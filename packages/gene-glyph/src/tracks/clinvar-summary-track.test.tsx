@@ -44,16 +44,25 @@ function emptyInteraction(): InteractionState {
 }
 
 describe('clinVarSummaryTrack', () => {
-  it('declares fixed height with an 18 px default', () => {
+  it('declares fixed height: 18 px for a single-significance dataset, 3x for multi-significance', () => {
     const track = clinVarSummaryTrack({ source: records });
     const viewport = new ViewportController({
       mapper: createCoordinateMapper(transcript),
       width: 720,
       mode: 'transcript',
     });
-    const result = track.height({ data: { records }, viewport, hint: { maxPx: 100 } });
     expect(track.heightPolicy).toBe('fixed');
-    expect(result.px).toBe(18);
+
+    // Single-significance (per-sig subgroup case) stays compact.
+    const singleSig: ClinVarRecord[] = [makeRecord('s1', 1010, 'pathogenic')];
+    expect(
+      track.height({ data: { records: singleSig }, viewport, hint: { maxPx: 100 } }).px,
+    ).toBe(18);
+
+    // Multi-significance (butterfly aggregate) grows to 3x for breathing room.
+    expect(
+      track.height({ data: { records }, viewport, hint: { maxPx: 100 } }).px,
+    ).toBe(54);
   });
 
   it('emits one heat-strip cell per occupied screen-pixel bin', () => {
@@ -142,15 +151,14 @@ describe('clinVarSummaryTrack', () => {
       </svg>,
     );
 
-    // Directional cells: pathogenic and benign — no VUS/conflicting in this set.
+    // Directional cells: pathogenic and benign. VUS is absorbed into them
+    // via the local-prior attribution, so no separate neutral strip.
     const cells = container.querySelectorAll('.vv-clinvar-summary-cell');
     const sigs = new Set(
       [...cells].map((c) => c.getAttribute('data-vv-significance')),
     );
     expect(sigs).toEqual(new Set(['pathogenic', 'benign']));
-
-    // Neutral strip element exists for the VUS record.
-    expect(container.querySelector('.vv-clinvar-summary-neutral')).not.toBeNull();
+    expect(container.querySelector('.vv-clinvar-summary-neutral')).toBeNull();
 
     // Pathogenic ribbon's peak (smallest y on its top spline) sits above the
     // centerline; benign ribbon's peak (largest y) sits below.

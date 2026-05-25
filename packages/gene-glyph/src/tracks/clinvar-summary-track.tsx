@@ -73,8 +73,24 @@ export function clinVarSummaryTrack(
       return { records };
     },
 
-    height(_: TrackHeightArgs<ClinVarSummaryTrackData>): TrackHeightResult {
-      return { px: trackHeight, didTruncate: false };
+    height(args: TrackHeightArgs<ClinVarSummaryTrackData>): TrackHeightResult {
+      // Butterfly view needs vertical room for two stacked sides; the
+      // single-significance fallback (per-sig subgroups) is a compact
+      // one-row sparkline. Grow by 3x only when there are ≥2 *directional*
+      // (P/LP/LB/B) buckets — VUS/conflicting on their own don't trigger
+      // butterfly since they aren't rendered there.
+      const records = args.data?.records ?? [];
+      const filtered = filter ? records.filter(filter) : records;
+      const directional = new Set<string>();
+      for (const r of filtered) {
+        const s = r.significance;
+        if (s === 'pathogenic') directional.add('p');
+        else if (s === 'likely_pathogenic') directional.add('lp');
+        else if (s === 'likely_benign') directional.add('lb');
+        else if (s === 'benign') directional.add('b');
+      }
+      const isButterfly = directional.size >= 2;
+      return { px: isButterfly ? trackHeight * 3 : trackHeight, didTruncate: false };
     },
 
     render(args: TrackRenderArgs<ClinVarSummaryTrackData>): ReactNode {
@@ -112,14 +128,18 @@ export function clinVarSummaryTrack(
 
       if (placedInWindow === 0) return null;
 
-      // 1-2-1 smoothing kernel — gives the ribbons their organic curve.
-      const smooth = (raw: Int32Array): Float32Array => {
+      // 5-bin binomial kernel (1-4-6-4-1) — wider than the original 1-2-1
+      // pass so regional bias dominates over single-bin noise. Operates on
+      // either Int32Array (raw counts) or Float32Array (already smoothed),
+      // so it can be applied iteratively to build the heavily-smoothed
+      // prior used for VUS attribution below.
+      const smooth = (raw: Int32Array | Float32Array): Float32Array => {
         const out = new Float32Array(binCount);
+        const get = (i: number) => (i < 0 || i >= binCount ? 0 : raw[i]!);
         for (let i = 0; i < binCount; i++) {
-          const v0 = i > 0 ? raw[i - 1]! : 0;
-          const v1 = raw[i]!;
-          const v2 = i < binCount - 1 ? raw[i + 1]! : 0;
-          out[i] = v0 * 0.25 + v1 * 0.5 + v2 * 0.25;
+          out[i] =
+            (get(i - 2) + 4 * get(i - 1) + 6 * get(i) + 4 * get(i + 1) + get(i + 2)) /
+            16;
         }
         return out;
       };
@@ -167,11 +187,11 @@ export function clinVarSummaryTrack(
         return false;
       };
 
-      // Single-significance fallback: when the host narrows the data to one
-      // significance (per-sig subgroups in the multi-row ClinVar layout),
-      // the butterfly has no bias to show and would render asymmetric or
-      // tiny. Detect this and emit the original single upward ribbon in the
-      // significance's native colour, full band height.
+      // Pick a render mode based on how many directional buckets are active.
+      // VUS / conflicting are not visualised in the butterfly (their spatial
+      // distribution can diverge from the directional calls), so they only
+      // matter for the per-sig-subgroup fallback where the host filter has
+      // narrowed the data to one of them.
       const allBuckets: {
         raw: Int32Array;
         smoothed: Float32Array;
@@ -185,25 +205,43 @@ export function clinVarSummaryTrack(
         { raw: benRaw, smoothed: benS, sig: 'benign' },
       ];
       const activeBuckets = allBuckets.filter(({ raw }) => hasOwn(raw));
+      const directionalBuckets = activeBuckets.filter(({ sig }) =>
+        sig === 'pathogenic' ||
+        sig === 'likely_pathogenic' ||
+        sig === 'likely_benign' ||
+        sig === 'benign',
+      );
 
-      if (activeBuckets.length === 1) {
-        const only = activeBuckets[0]!;
+      // Single-ribbon mode: render a lone directional bucket if present, or
+      // a lone non-directional bucket if the host filter narrowed the data
+      // to just VUS or just conflicting (per-sig subgroups in live-data-demo).
+      let soloBucket: (typeof activeBuckets)[number] | null = null;
+      if (directionalBuckets.length === 1) {
+        soloBucket = directionalBuckets[0]!;
+      } else if (
+        directionalBuckets.length === 0 &&
+        activeBuckets.length === 1
+      ) {
+        soloBucket = activeBuckets[0]!;
+      }
+
+      if (soloBucket) {
         let maxC = 0;
         for (let i = 0; i < binCount; i++) {
-          if (only.smoothed[i]! > maxC) maxC = only.smoothed[i]!;
+          if (soloBucket.smoothed[i]! > maxC) maxC = soloBucket.smoothed[i]!;
         }
         const saturation = Math.max(1, Math.min(SATURATION_COUNT, maxC));
         const yBaseline = rect.yBottom - 1;
         const trackHeightVal = rect.yBottom - rect.yTop - 2;
         const built = buildRibbon(
-          only.smoothed,
+          soloBucket.smoothed,
           saturation,
           Math.max(1, trackHeightVal - 1),
           yBaseline,
           'up',
         );
         if (!built) return null;
-        const color = clinVarSignificanceColor(only.sig);
+        const color = clinVarSignificanceColor(soloBucket.sig);
         return (
           <g
             className="vv-clinvar-summary-track"
@@ -214,9 +252,9 @@ export function clinVarSummaryTrack(
             key={id}
           >
             <g
-              key={only.sig}
-              className={`vv-clinvar-summary-cell vv-clinvar-summary-${only.sig}`}
-              data-vv-significance={only.sig}
+              key={soloBucket.sig}
+              className={`vv-clinvar-summary-cell vv-clinvar-summary-${soloBucket.sig}`}
+              data-vv-significance={soloBucket.sig}
             >
               <path d={built.area} fill={color} fillOpacity={1} />
               <path d={built.line} fill="none" stroke={color} strokeWidth={1.5} />
@@ -225,94 +263,73 @@ export function clinVarSummaryTrack(
         );
       }
 
-      // Butterfly layout: pathogenic (P + LP) streams upward from a
-      // centerline, benign (B + LB) streams downward. The visible asymmetry
-      // = bias signal. VUS + conflicting collapse to a thin grey strip on
-      // the centerline — present-but-non-directional, so they shouldn't
-      // dominate the view the way a stacked rollup made them.
-      const cumLpUp = new Float32Array(binCount); // lp alone
-      const cumPathUp = new Float32Array(binCount); // lp + path
-      const cumLbDn = new Float32Array(binCount); // lb alone
-      const cumBenDn = new Float32Array(binCount); // lb + ben
-      const neutralS = new Float32Array(binCount); // vus + conf
+      // Fewer than two directional buckets present and no clean single-sig
+      // fallback to take. Nothing meaningful to render.
+      if (directionalBuckets.length < 2) return null;
 
-      let maxDir = 0;
-      let maxNeutral = 0;
+      // Pure directional butterfly — VUS and conflicting are intentionally
+      // dropped from the rendering. They aren't necessarily spatially
+      // co-distributed with the directional calls (in BRCA1, for example,
+      // they cluster differently), so attributing them to P/LP/LB/B via a
+      // local prior would put colour where the data doesn't justify it. The
+      // honest view shows only what's been clinically resolved.
+      const yCenter = (rect.yTop + rect.yBottom) / 2;
+      const halfHeight = Math.max(1, (rect.yBottom - rect.yTop) / 2 - 1);
+
+      // Cumulatives from the directional smoothed signal.
+      const cumLpUp = new Float32Array(binCount);
+      const cumPathUp = new Float32Array(binCount);
+      const cumLbDn = new Float32Array(binCount);
+      const cumBenDn = new Float32Array(binCount);
+      let maxCum = 0;
       for (let i = 0; i < binCount; i++) {
         cumLpUp[i] = lpS[i]!;
         cumPathUp[i] = lpS[i]! + pathS[i]!;
         cumLbDn[i] = lbS[i]!;
         cumBenDn[i] = lbS[i]! + benS[i]!;
-        neutralS[i] = vusS[i]! + confS[i]!;
-        if (cumPathUp[i]! > maxDir) maxDir = cumPathUp[i]!;
-        if (cumBenDn[i]! > maxDir) maxDir = cumBenDn[i]!;
-        if (neutralS[i]! > maxNeutral) maxNeutral = neutralS[i]!;
+        if (cumPathUp[i]! > maxCum) maxCum = cumPathUp[i]!;
+        if (cumBenDn[i]! > maxCum) maxCum = cumBenDn[i]!;
       }
-      // Shared directional saturation so a region heavily skewed toward one
-      // side reads taller than a balanced region.
-      const saturationDir = Math.max(1, Math.min(SATURATION_COUNT, maxDir));
-      const saturationNeutral = Math.max(1, Math.min(SATURATION_COUNT, maxNeutral));
+      // No directional data at all → render nothing. (VUS/conf-only datasets
+      // are caught by the single-significance fallback when activeBuckets is
+      // a single bucket; the two-or-more VUS/conf case falls through to here
+      // and produces an empty summary, which is the honest answer.)
+      if (maxCum === 0) return null;
 
-      const yCenter = (rect.yTop + rect.yBottom) / 2;
-      const halfHeight = Math.max(1, (rect.yBottom - rect.yTop) / 2 - 1);
-      // Neutral strip is deliberately small — it's a "data present, no
-      // direction" indicator, not the main signal. Cap at ~25% of half-band
-      // or 2px, whichever is smaller.
-      const neutralHalfMax = Math.min(2, halfHeight * 0.25);
+      // Dynamic saturation = actual peak. Lets the tallest bin reach the
+      // band edge and everything else scale proportionally.
+      const saturation = maxCum;
 
       // Summary-track local override: LP/LB read as a blend of their
       // definitive call and VUS so the stack reads as a continuous
-      // benign-uncertain-pathogenic gradient, rather than two pairs of
-      // discrete hues. The neutral strip uses the global conflicting colour
-      // (now grey) directly.
+      // benign-uncertain-pathogenic gradient rather than discrete hues.
       const colorPath = clinVarSignificanceColor('pathogenic');
       const colorBen = clinVarSignificanceColor('benign');
       const colorVus = clinVarSignificanceColor('uncertain_significance');
       const colorLp = `color-mix(in oklab, ${colorPath} 50%, ${colorVus})`;
       const colorLb = `color-mix(in oklab, ${colorBen} 50%, ${colorVus})`;
-      const colorNeutral = clinVarSignificanceColor('conflicting');
 
       const children: ReactNode[] = [];
 
-      // Neutral strip drawn first — directional ribbons opaque-paint over it
-      // where they exist, so the grey is only visible where it's the *only*
-      // signal in a bin (which is exactly when the host needs to know
-      // "data present, no clinical direction").
-      if (maxNeutral > 0) {
-        const up = buildRibbon(neutralS, saturationNeutral, neutralHalfMax, yCenter, 'up');
-        const dn = buildRibbon(neutralS, saturationNeutral, neutralHalfMax, yCenter, 'down');
-        if (up || dn) {
-          children.push(
-            <g
-              key="neutral"
-              className="vv-clinvar-summary-neutral"
-              data-vv-neutral-strip="true"
-            >
-              {up && (
-                <path d={up.area} fill={colorNeutral} fillOpacity={0.7} />
-              )}
-              {dn && (
-                <path d={dn.area} fill={colorNeutral} fillOpacity={0.7} />
-              )}
-            </g>,
-          );
-        }
-      }
-
-      // Pathogenic side (above centerline). Painter's algo: P (largest
-      // cumulative) drawn first, LP overpaints the lower part.
+      // Painter's algo per side: P drawn first (largest cumulative), then
+      // LP overpaints the lower portion. Mirror for the benign side.
+      // A layer is skipped when its bucket is empty.
       const upperLayers: {
         cum: Float32Array;
-        own: Int32Array;
+        eff: Float32Array;
         sig: ClinVarSignificance;
         color: string;
       }[] = [
-        { cum: cumPathUp, own: pathRaw, sig: 'pathogenic', color: colorPath },
-        { cum: cumLpUp, own: lpRaw, sig: 'likely_pathogenic', color: colorLp },
+        { cum: cumPathUp, eff: pathS, sig: 'pathogenic', color: colorPath },
+        { cum: cumLpUp, eff: lpS, sig: 'likely_pathogenic', color: colorLp },
       ];
-      for (const { cum, own, sig, color } of upperLayers) {
-        if (!hasOwn(own)) continue;
-        const built = buildRibbon(cum, saturationDir, halfHeight, yCenter, 'up');
+      const hasEff = (eff: Float32Array): boolean => {
+        for (let i = 0; i < binCount; i++) if (eff[i]! > 1e-6) return true;
+        return false;
+      };
+      for (const { cum, eff, sig, color } of upperLayers) {
+        if (!hasEff(eff)) continue;
+        const built = buildRibbon(cum, saturation, halfHeight, yCenter, 'up');
         if (!built) continue;
         children.push(
           <g
@@ -326,20 +343,18 @@ export function clinVarSummaryTrack(
         );
       }
 
-      // Benign side (below centerline). Painter's algo: B drawn first, LB
-      // overpaints the part closer to the centerline.
       const lowerLayers: {
         cum: Float32Array;
-        own: Int32Array;
+        eff: Float32Array;
         sig: ClinVarSignificance;
         color: string;
       }[] = [
-        { cum: cumBenDn, own: benRaw, sig: 'benign', color: colorBen },
-        { cum: cumLbDn, own: lbRaw, sig: 'likely_benign', color: colorLb },
+        { cum: cumBenDn, eff: benS, sig: 'benign', color: colorBen },
+        { cum: cumLbDn, eff: lbS, sig: 'likely_benign', color: colorLb },
       ];
-      for (const { cum, own, sig, color } of lowerLayers) {
-        if (!hasOwn(own)) continue;
-        const built = buildRibbon(cum, saturationDir, halfHeight, yCenter, 'down');
+      for (const { cum, eff, sig, color } of lowerLayers) {
+        if (!hasEff(eff)) continue;
+        const built = buildRibbon(cum, saturation, halfHeight, yCenter, 'down');
         if (!built) continue;
         children.push(
           <g
