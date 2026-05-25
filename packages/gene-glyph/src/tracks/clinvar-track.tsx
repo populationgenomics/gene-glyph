@@ -80,6 +80,11 @@ export interface ClinVarTrackConfig {
    *  records should narrow `source` instead. Applied at render time so the
    *  host can swap predicates without invalidating the cached load. */
   filter?: (record: ClinVarRecord) => boolean;
+  /** Surfaced as {@link Track.configKey} so the viewer can detect filter /
+   *  encoding changes that reshape the laid-out data and re-run `load()`.
+   *  Hosts should derive this from anything that affects packing
+   *  (typically a hash of `filter`'s exclusion sets). */
+  configKey?: string;
 }
 
 export interface ClinVarTrackData {
@@ -369,6 +374,7 @@ export function clinVarTrack(
 
   return {
     id,
+    configKey: config.configKey,
     coordSystem: 'genomic',
     heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 

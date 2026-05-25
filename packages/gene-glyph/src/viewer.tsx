@@ -644,7 +644,7 @@ function GeneGlyphInner(
   // poll combined to trip React's "Maximum update depth exceeded"
   // safeguard — Slice 26 follow-up.)
   const trackIdsKey = useMemo(
-    () => flatTracks.map((t) => t.id).join('|'),
+    () => flatTracks.map((t) => `${t.id}@${t.configKey ?? ''}`).join('|'),
     [flatTracks],
   );
   const flatTracksRef = useRef(flatTracks);

@@ -520,6 +520,13 @@ export interface HiddenFeaturesArgs<TData> {
 
 export interface Track<TConfig = unknown, TData = unknown> {
   readonly id: string;
+  /** Opt-in re-load key. When supplied, the viewer folds this string into
+   *  its per-track identity, so a change (e.g. a host filter that
+   *  reshapes the laid-out data) forces `load()` to re-run and `height()`
+   *  to recompute. Leave undefined when the track's config never
+   *  affects layout post-construction — the default identity is the
+   *  track id alone. */
+  readonly configKey?: string;
   /** Optional human-readable label surfaced to gutter render-props via the
    *  {@link GutterItem} for this track. When a track sits inside a
    *  {@link TrackGroup} (e.g. the entry-type sub-tracks emitted by
