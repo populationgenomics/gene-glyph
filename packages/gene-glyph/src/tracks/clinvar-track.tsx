@@ -148,12 +148,12 @@ const SIGNIFICANCE_VAR: Record<ClinVarSignificance, string> = {
 };
 
 const SIGNIFICANCE_FALLBACK: Record<ClinVarSignificance, string> = {
-  pathogenic: '#b91c1c',
-  likely_pathogenic: '#dc2626',
-  uncertain_significance: '#a16207',
-  likely_benign: '#65a30d',
-  benign: '#16a34a',
-  conflicting: '#7c3aed',
+  pathogenic: 'hsl(343, 90%, 60%)',
+  likely_pathogenic: 'hsl(24, 95%, 62%)',
+  uncertain_significance: 'hsl(38, 92%, 50%)',
+  likely_benign: 'hsl(150, 60%, 55%)',
+  benign: 'hsl(162, 70%, 45%)',
+  conflicting: 'hsl(245, 85%, 70%)',
   other: '#64748b',
 };
 
