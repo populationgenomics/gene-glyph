@@ -9,7 +9,6 @@ import {
   type TrackLoadArgs,
   type TrackRenderArgs,
   type ViewerVariant,
-  type ViewportQuery,
 } from '../types.js';
 import { partitionVariants, type VariantSource } from './variant-track.js';
 

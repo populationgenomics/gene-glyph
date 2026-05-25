@@ -1,7 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { resolveSequence } from '../data-source.js';
 import {
-  isDataSource,
   type CoordinateMapper,
   type DataSource,
   type ExonBaseline,

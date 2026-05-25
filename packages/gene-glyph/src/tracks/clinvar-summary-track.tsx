@@ -6,7 +6,6 @@ import {
   type TrackHeightResult,
   type TrackLoadArgs,
   type TrackRenderArgs,
-  type ViewportQuery,
 } from '../types.js';
 import {
   clinVarSignificanceColor,
