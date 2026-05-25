@@ -187,7 +187,9 @@ export function LiveDataDemoScenario() {
   );
 
   const renderTooltip = (args: TooltipRenderArgs) => {
-    if (args.trackId !== 'clinvar') return null;
+    // Detail tracks expose `clinvar-<sig>-detail`, summaries
+    // `clinvar-<sig>-summary` — both should drive the same tooltip.
+    if (!args.trackId.startsWith('clinvar')) return null;
     const r = args.feature as ClinVarRecord | null;
     if (!r) return null;
     const meta = (r.meta ?? {}) as {
@@ -356,7 +358,7 @@ export function LiveDataDemoScenario() {
         onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
         onFeatureClick={(featureId, trackId) => {
-          if (trackId === 'clinvar') setLastClicked(featureId);
+          if (trackId.startsWith('clinvar')) setLastClicked(featureId);
         }}
       >
         <GeneGlyph.LeftGutter width={180}>

@@ -139,7 +139,11 @@ export function EmbedView() {
   }, [state, filter]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
-    if (args.trackId !== 'clinvar') return null;
+    // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
+    // and summaries as `clinvar-<sig>-summary` — accept any clinvar-
+    // prefixed track so hover surfaces the record for whichever cell
+    // the user landed on.
+    if (!args.trackId.startsWith('clinvar')) return null;
     const r = args.feature as ClinVarRecord | null;
     if (!r) return null;
     const meta = (r.meta ?? {}) as {
@@ -248,7 +252,7 @@ export function EmbedView() {
         onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
         onFeatureClick={(featureId, trackId) => {
-          if (trackId === 'clinvar') setLastClicked(featureId);
+          if (trackId.startsWith('clinvar')) setLastClicked(featureId);
         }}
       >
         <GeneGlyph.LeftGutter width={180}>
