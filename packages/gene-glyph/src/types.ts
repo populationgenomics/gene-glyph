@@ -313,6 +313,7 @@ export interface BaselineGeometry {
    *  surrounding exon content while the bulk between them stays at a
    *  fixed pixel budget. */
   flanks?: FlankBaseline[];
+  flanksByIntron?: Map<number, { donor: number; acceptor: number }>;
   pxPerBp: number;
   gapPx: number;
   totalWidth: number;

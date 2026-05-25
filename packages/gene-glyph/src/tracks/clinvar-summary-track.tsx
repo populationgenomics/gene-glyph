@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
+import { resolveSourceData } from '../data-source.js';
 import {
-  isDataSource,
   type Track,
   type TrackHeightArgs,
   type TrackHeightResult,
@@ -84,9 +84,11 @@ export function clinVarSummaryTrack(
     heightPolicy: 'fixed',
 
     async load({ viewport, signal }: TrackLoadArgs): Promise<ClinVarSummaryTrackData> {
-      const records = isDataSource<ViewportQuery, ClinVarRecord[]>(source)
-        ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
-        : source.slice();
+      const records = await resolveSourceData(
+        source,
+        { mode: viewport.mode, range: viewport.range },
+        signal,
+      );
       return { records };
     },
 

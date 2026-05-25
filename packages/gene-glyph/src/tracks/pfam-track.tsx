@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { projectProteinRangeBounds } from '../segments.js';
 import type {
   ExonBaseline,
   Painter,
@@ -132,13 +133,7 @@ export function pfamTrack(
       // inside the inter-exon group would be too SHORT in display
       // whenever zoomScale > 1, because flank baseline-px scales with
       // zoom but the bulk doesn't.
-      const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
-      for (const f of baseline.flanks ?? []) {
-        const cur = flanksByIntron.get(f.intronIdx) ?? { donor: 0, acceptor: 0 };
-        if (f.side === 'donor') cur.donor = f.width;
-        else cur.acceptor = f.width;
-        flanksByIntron.set(f.intronIdx, cur);
-      }
+      const flanksByIntron = baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
 
       const placed = data.domains
         .map((d) => placeDomain(d, viewport))
@@ -268,23 +263,14 @@ function idOfDomain(d: ProteinDomain): string {
 }
 
 function placeDomain(domain: ProteinDomain, viewport: Viewport): PlacedDomain | null {
-  // projectProteinRange returns segments in **baseline** screen-x — the
-  // viewport-independent frame at fit-gene. xMid here is a baseline-x value;
-  // the wrapping exon `<g>` applies the live translate + scale.
-  const proj = viewport.projectProteinRange(domain.aaStart, domain.aaEnd);
-  if (proj.segments.length === 0) return null;
-  let xStart = Infinity;
-  let xEnd = -Infinity;
-  for (const seg of proj.segments) {
-    if (seg.xStart < xStart) xStart = seg.xStart;
-    if (seg.xEnd > xEnd) xEnd = seg.xEnd;
-  }
+  const bounds = projectProteinRangeBounds(viewport, domain.aaStart, domain.aaEnd);
+  if (!bounds) return null;
   return {
     domain,
-    segments: proj.segments,
-    xStart,
-    xEnd,
-    xMid: (xStart + xEnd) / 2,
+    segments: bounds.segments,
+    xStart: bounds.xStart,
+    xEnd: bounds.xEnd,
+    xMid: bounds.xMid,
   };
 }
 

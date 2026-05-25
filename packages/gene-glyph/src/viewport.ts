@@ -763,10 +763,19 @@ export class ViewportController implements Viewport {
     }
     snapRightEdge(exonRects, this._width);
 
+    const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
+    for (const f of flankRects) {
+      const cur = flanksByIntron.get(f.intronIdx) ?? { donor: 0, acceptor: 0 };
+      if (f.side === 'donor') cur.donor = f.width;
+      else cur.acceptor = f.width;
+      flanksByIntron.set(f.intronIdx, cur);
+    }
+
     return {
       exons: exonRects,
       gaps: gapRects,
       flanks: flankRects,
+      flanksByIntron,
       pxPerBp,
       gapPx: this._mode === 'genome' ? naturalGapPx : 0,
       totalWidth: this._width,
@@ -938,13 +947,7 @@ export class ViewportController implements Viewport {
     // inside the adjacent exon groups (rendered separately by
     // exon-track). Lookup flanks-by-intron so we can offset the
     // publication into the bulk.
-    const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
-    for (const flank of geom.flanks ?? []) {
-      const cur = flanksByIntron.get(flank.intronIdx) ?? { donor: 0, acceptor: 0 };
-      if (flank.side === 'donor') cur.donor = flank.width;
-      else cur.acceptor = flank.width;
-      flanksByIntron.set(flank.intronIdx, cur);
-    }
+    const flanksByIntron = geom.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
     for (const gap of geom.gaps) {
       const flanks = flanksByIntron.get(gap.exonIdxA) ?? { donor: 0, acceptor: 0 };
       const bulkBaselineStart = gap.xStart + flanks.donor;

@@ -1,7 +1,8 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
+import { resolveSourceData } from '../data-source.js';
+import { packLanes } from '../pack-lanes.js';
 import {
-  isDataSource,
   type CoordinateMapper,
   type DataSource,
   type HiddenFeatureBucket,
@@ -278,43 +279,32 @@ export function packStackedVariants(
   let rowOffset = 0;
   for (const key of groupOrder) {
     const items = groups.get(key)!;
-    const withBaseline = items.map((p) => {
+    const inputs = items.map((p) => {
       const exonStart = byExon.get(p.exonIdx)?.xStart ?? 0;
       const baselineX = exonStart + p.localX;
       const r = encoding.radius?.(p.variant) ?? markRadius;
-      return { p, baselineX, r };
+      return {
+        item: p,
+        xStart: baselineX - r,
+        xEnd: baselineX + r,
+      };
     });
     // Primary: baseline-x. Secondary: variant.id — stable tie-break for
     // variants at the same baseline position.
-    withBaseline.sort(
-      (a, b) => a.baselineX - b.baselineX || cmpStr(a.p.variant.id, b.p.variant.id),
+    inputs.sort(
+      (a, b) =>
+        (a.xStart + a.xEnd) / 2 - (b.xStart + b.xEnd) / 2 ||
+        cmpStr(a.item.variant.id, b.item.variant.id),
     );
-    const laneEnds: number[] = [];
-    let localMaxLane = -1;
-    for (const it of withBaseline) {
-      const xStart = it.baselineX - it.r;
-      const xEnd = it.baselineX + it.r;
-      let lane = -1;
-      for (let i = 0; i < laneEnds.length; i++) {
-        if (laneEnds[i]! <= xStart) {
-          lane = i;
-          break;
-        }
-      }
-      if (lane === -1) {
-        lane = laneEnds.length;
-        laneEnds.push(xEnd);
-      } else {
-        laneEnds[lane] = xEnd;
-      }
-      if (lane > localMaxLane) localMaxLane = lane;
+    const packed = packLanes(inputs, 0);
+    for (const p of packed.items) {
       placements.push({
-        ...it.p,
-        row: rowOffset + lane,
+        ...p.item,
+        row: rowOffset + p.lane,
         laneKey: key,
       });
     }
-    rowOffset += localMaxLane + 1;
+    rowOffset += packed.laneCount;
   }
   return { rowCount: rowOffset, placements };
 }
@@ -339,9 +329,11 @@ export function variantTrack(
     heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 
     async load({ viewport, mapper, signal }: TrackLoadArgs): Promise<VariantTrackData> {
-      const variants = isDataSource<ViewportQuery, ViewerVariant[]>(source)
-        ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
-        : source.slice();
+      const variants = await resolveSourceData(
+        source,
+        { mode: viewport.mode, range: viewport.range },
+        signal,
+      );
       let stackLayout: VariantStackLayout | undefined;
       if (stackedEncoding) {
         const { placed } = partitionVariants(variants, viewport, mapper);

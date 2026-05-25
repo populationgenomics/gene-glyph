@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { resolveSequence } from '../data-source.js';
 import {
   isDataSource,
   type DataSource,
@@ -123,7 +124,11 @@ export function nucleotideTrack(
     heightPolicy: 'zoom-dependent',
 
     async load({ mapper, signal }: TrackLoadArgs): Promise<NucleotideTrackData> {
-      const seq = await resolveSequence(source, mapper.transcript.transcriptId, signal);
+      const seq = await resolveSequence(
+        source,
+        { transcriptId: mapper.transcript.transcriptId },
+        signal,
+      );
       const flanks = await resolveFlanks(
         flankSource,
         mapper.transcript.transcriptId,
@@ -385,14 +390,3 @@ function letterAt(seq: string, cdsPos: number): NucleotideLetter {
   return 'N';
 }
 
-async function resolveSequence(
-  source: NucleotideSource,
-  transcriptId: string,
-  signal: AbortSignal,
-): Promise<string> {
-  if (typeof source === 'string') return source;
-  if (isDataSource<{ transcriptId: string }, string>(source)) {
-    return source.query({ transcriptId }, signal);
-  }
-  return '';
-}

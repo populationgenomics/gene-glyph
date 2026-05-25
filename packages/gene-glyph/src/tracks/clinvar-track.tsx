@@ -4,8 +4,9 @@
  * own exports so the rule's caution doesn't fit here. */
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
+import { resolveSourceData } from '../data-source.js';
+import { packLanes } from '../pack-lanes.js';
 import {
-  isDataSource,
   type CoordinateMapper,
   type DataSource,
   type ExonBaseline,
@@ -312,44 +313,33 @@ export function packStackedClinVar(
   const placements: PlacedClinVarStacked[] = [];
   let rowOffset = 0;
   for (const key of groupOrder) {
-    const items = groups
-      .get(key)!
-      .slice()
-      .map((p) => ({ p, layoutX: viewport.baselineToLayoutX(p.baselineX) }))
-      // Stable, content-derived sort. Primary key: current layout-x
-      // (visual left → right at the active zoom). Secondary key:
-      // record.id (deterministic tie-break for variants at the same
-      // position, e.g. a SNP and an indel at the same nucleotide).
-      // Same input rows → same output rows on every reload at the
-      // same zoom.
-      .sort(
-        (a, b) =>
-          a.layoutX - b.layoutX ||
-          compareStrings(a.p.record.id, b.p.record.id),
-      );
-    const laneEnds: number[] = [];
-    let localMaxLane = -1;
-    for (const { p: it, layoutX } of items) {
-      const r = encoding.radius?.(it.record) ?? markRadius;
-      const xStart = layoutX - r;
-      const xEnd = layoutX + r;
-      let lane = -1;
-      for (let i = 0; i < laneEnds.length; i++) {
-        if (laneEnds[i]! <= xStart) {
-          lane = i;
-          break;
-        }
-      }
-      if (lane === -1) {
-        lane = laneEnds.length;
-        laneEnds.push(xEnd);
-      } else {
-        laneEnds[lane] = xEnd;
-      }
-      if (lane > localMaxLane) localMaxLane = lane;
-      placements.push({ ...it, row: rowOffset + lane, laneKey: key });
+    const items = groups.get(key)!;
+    const inputs = items.map((p) => {
+      const layoutX = viewport.baselineToLayoutX(p.baselineX);
+      const r = encoding.radius?.(p.record) ?? markRadius;
+      return {
+        item: p,
+        xStart: layoutX - r,
+        xEnd: layoutX + r,
+      };
+    });
+
+    inputs.sort(
+      (a, b) =>
+        (a.xStart + a.xEnd) / 2 - (b.xStart + b.xEnd) / 2 ||
+        compareStrings(a.item.record.id, b.item.record.id),
+    );
+
+    const packed = packLanes(inputs, 0);
+
+    for (const p of packed.items) {
+      placements.push({
+        ...p.item,
+        row: rowOffset + p.lane,
+        laneKey: key,
+      });
     }
-    rowOffset += localMaxLane + 1;
+    rowOffset += packed.laneCount;
   }
   return { rowCount: rowOffset, placements };
 }
@@ -393,9 +383,11 @@ export function clinVarTrack(
     heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 
     async load({ viewport, mapper, signal }: TrackLoadArgs): Promise<ClinVarTrackData> {
-      const records = isDataSource<ViewportQuery, ClinVarRecord[]>(source)
-        ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
-        : source.slice();
+      const records = await resolveSourceData(
+        source,
+        { mode: viewport.mode, range: viewport.range },
+        signal,
+      );
       let stackLayout: ClinVarStackLayout | undefined;
       if (stackedEncoding) {
         // Pack the filtered survivors so `height()` reads a row count

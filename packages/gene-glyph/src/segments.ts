@@ -1,4 +1,4 @@
-import type { BaselineGeometry, ViewMode } from './types.js';
+import type { BaselineGeometry, ViewMode, Viewport, RangeSegment } from './types.js';
 import type { Piece } from './figure-scale.js';
 import type { FrameExon } from './projection-frame.js';
 
@@ -124,13 +124,11 @@ export function buildSegments(
   // transcript / protein.
   const defaultGapScale: SegmentScaleRule = baseline.gapPx > 0 ? 'fixed-budget' : 'linear';
 
-  // Index flanks-by-intron for the per-intron 3-piece split.
   const flanksByIntron = new Map<number, { donorWidth: number; acceptorWidth: number }>();
-  for (const flank of baseline.flanks ?? []) {
-    const cur = flanksByIntron.get(flank.intronIdx) ?? { donorWidth: 0, acceptorWidth: 0 };
-    if (flank.side === 'donor') cur.donorWidth = flank.width;
-    else cur.acceptorWidth = flank.width;
-    flanksByIntron.set(flank.intronIdx, cur);
+  if (baseline.flanksByIntron) {
+    for (const [intronIdx, f] of baseline.flanksByIntron) {
+      flanksByIntron.set(intronIdx, { donorWidth: f.donor, acceptorWidth: f.acceptor });
+    }
   }
 
   let idx = 0;
@@ -225,4 +223,32 @@ export function buildSegments(
     }
   }
   return segments;
+}
+
+export interface ProjectedBounds {
+  xStart: number;
+  xEnd: number;
+  xMid: number;
+  segments: RangeSegment[];
+}
+
+export function projectProteinRangeBounds(
+  viewport: Viewport,
+  aaStart: number,
+  aaEnd: number,
+): ProjectedBounds | null {
+  const proj = viewport.projectProteinRange(aaStart, aaEnd);
+  if (proj.segments.length === 0) return null;
+  let xStart = Infinity;
+  let xEnd = -Infinity;
+  for (const seg of proj.segments) {
+    if (seg.xStart < xStart) xStart = seg.xStart;
+    if (seg.xEnd > xEnd) xEnd = seg.xEnd;
+  }
+  return {
+    xStart,
+    xEnd,
+    xMid: (xStart + xEnd) / 2,
+    segments: proj.segments,
+  };
 }

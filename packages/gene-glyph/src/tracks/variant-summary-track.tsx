@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { variantCategoryColor } from '../symbol-encoding.js';
+import { resolveSourceData } from '../data-source.js';
 import {
-  isDataSource,
   type ExonBaseline,
   type Track,
   type TrackHeightArgs,
@@ -52,9 +52,11 @@ export function variantSummaryTrack(
     heightPolicy: 'fixed',
 
     async load({ viewport, signal }: TrackLoadArgs): Promise<VariantSummaryTrackData> {
-      const variants = isDataSource<ViewportQuery, ViewerVariant[]>(source)
-        ? await source.query({ mode: viewport.mode, range: viewport.range }, signal)
-        : source.slice();
+      const variants = await resolveSourceData(
+        source,
+        { mode: viewport.mode, range: viewport.range },
+        signal,
+      );
       return { variants };
     },
 

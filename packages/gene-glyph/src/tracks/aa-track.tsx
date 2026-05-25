@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { resolveSequence } from '../data-source.js';
 import {
   isDataSource,
   type CoordinateMapper,
@@ -138,10 +139,10 @@ export function aaTrack(
     async load({ mapper, signal }: TrackLoadArgs): Promise<AaTrackData> {
       const tx = mapper.transcript.transcriptId;
       if (config.proteinSource !== undefined) {
-        const seq = await resolveSequence(config.proteinSource, tx, signal);
+        const seq = await resolveSequence(config.proteinSource, { transcriptId: tx }, signal);
         return { sequence: seq.toUpperCase() };
       }
-      const nt = await resolveSequence(config.nucleotideSource!, tx, signal);
+      const nt = await resolveSequence(config.nucleotideSource!, { transcriptId: tx }, signal);
       return { sequence: translate(nt, frame) };
     },
 
@@ -332,14 +333,3 @@ export function translate(nt: string, frame: 0 | 1 | 2 = 0): string {
   return out.join('');
 }
 
-async function resolveSequence(
-  source: ProteinSequenceSource | NucleotideForAaSource,
-  transcriptId: string,
-  signal: AbortSignal,
-): Promise<string> {
-  if (typeof source === 'string') return source;
-  if (isDataSource<{ transcriptId: string }, string>(source)) {
-    return source.query({ transcriptId }, signal);
-  }
-  return '';
-}

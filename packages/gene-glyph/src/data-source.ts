@@ -1,4 +1,28 @@
+import { isDataSource } from './types.js';
 import type { DataSource, DataSourceFreshness } from './types.js';
+
+export async function resolveSequence<TQuery extends { transcriptId: string }>(
+  source: string | DataSource<TQuery, string>,
+  queryArgs: TQuery,
+  signal: AbortSignal,
+): Promise<string> {
+  if (typeof source === 'string') return source;
+  if (isDataSource<TQuery, string>(source)) {
+    return source.query(queryArgs, signal);
+  }
+  return '';
+}
+
+export async function resolveSourceData<TQuery, TResult>(
+  source: TResult[] | DataSource<TQuery, TResult[]>,
+  query: TQuery,
+  signal: AbortSignal,
+): Promise<TResult[]> {
+  if (isDataSource<TQuery, TResult[]>(source)) {
+    return source.query(query, signal);
+  }
+  return source.slice();
+}
 
 export interface CachedDataSourceOptions<TQuery, TResult> {
   readonly id: string;

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { packLanes, type LaneInput, type PackedItem } from '../pack-lanes.js';
+import { projectProteinRangeBounds } from '../segments.js';
 import type {
   ExonBaseline,
   Painter,
@@ -106,18 +107,12 @@ function placeAndPack(
 ): { placements: PlacedDomain[]; laneCount: number } {
   const inputs: LaneInput<{ domain: ProteinDomain; segments: RangeSegment[]; xStart: number; xEnd: number }>[] = [];
   for (const d of domains) {
-    const proj = viewport.projectProteinRange(d.aaStart, d.aaEnd);
-    if (proj.segments.length === 0) continue;
-    let xStart = Infinity;
-    let xEnd = -Infinity;
-    for (const seg of proj.segments) {
-      if (seg.xStart < xStart) xStart = seg.xStart;
-      if (seg.xEnd > xEnd) xEnd = seg.xEnd;
-    }
+    const bounds = projectProteinRangeBounds(viewport, d.aaStart, d.aaEnd);
+    if (!bounds) continue;
     inputs.push({
-      item: { domain: d, segments: proj.segments, xStart, xEnd },
-      xStart,
-      xEnd,
+      item: { domain: d, segments: bounds.segments, xStart: bounds.xStart, xEnd: bounds.xEnd },
+      xStart: bounds.xStart,
+      xEnd: bounds.xEnd,
     });
   }
   const packed = packLanes(inputs, laneGapPx);
@@ -175,13 +170,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
       // Per-intron flank widths for the splice-site preservation bridge —
       // see the comment in `pfam-track.tsx`.
-      const flanksByIntron = new Map<number, { donor: number; acceptor: number }>();
-      for (const f of baseline.flanks ?? []) {
-        const cur = flanksByIntron.get(f.intronIdx) ?? { donor: 0, acceptor: 0 };
-        if (f.side === 'donor') cur.donor = f.width;
-        else cur.acceptor = f.width;
-        flanksByIntron.set(f.intronIdx, cur);
-      }
+      const flanksByIntron = baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
 
       const sorted = data.placements
         .slice()
