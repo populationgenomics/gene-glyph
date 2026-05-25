@@ -56,12 +56,12 @@
 
   /* ClinVar clinical-significance palette. Hosts can override on either the
    * gene-glyph root or a parent surface to retheme without recompiling. */
-  --vv-clinvar-color-pathogenic: #c2185b;
-  --vv-clinvar-color-likely-pathogenic: #f06292;
-  --vv-clinvar-color-uncertain: #ffb300;
-  --vv-clinvar-color-likely-benign: #81c784;
-  --vv-clinvar-color-benign: #2e7d32;
-  --vv-clinvar-color-conflicting: #78909c;
+  --vv-clinvar-color-pathogenic: #b91c1c;
+  --vv-clinvar-color-likely-pathogenic: #dc2626;
+  --vv-clinvar-color-uncertain: #a16207;
+  --vv-clinvar-color-likely-benign: #65a30d;
+  --vv-clinvar-color-benign: #16a34a;
+  --vv-clinvar-color-conflicting: #7c3aed;
   --vv-clinvar-color-other: #64748b;
   --vv-clinvar-dot-stroke: #ffffff;
   --vv-clinvar-count-fill: #ffffff;
