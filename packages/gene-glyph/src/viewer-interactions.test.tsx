@@ -19,8 +19,7 @@ const transcript: Transcript = {
 
 async function flushTrackLoads() {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -589,7 +588,9 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       await flushTrackLoads();
       expect(ref.current!.getViewportInfo().range).toEqual([50, 250]);
       const svg = stubFigureRect(container, 1000);
-      dispatchWheel(svg, { deltaX: 100, deltaY: 0 });
+      act(() => {
+        dispatchWheel(svg, { deltaX: 100, deltaY: 0 });
+      });
       await act(async () => {
         await Promise.resolve();
       });

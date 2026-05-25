@@ -32,7 +32,7 @@ function collapsedStub(id: string, label: string, emptyData: unknown): Track {
   return {
     id,
     coordSystem: 'cds',
-    heightPolicy: 'auto',
+    heightPolicy: 'fixed',
     async load() {
       return emptyData;
     },

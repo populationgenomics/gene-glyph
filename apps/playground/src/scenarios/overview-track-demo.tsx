@@ -86,6 +86,7 @@ function OverviewSubFigure() {
     [],
   );
   const tracks = useMemo(
+    // eslint-disable-next-line react-hooks/refs
     () => [overviewTrack({ viewerRef: ref, tracks: upstream }), ...upstream],
     [upstream],
   );

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- the React components in this track are private to the export-function wrapping layer, and Fast Refresh handles them via parent reloading. */
 import {
   useCallback,
   useEffect,
@@ -258,9 +259,9 @@ function OverviewTrackImpl({
   const scaledGapPx = figureBaseGeom.gapPx * compress;
   const scaledPxPerBp = figureBaseGeom.pxPerBp * figureZoom * compress;
 
-  const scaledExons: ExonBaseline[] = [];
-  const scaledGaps: GapBaseline[] = [];
-  {
+  const scaledGeom = useMemo<BaselineGeometry>(() => {
+    const scaledExons: ExonBaseline[] = [];
+    const scaledGaps: GapBaseline[] = [];
     let cursor = 0;
     for (let i = 0; i < figureBaseGeom.exons.length; i++) {
       const e = figureBaseGeom.exons[i]!;
@@ -283,14 +284,14 @@ function OverviewTrackImpl({
         cursor += scaledGapPx;
       }
     }
-  }
-  const scaledGeom: BaselineGeometry = {
-    exons: scaledExons,
-    gaps: scaledGaps,
-    pxPerBp: scaledPxPerBp,
-    gapPx: scaledGapPx,
-    totalWidth: width,
-  };
+    return {
+      exons: scaledExons,
+      gaps: scaledGaps,
+      pxPerBp: scaledPxPerBp,
+      gapPx: scaledGapPx,
+      totalWidth: width,
+    };
+  }, [figureBaseGeom, figureZoom, compress, scaledGapPx, scaledPxPerBp, width]);
 
   // The minimap's coord conversion is the same ruler / baseline math the
   // figure uses, just driven by the rescaled-to-minimap-width baseline.
@@ -300,16 +301,25 @@ function OverviewTrackImpl({
   // ProjectionFrame's primary state is the baseline window — supply the
   // full scaled-geometry width so the minimap's mapping covers the whole
   // gene regardless of where the live figure is parked.
-  const minimapFrame = new ProjectionFrame({
-    baseline: scaledGeom,
-    zoomScale: 1,
-    displayOffset: 0,
-    width,
-    mode: viewport.mode,
-    exons: mapper.transcript.exons,
-  });
-  const cdsToMinimapX = (cPos: number): number => minimapFrame.rulerToBaselineX(cPos);
-  const minimapXToCds = (x: number): number => minimapFrame.baselineXToRuler(x);
+  const minimapFrame = useMemo(() => {
+    return new ProjectionFrame({
+      baseline: scaledGeom,
+      zoomScale: 1,
+      displayOffset: 0,
+      width,
+      mode: viewport.mode,
+      exons: mapper.transcript.exons,
+    });
+  }, [scaledGeom, width, viewport.mode, mapper.transcript.exons]);
+
+  const cdsToMinimapX = useCallback(
+    (cPos: number): number => minimapFrame.rulerToBaselineX(cPos),
+    [minimapFrame],
+  );
+  const minimapXToCds = useCallback(
+    (x: number): number => minimapFrame.baselineXToRuler(x),
+    [minimapFrame],
+  );
 
   // Bounds rectangle: project the figure's canonical baseline window
   // directly through the minimap's scaled-segment geometry — no ruler
@@ -327,26 +337,26 @@ function OverviewTrackImpl({
     if (figureP < firstFigureExon.xStart) {
       // Padding before the gene: 1:1 in figure baseline; compresses by
       // `compress` into minimap baseline.
-      return scaledExons[0]!.xStart - (firstFigureExon.xStart - figureP) * compress;
+      return scaledGeom.exons[0]!.xStart - (firstFigureExon.xStart - figureP) * compress;
     }
     for (let i = 0; i < figureExons.length; i++) {
       const fe = figureExons[i]!;
       if (figureP <= fe.xEnd) {
         const t = (figureP - fe.xStart) / Math.max(1e-9, fe.width);
-        const se = scaledExons[i]!;
+        const se = scaledGeom.exons[i]!;
         return se.xStart + t * se.width;
       }
       if (i < figureGaps.length) {
         const fg = figureGaps[i]!;
         if (figureP <= fg.xEnd) {
           const t = (figureP - fg.xStart) / Math.max(1e-9, fg.width);
-          const sg = scaledGaps[i]!;
+          const sg = scaledGeom.gaps[i]!;
           return sg.xStart + t * sg.width;
         }
       }
     }
     const lastFigureExon = figureExons[figureExons.length - 1]!;
-    const lastScaledExon = scaledExons[scaledExons.length - 1]!;
+    const lastScaledExon = scaledGeom.exons[scaledGeom.exons.length - 1]!;
     return lastScaledExon.xEnd + (figureP - lastFigureExon.xEnd) * compress;
   };
   const [figureSLo, figureSHi] = viewport.baselineWindow();

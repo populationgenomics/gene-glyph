@@ -231,7 +231,7 @@ export function DefaultMinimap({
         return;
       }
     },
-    [viewerRef, info, miniToLayout],
+    [viewerRef, info, miniToLayout, width],
   );
 
   const onPointerUp = useCallback((e: ReactPointerEvent<SVGSVGElement>) => {

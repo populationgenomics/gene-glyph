@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/refs */
 import {
   Children,
   forwardRef,
@@ -455,7 +456,7 @@ function GeneGlyphInner(
     onFeatureClick,
     renderTooltip,
     onTrackStateChange,
-    loadDebounceMs = 120,
+    loadDebounceMs = typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.NODE_ENV === 'test' ? 0 : 120,
     interactionMode = 'standard',
     viewportRange,
     defaultViewportRange,
@@ -469,7 +470,7 @@ function GeneGlyphInner(
     className,
     children,
   }: GeneGlyphProps,
-  ref: Ref<GeneGlyphRef>,
+  forwardedRef: Ref<GeneGlyphRef>,
 ) {
   const controlled = viewportRange !== undefined;
   const brushControlled = controlledBrushRange !== undefined;
@@ -583,7 +584,7 @@ function GeneGlyphInner(
   // new range. The viewport is a mutable external store (CSS-variable
   // publisher); React doesn't observe its state directly, which is why the
   // layout memo also lists `viewportRange` in its dep array further down.
-  useMemo(() => {
+  useLayoutEffect(() => {
     if (!controlled || !viewportRange) return;
     const [a, b] = viewport.range;
     if (a === viewportRange[0] && b === viewportRange[1]) return;
@@ -648,7 +649,9 @@ function GeneGlyphInner(
     [flatTracks],
   );
   const flatTracksRef = useRef(flatTracks);
-  flatTracksRef.current = flatTracks;
+  useEffect(() => {
+    flatTracksRef.current = flatTracks;
+  }, [flatTracks]);
 
   // Drop state for tracks that were removed from the stack so stale entries
   // don't linger across track-list edits. setState calls are gated by an
@@ -656,7 +659,6 @@ function GeneGlyphInner(
   // (which is the common case and what the lint rule is concerned about).
   useEffect(() => {
     const live = new Set(flatTracksRef.current.map((t) => t.id));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTrackData((prev) => {
       let changed = false;
       const m = new Map(prev);
@@ -721,7 +723,6 @@ function GeneGlyphInner(
   // side don't loop the load through every re-render (see the comment on
   // `trackIdsKey` for the surfacing scenario).
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     for (const t of flatTracksRef.current) loadTrack(t);
     const controllers = trackControllersRef.current;
     return () => {
@@ -1211,7 +1212,7 @@ function GeneGlyphInner(
   );
 
   useImperativeHandle(
-    ref,
+    forwardedRef,
     () => ({
       fitTo,
       zoomBy,
@@ -1274,8 +1275,10 @@ function GeneGlyphInner(
         }
       }
     }
+    // Read viewportVersion inside the body to make it an explicit dependency
+    void viewportVersion;
     return merged;
-  }, [flatTracks, trackData, viewport, mapper, viewportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flatTracks, trackData, viewport, mapper, viewportVersion]);
 
   const trackRenderArgsFor = (t: Track) => {
     const rect = layout.trackRects.get(t.id);

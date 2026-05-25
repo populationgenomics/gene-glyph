@@ -93,7 +93,6 @@ export function leashedRaf(label: string, work: () => void): { cancel: () => voi
   const startedAt = performance.now();
 
   if (enabled) {
-    // eslint-disable-next-line no-console
     console.log(
       `[gene-glyph leash] '${label}' started ` +
         `(maxTicks=${opts.maxTicks}, runawayMs=${opts.runawayMs}, ` +
@@ -105,7 +104,6 @@ export function leashedRaf(label: string, work: () => void): { cancel: () => voi
     if (cancelled) return;
     ticks += 1;
     if (enabled && ticks > opts.maxTicks) {
-      // eslint-disable-next-line no-console
       console.error(
         `[gene-glyph leash] '${label}' exceeded ${opts.maxTicks} ticks ` +
           `(${(performance.now() - startedAt).toFixed(0)} ms elapsed) — cancelling. ` +
@@ -118,7 +116,6 @@ export function leashedRaf(label: string, work: () => void): { cancel: () => voi
     try {
       work();
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error(`[gene-glyph leash] '${label}' threw on tick #${ticks}:`, err);
       // Re-arm so a one-off exception doesn't kill the whole poller, but
       // emit so the developer sees it.
@@ -126,7 +123,6 @@ export function leashedRaf(label: string, work: () => void): { cancel: () => voi
     if (enabled) {
       const dt = performance.now() - t0;
       if (dt > opts.runawayMs) {
-        // eslint-disable-next-line no-console
         console.warn(
           `[gene-glyph leash] '${label}' tick #${ticks} took ${dt.toFixed(1)} ms ` +
             `(threshold ${opts.runawayMs} ms). Likely a runaway re-render — ` +
@@ -135,9 +131,8 @@ export function leashedRaf(label: string, work: () => void): { cancel: () => voi
       }
       if (opts.heartbeatEvery > 0 && ticks % opts.heartbeatEvery === 0) {
         // `console.log` (not `console.debug`) so the heartbeat shows in the
-        // default DevTools log filter; debug-level lines are hidden unless
+        // standard DevTools log filter; debug-level lines are hidden unless
         // the user explicitly enables "Verbose".
-        // eslint-disable-next-line no-console
         console.log(
           `[gene-glyph leash] '${label}' alive at tick #${ticks} ` +
             `(${(performance.now() - startedAt).toFixed(0)} ms elapsed).`,
@@ -175,7 +170,6 @@ export function leashedRecursion<TArgs extends readonly unknown[], TRet>(
         `[gene-glyph leash] '${label}' exceeded recursion depth ${maxDepth}. ` +
           `Likely an effect or callback is calling itself transitively.`,
       );
-      // eslint-disable-next-line no-console
       console.error(err);
       throw err;
     }
@@ -211,7 +205,6 @@ export function createStormDetector(
     }
     count += 1;
     if (count > maxPerWindow && !warned) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[gene-glyph leash] '${label}' fired ${count} times in ${windowMs} ms — ` +
           `looks like a re-render storm. Check the callsite's deps.`,

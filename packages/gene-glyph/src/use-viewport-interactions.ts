@@ -304,7 +304,12 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         zoomAtX(factor, cursorX, 'wheel-zoom');
         return;
       }
-      // Plain wheel = pan horizontally. Use whichever axis the trackpad sent.
+      // Plain wheel = pan horizontally. Only pan if it's a horizontal scroll
+      // (non-zero deltaX) or if the user is holding Shift to force horizontal scroll.
+      // Otherwise, let the browser handle vertical page scroll.
+      const isHorizontalScroll = ev.deltaX !== 0 || ev.shiftKey;
+      if (!isHorizontalScroll) return;
+
       const dxCss =
         normaliseWheelDelta(ev.deltaX, ev.deltaMode) ||
         normaliseWheelDelta(ev.deltaY, ev.deltaMode);
