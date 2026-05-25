@@ -44,12 +44,51 @@ const SIGNIFICANCE_CHIPS: readonly ClinVarSignificance[] = [
 const STAR_LEVELS = [0, 1, 2, 3, 4] as const;
 type StarLevel = (typeof STAR_LEVELS)[number];
 
+/** Coarse variant-type buckets, grouped from gnomAD's `major_consequence`
+ *  Sequence Ontology terms. A chip per bucket lets a clinician hide whole
+ *  classes (e.g. silence the synonymous-variant chip when triaging for LoF). */
+const VARIANT_TYPES = [
+  'missense',
+  'nonsense',
+  'frameshift',
+  'splice',
+  'inframe_indel',
+  'synonymous',
+  'utr',
+  'other',
+] as const;
+type VariantType = (typeof VARIANT_TYPES)[number];
+
+const VARIANT_TYPE_LABELS: Record<VariantType, string> = {
+  missense: 'Missense',
+  nonsense: 'Nonsense',
+  frameshift: 'Frameshift',
+  splice: 'Splice',
+  inframe_indel: 'In-frame indel',
+  synonymous: 'Synonymous',
+  utr: 'UTR',
+  other: 'Other',
+};
+
 const CLINVAR_GROUP_ID = 'clinvar-group';
 
 function recordStars(r: ClinVarRecord): StarLevel {
   const raw = ((r.meta ?? {}) as { goldStars?: number }).goldStars ?? 0;
   const clamped = Math.max(0, Math.min(4, Math.floor(raw)));
   return clamped as StarLevel;
+}
+
+function recordVariantType(r: ClinVarRecord): VariantType {
+  const raw = ((r.meta ?? {}) as { majorConsequence?: string }).majorConsequence ?? '';
+  const c = raw.toLowerCase();
+  if (c === 'missense_variant') return 'missense';
+  if (c === 'stop_gained' || c === 'stop_lost' || c === 'start_lost') return 'nonsense';
+  if (c === 'frameshift_variant') return 'frameshift';
+  if (c.startsWith('splice_')) return 'splice';
+  if (c === 'inframe_insertion' || c === 'inframe_deletion') return 'inframe_indel';
+  if (c === 'synonymous_variant' || c === 'stop_retained_variant') return 'synonymous';
+  if (c.includes('utr') || c === 'non_coding_transcript_exon_variant') return 'utr';
+  return 'other';
 }
 
 type LoadState =
@@ -70,6 +109,9 @@ export function EmbedView() {
     () => new Set(),
   );
   const [excludedStars, setExcludedStars] = useState<ReadonlySet<StarLevel>>(
+    () => new Set(),
+  );
+  const [excludedTypes, setExcludedTypes] = useState<ReadonlySet<VariantType>>(
     () => new Set(),
   );
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
@@ -120,8 +162,10 @@ export function EmbedView() {
 
   const filter = useCallback(
     (r: ClinVarRecord) =>
-      !excluded.has(r.significance) && !excludedStars.has(recordStars(r)),
-    [excluded, excludedStars],
+      !excluded.has(r.significance) &&
+      !excludedStars.has(recordStars(r)) &&
+      !excludedTypes.has(recordVariantType(r)),
+    [excluded, excludedStars, excludedTypes],
   );
   const records = state.kind === 'ready' ? state.data.clinvar : [];
   // The selection survives chip toggles: when the user excludes the
@@ -136,19 +180,27 @@ export function EmbedView() {
     () => (selectedRecord ? new Set([selectedRecord.id]) : new Set<string>()),
     [selectedRecord],
   );
-  const toggleExcluded = (sig: ClinVarSignificance) => {
+  // Plain-click toggles a chip; shift-click solos that chip within its group
+  // (excludes every other chip in the same row). Shift-click on an already-
+  // soloed chip restores the whole group.
+  const chipClick = <T,>(
+    e: React.MouseEvent,
+    all: readonly T[],
+    val: T,
+    excluded: ReadonlySet<T>,
+    setExcluded: React.Dispatch<React.SetStateAction<ReadonlySet<T>>>,
+  ) => {
+    if (e.shiftKey) {
+      const others = all.filter((x) => x !== val);
+      const alreadySoloed =
+        !excluded.has(val) && others.every((x) => excluded.has(x));
+      setExcluded(alreadySoloed ? new Set() : new Set(others));
+      return;
+    }
     setExcluded((prev) => {
       const next = new Set(prev);
-      if (next.has(sig)) next.delete(sig);
-      else next.add(sig);
-      return next;
-    });
-  };
-  const toggleExcludedStar = (n: StarLevel) => {
-    setExcludedStars((prev) => {
-      const next = new Set(prev);
-      if (next.has(n)) next.delete(n);
-      else next.add(n);
+      if (next.has(val)) next.delete(val);
+      else next.add(val);
       return next;
     });
   };
@@ -160,8 +212,9 @@ export function EmbedView() {
   const filterKey = useMemo(() => {
     const sig = [...excluded].sort().join(',');
     const stars = [...excludedStars].sort((a, b) => a - b).join(',');
-    return `s=${sig};r=${stars}`;
-  }, [excluded, excludedStars]);
+    const types = [...excludedTypes].sort().join(',');
+    return `s=${sig};r=${stars};t=${types}`;
+  }, [excluded, excludedStars, excludedTypes]);
 
   const tracks = useMemo<TrackOrGroup[]>(() => {
     const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
@@ -273,7 +326,38 @@ export function EmbedView() {
     >
       <StatusBar state={state} requestedId={requestedId} />
       {state.kind === 'ready' && (
-        <>
+        <section
+          data-testid="embed-clinvar-filters"
+          aria-label="ClinVar filters"
+          style={{
+            margin: '10px 0',
+            padding: '10px 12px',
+            background: '#f8fafc',
+            border: '1px solid #cbd5e1',
+            borderRadius: 6,
+          }}
+        >
+          <header
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: '#475569',
+              marginBottom: 6,
+              letterSpacing: 0.2,
+            }}
+          >
+            ClinVar filters
+            <span
+              style={{
+                marginLeft: 8,
+                fontWeight: 400,
+                opacity: 0.65,
+                fontStyle: 'italic',
+              }}
+            >
+              shift-click to solo within a row
+            </span>
+          </header>
           <div
             data-testid="embed-significance-filter"
             style={{
@@ -281,11 +365,11 @@ export function EmbedView() {
               gap: 6,
               flexWrap: 'wrap',
               alignItems: 'center',
-              margin: '8px 0',
+              margin: '4px 0',
               color: '#475569',
             }}
           >
-            <span style={{ opacity: 0.75 }}>significance:</span>
+            <span style={{ opacity: 0.75, minWidth: 80 }}>significance:</span>
             {SIGNIFICANCE_CHIPS.map((sig) => {
               const active = !excluded.has(sig);
               return (
@@ -294,7 +378,9 @@ export function EmbedView() {
                   type="button"
                   data-testid={`embed-chip-${sig}`}
                   data-active={active}
-                  onClick={() => toggleExcluded(sig)}
+                  onClick={(e) =>
+                    chipClick(e, SIGNIFICANCE_CHIPS, sig, excluded, setExcluded)
+                  }
                   style={{
                     padding: '2px 8px',
                     fontSize: '0.78rem',
@@ -317,11 +403,11 @@ export function EmbedView() {
               gap: 6,
               flexWrap: 'wrap',
               alignItems: 'center',
-              margin: '8px 0',
+              margin: '4px 0',
               color: '#475569',
             }}
           >
-            <span style={{ opacity: 0.75 }}>review:</span>
+            <span style={{ opacity: 0.75, minWidth: 80 }}>review:</span>
             {STAR_LEVELS.map((n) => {
               const active = !excludedStars.has(n);
               const label = n === 0 ? '☆' : '★'.repeat(n);
@@ -331,7 +417,9 @@ export function EmbedView() {
                   type="button"
                   data-testid={`embed-chip-stars-${n}`}
                   data-active={active}
-                  onClick={() => toggleExcludedStar(n)}
+                  onClick={(e) =>
+                    chipClick(e, STAR_LEVELS, n, excludedStars, setExcludedStars)
+                  }
                   aria-label={
                     n === 0
                       ? 'no review stars'
@@ -353,7 +441,45 @@ export function EmbedView() {
               );
             })}
           </div>
-        </>
+          <div
+            data-testid="embed-type-filter"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              margin: '4px 0',
+              color: '#475569',
+            }}
+          >
+            <span style={{ opacity: 0.75, minWidth: 80 }}>type:</span>
+            {VARIANT_TYPES.map((t) => {
+              const active = !excludedTypes.has(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  data-testid={`embed-chip-type-${t}`}
+                  data-active={active}
+                  onClick={(e) =>
+                    chipClick(e, VARIANT_TYPES, t, excludedTypes, setExcludedTypes)
+                  }
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '0.78rem',
+                    borderRadius: 999,
+                    border: '1px solid #cbd5e1',
+                    background: active ? '#e0f2fe' : '#f1f5f9',
+                    color: active ? '#0c4a6e' : '#94a3b8',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {VARIANT_TYPE_LABELS[t]}
+                </button>
+              );
+            })}
+          </div>
+        </section>
       )}
       <GeneGlyph
         ref={viewerRef}
