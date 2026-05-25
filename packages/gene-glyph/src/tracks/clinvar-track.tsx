@@ -277,12 +277,20 @@ export function clusterClinVar(
 
 /** Pack ClinVar placements into stacked rows. Mirrors `packStackedVariants`
  *  for the variant track: group by `encoding.lane()`, sort each group by
- *  baseline-x, assign each record to the lowest local row whose previous
- *  occupant's right edge has cleared. Strict lane separation — items with
- *  different lane keys never share a row. */
+ *  current-zoom layout-x, assign each record to the lowest local row whose
+ *  previous occupant's right edge has cleared. Strict lane separation —
+ *  items with different lane keys never share a row.
+ *
+ *  Unlike `packStackedVariants`, this packs against `viewport.baselineToLayoutX`
+ *  rather than the raw baseline-x. The row count therefore shrinks as the
+ *  user zooms in (glyphs spread far enough that previously-overlapping
+ *  neighbours collapse into the same row). Pan is irrelevant because
+ *  `baselineToLayoutX` adds the same display offset to every position,
+ *  preserving relative distances. */
 export function packStackedClinVar(
   placed: PlacedClinVar[],
   encoding: SymbolEncoding<ClinVarRecord>,
+  viewport: Viewport,
   markRadius: number,
 ): ClinVarStackLayout {
   const groups = new Map<string, PlacedClinVar[]>();
@@ -307,18 +315,24 @@ export function packStackedClinVar(
     const items = groups
       .get(key)!
       .slice()
-      // Stable, content-derived sort. Primary key: baseline-x (visual
-      // left → right). Secondary key: record.id (deterministic tie-
-      // break for variants at the same baseline-x, e.g. a SNP and an
-      // indel at the same nucleotide). Same input rows → same output
-      // rows on every reload.
-      .sort((a, b) => a.baselineX - b.baselineX || compareStrings(a.record.id, b.record.id));
+      .map((p) => ({ p, layoutX: viewport.baselineToLayoutX(p.baselineX) }))
+      // Stable, content-derived sort. Primary key: current layout-x
+      // (visual left → right at the active zoom). Secondary key:
+      // record.id (deterministic tie-break for variants at the same
+      // position, e.g. a SNP and an indel at the same nucleotide).
+      // Same input rows → same output rows on every reload at the
+      // same zoom.
+      .sort(
+        (a, b) =>
+          a.layoutX - b.layoutX ||
+          compareStrings(a.p.record.id, b.p.record.id),
+      );
     const laneEnds: number[] = [];
     let localMaxLane = -1;
-    for (const it of items) {
+    for (const { p: it, layoutX } of items) {
       const r = encoding.radius?.(it.record) ?? markRadius;
-      const xStart = it.baselineX - r;
-      const xEnd = it.baselineX + r;
+      const xStart = layoutX - r;
+      const xEnd = layoutX + r;
       let lane = -1;
       for (let i = 0; i < laneEnds.length; i++) {
         if (laneEnds[i]! <= xStart) {
@@ -390,7 +404,7 @@ export function clinVarTrack(
         // and the figure grows by a multiple of the visible rows.
         const visible = filter ? records.filter(filter) : records;
         const { placed } = placeClinVarRecords(visible, viewport, mapper);
-        stackLayout = packStackedClinVar(placed, stackedEncoding, markRadius);
+        stackLayout = packStackedClinVar(placed, stackedEncoding, viewport, markRadius);
       }
       return { records, stackLayout };
     },
@@ -499,6 +513,7 @@ function ClinVarStackedBody({
     return packStackedClinVar(
       placeClinVarRecords(records, viewport, mapper).placed,
       encoding,
+      viewport,
       markRadius,
     );
   }, [records, filter, data.stackLayout, viewport, mapper, encoding, markRadius]);

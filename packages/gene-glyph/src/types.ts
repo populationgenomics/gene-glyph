@@ -373,6 +373,12 @@ export interface Viewport {
   /** Ruler → baseline screen-x. CDS bp in CDS modes, aa in protein mode.
    *  Always returns a finite value (extrapolates past the gene's edges). */
   cdsToBaselineX(rulerPos: number): number;
+  /** Baseline screen-x → current-zoom layout-x (the figure's static
+   *  layout coordinate, including soft-collapse but excluding the live
+   *  pan offset's effect on relative positions). Tracks doing zoom-
+   *  responsive packing (e.g. stacked ClinVar) use this so the row
+   *  count tracks the actual on-figure spread of glyphs. */
+  baselineToLayoutX(baselineX: number): number;
   /** Inverse of {@link cdsToBaselineX}. CDS bp in CDS modes, aa in protein
    *  mode. Fractional; callers round if they want a discrete ruler value.
    *  Slice 26 surfaced this on the public interface so direct-manipulation

@@ -390,7 +390,7 @@ describe('clinVarTrack', () => {
   it('packStackedClinVar groups by significance lane', () => {
     const { viewport, mapper } = setup();
     const { placed } = placeClinVarRecords(records, viewport, mapper);
-    const layout = packStackedClinVar(placed, defaultClinVarSymbolEncoding, 5);
+    const layout = packStackedClinVar(placed, defaultClinVarSymbolEncoding, viewport, 5);
     expect(layout.rowCount).toBeGreaterThan(0);
     const lanes = new Set(layout.placements.map((p) => p.laneKey));
     // Four placeable records map to four distinct lane keys: path, vus,
