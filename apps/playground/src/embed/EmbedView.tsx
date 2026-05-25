@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   DefaultTrackChevron,
   GeneGlyph,
@@ -53,7 +53,7 @@ export function EmbedView() {
       ? { kind: 'loading', transcriptId: requestedId }
       : { kind: 'error', message: 'Missing ?transcript=ENST… query parameter.' },
   );
-  const [lastClicked, setLastClicked] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(
     () => new Set(),
   );
@@ -88,6 +88,19 @@ export function EmbedView() {
     (r: ClinVarRecord) => !excluded.has(r.significance),
     [excluded],
   );
+  const records = state.kind === 'ready' ? state.data.clinvar : [];
+  // The selection survives chip toggles: when the user excludes the
+  // selected variant's significance the detail card and ring just hide
+  // until they re-enable that chip.
+  const selectedRecord = useMemo(() => {
+    if (!selectedId) return null;
+    const r = records.find((r) => r.id === selectedId) ?? null;
+    return r && !excluded.has(r.significance) ? r : null;
+  }, [selectedId, records, excluded]);
+  const selectedFeatureIds = useMemo(
+    () => (selectedRecord ? new Set([selectedRecord.id]) : new Set<string>()),
+    [selectedRecord],
+  );
   const toggleExcluded = (sig: ClinVarSignificance) => {
     setExcluded((prev) => {
       const next = new Set(prev);
@@ -98,7 +111,6 @@ export function EmbedView() {
   };
 
   const tracks = useMemo<TrackOrGroup[]>(() => {
-    const records = state.kind === 'ready' ? state.data.clinvar : [];
     const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
       const sigFilter = (r: ClinVarRecord) => r.significance === sig && filter(r);
       return {
@@ -136,7 +148,7 @@ export function EmbedView() {
         }),
       },
     ];
-  }, [state, filter]);
+  }, [records, filter]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -251,8 +263,10 @@ export function EmbedView() {
         collapsedGroupIds={collapsedGroups}
         onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
+        selectedFeatureIds={selectedFeatureIds}
         onFeatureClick={(featureId, trackId) => {
-          if (trackId.startsWith('clinvar')) setLastClicked(featureId);
+          if (!trackId.startsWith('clinvar')) return;
+          setSelectedId((prev) => (prev === featureId ? null : featureId));
         }}
       >
         <GeneGlyph.LeftGutter width={180}>
@@ -276,13 +290,141 @@ export function EmbedView() {
           }}
         </GeneGlyph.LeftGutter>
       </GeneGlyph>
-      {lastClicked && (
-        <p style={{ marginTop: 6, color: '#475569' }}>
-          last clicked: <strong>{lastClicked}</strong>
-        </p>
+      {selectedRecord && (
+        <SelectedVariantCard
+          record={selectedRecord}
+          onClear={() => setSelectedId(null)}
+        />
       )}
     </main>
   );
+}
+
+function SelectedVariantCard({
+  record,
+  onClear,
+}: {
+  record: ClinVarRecord;
+  onClear: () => void;
+}) {
+  const meta = (record.meta ?? {}) as {
+    majorConsequence?: string;
+    goldStars?: number;
+    hgvsp?: string;
+  };
+  const parsed = parseVariantId(record.id);
+  return (
+    <section
+      data-testid="embed-selected-variant"
+      style={{
+        marginTop: 10,
+        padding: '10px 12px',
+        background: '#f8fafc',
+        border: '1px solid #cbd5e1',
+        borderRadius: 6,
+        color: '#1e293b',
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 6,
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
+          <strong style={{ fontSize: '0.95rem' }}>{record.label}</strong>
+          <code
+            style={{
+              fontSize: '0.78rem',
+              opacity: 0.7,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {record.id}
+          </code>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear selection"
+          style={{
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            color: '#475569',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+          }}
+        >
+          clear
+        </button>
+      </header>
+      <dl
+        style={{
+          margin: 0,
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr',
+          columnGap: 10,
+          rowGap: 2,
+          fontSize: '0.78rem',
+        }}
+      >
+        <Row label="Position">
+          {parsed
+            ? `${parsed.chr}:${parsed.pos.toLocaleString()}`
+            : `${record.chr}:${record.pos.toLocaleString()}`}
+        </Row>
+        {parsed && (
+          <Row label="Change">
+            <code>
+              {parsed.ref} &rarr; {parsed.alt}
+            </code>
+          </Row>
+        )}
+        <Row label="Significance">{humanSig(record.significance)}</Row>
+        {meta.hgvsp && <Row label="HGVSp">{meta.hgvsp}</Row>}
+        {meta.majorConsequence && <Row label="Consequence">{meta.majorConsequence}</Row>}
+        {typeof meta.goldStars === 'number' && (
+          <Row label="Review">
+            <span style={{ letterSpacing: 1 }}>
+              {'★'.repeat(meta.goldStars)}
+              {'☆'.repeat(Math.max(0, 4 - meta.goldStars))}
+            </span>
+            {record.reviewStatus && (
+              <span style={{ marginLeft: 8, opacity: 0.7 }}>{record.reviewStatus}</span>
+            )}
+          </Row>
+        )}
+        {typeof meta.goldStars !== 'number' && record.reviewStatus && (
+          <Row label="Review">{record.reviewStatus}</Row>
+        )}
+      </dl>
+    </section>
+  );
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt style={{ opacity: 0.6 }}>{label}</dt>
+      <dd style={{ margin: 0 }}>{children}</dd>
+    </>
+  );
+}
+
+function parseVariantId(
+  id: string,
+): { chr: string; pos: number; ref: string; alt: string } | null {
+  // gnomAD variant ids are `<chr>-<pos>-<ref>-<alt>` (e.g., 17-7675236-ACTG-A).
+  const m = /^([^-]+)-(\d+)-([A-Za-z]+)-([A-Za-z]+)$/.exec(id);
+  if (!m) return null;
+  const [, chrRaw, posRaw, ref, alt] = m;
+  const chr = chrRaw.startsWith('chr') ? chrRaw : `chr${chrRaw}`;
+  return { chr, pos: Number(posRaw), ref, alt };
 }
 
 function StatusBar({
