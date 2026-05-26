@@ -25,9 +25,10 @@ else.
 | `excluded`      | CSV of clinical-significance values (see below)                     | _empty_        | Significance chips that start excluded. Plain-click a chip in the page toggles a single value; shift-click solos the chip within its row.                                                                                       |
 | `excludedStars` | CSV of integers `0`–`4`                                             | _empty_        | Review-star chips that start excluded. `0` = no stars, `1`–`4` = 1–4 review stars.                                                                                                                                              |
 | `excludedTypes` | CSV of variant-type values (see below)                              | _empty_        | Variant-type chips that start excluded. Each value maps a class of gnomAD `major_consequence` SO terms.                                                                                                                         |
-| `selected`      | Variant id (e.g. `17-7675236-A-G`)                                  | _absent_       | Pre-select a variant. The detail card opens and the matching marker draws its selection ring. Survives chip toggles: if the selected variant gets filtered out, the card hides until the matching chip is re-enabled.           |
+| `selected`      | Variant id or 8-hex FNV-1a hash (see "Selection" below)              | _absent_       | Pre-select a variant. The detail card opens, the matching marker draws its selection ring, and a full-figure-height drop-line / range overlay highlights the variant's coordinate span. Survives chip toggles: if the selected variant gets filtered out, the card hides until the matching chip is re-enabled. |
 | `collapsed`     | CSV of group ids                                                    | see "Collapse" | Override the set of folded ClinVar groups. The param's _presence_ (even empty: `?collapsed=`) overrides the default; only its absence falls back to the default-collapsed state.                                                |
 | `hide`          | CSV of track ids (see below)                                        | _empty_        | Tracks to omit from the figure entirely.                                                                                                                                                                                        |
+| `variants`      | CSV of user-supplied variants (see "User variants" below)            | _empty_        | Renders a purple-cross row of user variants between the exon and InterPro tracks. Empty value (or absent param) hides the row entirely.                                                                                          |
 
 ### Significance values (`excluded`)
 
@@ -56,7 +57,52 @@ terms:
 `scale`, `exon`, `nucleotide`, `aa`, `interpro`, `clinvar`. The
 `nucleotide` and `aa` tracks already collapse to zero height until live
 `pxPerBp` / `pxPerAa` exceeds their unfurl threshold — `hide=nucleotide`
-suppresses them even when zoomed in.
+suppresses them even when zoomed in. The `user-variants` track has no
+`hide` toggle: its visibility is governed by the `variants` parameter.
+
+### User variants (`variants`)
+
+The embed accepts a clinician-pasteable list of variants alongside
+ClinVar. Format: one variant per entry, separated by `,` (URL) or
+newlines (modal). Accepted forms:
+
+| Form              | Example                | Notes                                       |
+| ----------------- | ---------------------- | ------------------------------------------- |
+| gnomAD canonical  | `17-7674212-C-A`       | Direct match against ClinVar id space.      |
+| Tab-style         | `17:7674212C>T`        | Optional `chr` prefix, lowercase tolerated. |
+| Dash-style        | `17:7674212-C-T`       | Same.                                       |
+| HGVS transcript-relative | `c.524G>A`, `n.41A>G`, `p.Arg175His` | Routed through VariantValidator (GRCh38, transcript-set Ensembl). |
+
+Each entry normalises to the gnomAD form `chr-pos-REF-ALT` (no `chr`
+prefix) for internal use — both `?variants=17:7674212C>T` and
+`?variants=17-7674212-C-T` produce the same id. Unparseable entries
+collect into a footer note ("N variants couldn't be parsed: …") and
+don't block the figure. HGVS resolution failures (VV unreachable, no
+GRCh38 mapping, missing accession) fall into the same footer; all
+canonical entries still render.
+
+#### Editing in-page
+
+Press `V` (or click the `+` button in the toolbar) to open the
+spotlight-style **Edit variants** modal. The textarea pre-populates
+with the current `?variants=` contents, one per line. `Cmd/Ctrl+Enter`
+submits, `Esc` (or clicking outside) cancels. Submit replaces the
+entire variant set — clearing the textarea then submitting removes
+the row entirely.
+
+The `V` hotkey is suppressed when an editable element (textarea,
+text-shaped input, contentEditable) already has focus.
+
+### Selection (`selected`)
+
+`?selected=` accepts either the canonical variant id
+(`17-7675236-A-G`) or its 8-hex FNV-1a hash (`a1b2c3d4`). New selections
+emitted by the page use the hash form so long deletion ids stay short
+in the URL; raw-canonical pre-Slice-35 share links keep working.
+Selecting any variant (ClinVar or user-supplied) draws a full-figure
+drop-line and range overlay tied to the variant's reference span;
+SNVs degrade to a dashed vertical line, multi-bp variants to a
+translucent rect spanning the affected range.
 
 ### Collapse default
 
@@ -77,9 +123,9 @@ Group ids:
 ## Live URL sync
 
 State changes inside the page (chip toggles, mode/density/track
-switchers, group fold, variant selection) update the URL via
-`history.replaceState`. Back/forward navigation is unaffected — the
-browser's history stack stays clean.
+switchers, group fold, variant selection, modal submit) update the URL
+via `history.replaceState`. Back/forward navigation is unaffected —
+the browser's history stack stays clean.
 
 ## Examples
 
@@ -96,3 +142,8 @@ browser's history stack stays clean.
   no-VUS-no-conflicting view:
 
       embed.html?transcript=ENST00000003084&collapsed=&excluded=uncertain_significance,conflicting
+
+- TP53 with two user-supplied variants (one canonical, one HGVS routed
+  through VariantValidator):
+
+      embed.html?transcript=ENST00000269305&variants=17-7674212-C-T,c.524G%3EA
