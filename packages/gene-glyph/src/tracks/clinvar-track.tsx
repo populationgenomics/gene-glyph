@@ -1130,12 +1130,13 @@ function ChevronStub({ direction, cy, r, stroke }: ChevronStubProps): ReactNode 
   const a = Math.max(2.5, r * 0.9);
   const sign = direction === 'left' ? -1 : 1;
   const sw = Math.max(1, r * 0.4);
-  // Push the chevron clear of the marker's selection ring (`r + 3`)
-  // plus a small breathing gap so it reads as a separate element
-  // rather than overlapping the glyph. Only needed on the left side:
-  // the right-truncation chevron sits at the line's far tip, where
+  // Sit just outside the marker glyph (radius `r`) with a 1px gap.
+  // The selection ring at `r + 3` only paints on hover/select so
+  // tucking the chevron inside it most of the time keeps the line +
+  // arrow visually connected to the glyph. Right-truncation anchors
+  // at x=0 — the chevron sits at the line's far tip there, where
   // there's no marker glyph to clear.
-  const inset = direction === 'left' ? r + 3 + 2 : 0;
+  const inset = direction === 'left' ? r + 1 : 0;
   // Two chevrons pointing in `direction`. Inner chevron's tip sits at
   // `inset` from the marker centre; outer chevron's tip is one
   // chevron-width further out. The chevron "opens" away from the tip.
