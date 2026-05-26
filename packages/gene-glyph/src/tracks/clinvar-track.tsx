@@ -1130,16 +1130,22 @@ function ChevronStub({ direction, cy, r, stroke }: ChevronStubProps): ReactNode 
   const a = Math.max(2.5, r * 0.9);
   const sign = direction === 'left' ? -1 : 1;
   const sw = Math.max(1, r * 0.4);
-  // Two chevrons pointing in `direction`. Inner chevron's tip sits on
-  // the line's end; outer chevron's tip is one chevron-width further
-  // out. The chevron "opens" away from the tip.
+  // Push the chevron clear of the marker's selection ring (`r + 3`)
+  // plus a small breathing gap so it reads as a separate element
+  // rather than overlapping the glyph. Only needed on the left side:
+  // the right-truncation chevron sits at the line's far tip, where
+  // there's no marker glyph to clear.
+  const inset = direction === 'left' ? r + 3 + 2 : 0;
+  // Two chevrons pointing in `direction`. Inner chevron's tip sits at
+  // `inset` from the marker centre; outer chevron's tip is one
+  // chevron-width further out. The chevron "opens" away from the tip.
   const d = [
-    `M ${sign * a * 0.8} ${cy - a / 2}`,
-    `L 0 ${cy}`,
-    `L ${sign * a * 0.8} ${cy + a / 2}`,
-    `M ${sign * a * 1.8} ${cy - a / 2}`,
-    `L ${sign * a} ${cy}`,
-    `L ${sign * a * 1.8} ${cy + a / 2}`,
+    `M ${sign * (inset + a * 0.8)} ${cy - a / 2}`,
+    `L ${sign * inset} ${cy}`,
+    `L ${sign * (inset + a * 0.8)} ${cy + a / 2}`,
+    `M ${sign * (inset + a * 1.8)} ${cy - a / 2}`,
+    `L ${sign * (inset + a)} ${cy}`,
+    `L ${sign * (inset + a * 1.8)} ${cy + a / 2}`,
   ].join(' ');
   return (
     <path
