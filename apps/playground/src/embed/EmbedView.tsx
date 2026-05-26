@@ -77,6 +77,24 @@ const VARIANT_TYPE_LABELS: Record<VariantType, string> = {
 
 const CLINVAR_GROUP_ID = 'clinvar-group';
 
+type Density = 'compact' | 'normal' | 'roomy';
+
+const TRACK_TOGGLES = [
+  { id: 'scale', label: 'Scale' },
+  { id: 'exon', label: 'Exon' },
+  { id: 'nucleotide', label: 'NT' },
+  { id: 'aa', label: 'AA' },
+  { id: 'interpro', label: 'InterPro' },
+  { id: 'clinvar', label: 'ClinVar' },
+] as const;
+type TrackToggleId = (typeof TRACK_TOGGLES)[number]['id'];
+const TRACK_TOGGLE_IDS = new Set<string>(TRACK_TOGGLES.map((t) => t.id));
+
+const DEFAULT_COLLAPSED_GROUPS: ReadonlySet<string> = new Set([
+  CLINVAR_GROUP_ID,
+  ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
+]);
+
 function recordStars(r: ClinVarRecord): StarLevel {
   const raw = ((r.meta ?? {}) as { goldStars?: number }).goldStars ?? 0;
   const clamped = Math.max(0, Math.min(4, Math.floor(raw)));
@@ -103,33 +121,33 @@ type LoadState =
   | { kind: 'error'; message: string };
 
 export function EmbedView() {
-  const { requestedId, force } = useMemo(() => readUrlParams(), []);
+  const initial = useMemo(() => readUrlParams(), []);
+  const { requestedId, force } = initial;
   const [state, setState] = useState<LoadState>(() =>
     requestedId
       ? { kind: 'loading', transcriptId: requestedId }
       : { kind: 'error', message: 'Missing ?transcript=ENST… query parameter.' },
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initial.selectedId);
   const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(
-    () => new Set(),
+    initial.excludedSigs,
   );
   const [excludedStars, setExcludedStars] = useState<ReadonlySet<StarLevel>>(
-    () => new Set(),
+    initial.excludedStars,
   );
   const [excludedTypes, setExcludedTypes] = useState<ReadonlySet<VariantType>>(
-    () => new Set(),
+    initial.excludedTypes,
   );
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () =>
-      new Set([
-        CLINVAR_GROUP_ID,
-        ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
-      ]),
+    initial.collapsedGroups,
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
   const [cdsSequence, setCdsSequence] = useState<string | null>(null);
-  const [mode, setMode] = useState<ViewMode>('transcript');
-  const [density, setDensity] = useState<'compact' | 'normal' | 'roomy'>('normal');
+  const [mode, setMode] = useState<ViewMode>(initial.mode);
+  const [density, setDensity] = useState<Density>(initial.density);
+  const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
+    initial.hiddenTracks,
+  );
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -186,6 +204,51 @@ export function EmbedView() {
       });
     return () => controller.abort();
   }, [requestedId]);
+
+  // Mirror visible state into the URL so the page is fully shareable.
+  // Only non-default values land in the query string to keep URLs short.
+  // `history.replaceState` avoids polluting the back-button stack.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams();
+    if (requestedId) p.set('transcript', requestedId);
+    if (force) p.set('force', '1');
+    if (mode !== 'transcript') p.set('mode', mode);
+    if (density !== 'normal') p.set('density', density);
+    if (excluded.size > 0) p.set('excluded', csvSorted(excluded));
+    if (excludedStars.size > 0)
+      p.set('excludedStars', csvSorted(excludedStars, (a, b) => a - b));
+    if (excludedTypes.size > 0) p.set('excludedTypes', csvSorted(excludedTypes));
+    if (selectedId) p.set('selected', selectedId);
+    // Skip the default-collapsed state; serialise anything else (including
+    // an empty set, which means "all groups expanded").
+    if (!sameSet(collapsedGroups, DEFAULT_COLLAPSED_GROUPS)) {
+      p.set('collapsed', csvSorted(collapsedGroups));
+    }
+    if (hiddenTracks.size > 0) p.set('hide', csvSorted(hiddenTracks));
+    const qs = p.toString();
+    const url = window.location.pathname + (qs ? `?${qs}` : '');
+    window.history.replaceState(null, '', url);
+  }, [
+    requestedId,
+    force,
+    mode,
+    density,
+    excluded,
+    excludedStars,
+    excludedTypes,
+    selectedId,
+    collapsedGroups,
+    hiddenTracks,
+  ]);
+
+  const toggleHiddenTrack = (id: TrackToggleId) =>
+    setHiddenTracks((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const filter = useCallback(
     (r: ClinVarRecord) =>
@@ -280,18 +343,18 @@ export function EmbedView() {
         }),
       };
     };
-    const sequenceTracks: TrackOrGroup[] = cdsSequence
-      ? [
-          nucleotideTrack({ id: 'nucleotide', source: cdsSequence }),
-          aaTrack({ id: 'aa', nucleotideSource: cdsSequence }),
-        ]
-      : [];
-    return [
-      scaleTrack({ id: 'scale' }),
-      exonTrack({}),
-      ...sequenceTracks,
-      interProTrack({}),
-      {
+    const out: TrackOrGroup[] = [];
+    if (!hiddenTracks.has('scale')) out.push(scaleTrack({ id: 'scale' }));
+    if (!hiddenTracks.has('exon')) out.push(exonTrack({}));
+    if (!hiddenTracks.has('nucleotide') && cdsSequence) {
+      out.push(nucleotideTrack({ id: 'nucleotide', source: cdsSequence }));
+    }
+    if (!hiddenTracks.has('aa') && cdsSequence) {
+      out.push(aaTrack({ id: 'aa', nucleotideSource: cdsSequence }));
+    }
+    if (!hiddenTracks.has('interpro')) out.push(interProTrack({}));
+    if (!hiddenTracks.has('clinvar')) {
+      out.push({
         kind: 'group',
         id: CLINVAR_GROUP_ID,
         label: 'ClinVar',
@@ -303,9 +366,10 @@ export function EmbedView() {
           source: records,
           filter,
         }),
-      },
-    ];
-  }, [records, filter, filterKey, densityConfig, cdsSequence]);
+      });
+    }
+    return out;
+  }, [records, filter, filterKey, densityConfig, cdsSequence, hiddenTracks]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -432,6 +496,44 @@ export function EmbedView() {
                 }}
               >
                 {d}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {state.kind === 'ready' && (
+        <div
+          data-testid="embed-track-toggle"
+          style={{
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            margin: '8px 0',
+            color: '#475569',
+            fontSize: '0.78rem',
+          }}
+        >
+          <span style={{ opacity: 0.75, minWidth: 80 }}>tracks:</span>
+          {TRACK_TOGGLES.map((t) => {
+            const visible = !hiddenTracks.has(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                data-testid={`embed-track-${t.id}`}
+                data-active={visible}
+                onClick={() => toggleHiddenTrack(t.id)}
+                style={{
+                  padding: '2px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #cbd5e1',
+                  background: visible ? '#0c4a6e' : '#f1f5f9',
+                  color: visible ? '#e0f2fe' : '#94a3b8',
+                  cursor: 'pointer',
+                }}
+              >
+                {t.label}
               </button>
             );
           })}
@@ -856,12 +958,92 @@ function CanonicalBanner({
   );
 }
 
-function readUrlParams(): { requestedId: string | null; force: boolean } {
-  if (typeof window === 'undefined') return { requestedId: null, force: false };
-  const params = new URLSearchParams(window.location.search);
-  const id = params.get('transcript')?.trim();
-  const force = params.get('force') === '1' || params.get('force') === 'true';
-  return { requestedId: id || null, force };
+interface UrlState {
+  requestedId: string | null;
+  force: boolean;
+  mode: ViewMode;
+  density: Density;
+  excludedSigs: ReadonlySet<ClinVarSignificance>;
+  excludedStars: ReadonlySet<StarLevel>;
+  excludedTypes: ReadonlySet<VariantType>;
+  selectedId: string | null;
+  collapsedGroups: ReadonlySet<string>;
+  hiddenTracks: ReadonlySet<TrackToggleId>;
+}
+
+const SIGNIFICANCE_VALUES: ReadonlySet<string> = new Set(SIGNIFICANCE_CHIPS);
+const VARIANT_TYPE_VALUES: ReadonlySet<string> = new Set(VARIANT_TYPES);
+
+function readUrlParams(): UrlState {
+  const fallback: UrlState = {
+    requestedId: null,
+    force: false,
+    mode: 'transcript',
+    density: 'normal',
+    excludedSigs: new Set(),
+    excludedStars: new Set(),
+    excludedTypes: new Set(),
+    selectedId: null,
+    collapsedGroups: DEFAULT_COLLAPSED_GROUPS,
+    hiddenTracks: new Set(),
+  };
+  if (typeof window === 'undefined') return fallback;
+  const p = new URLSearchParams(window.location.search);
+  const csv = (key: string) =>
+    (p.get(key) ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const modeRaw = p.get('mode');
+  const mode: ViewMode =
+    modeRaw === 'genome' || modeRaw === 'protein' || modeRaw === 'transcript'
+      ? modeRaw
+      : fallback.mode;
+  const densityRaw = p.get('density');
+  const density: Density =
+    densityRaw === 'compact' || densityRaw === 'roomy' || densityRaw === 'normal'
+      ? densityRaw
+      : fallback.density;
+  const collapsedRaw = p.get('collapsed');
+  return {
+    requestedId: p.get('transcript')?.trim() || null,
+    force: p.get('force') === '1' || p.get('force') === 'true',
+    mode,
+    density,
+    excludedSigs: new Set(
+      csv('excluded').filter((s) =>
+        SIGNIFICANCE_VALUES.has(s),
+      ) as ClinVarSignificance[],
+    ),
+    excludedStars: new Set(
+      csv('excludedStars')
+        .map((s) => Number(s))
+        .filter((n): n is StarLevel => STAR_LEVELS.includes(n as StarLevel)),
+    ),
+    excludedTypes: new Set(
+      csv('excludedTypes').filter((s) =>
+        VARIANT_TYPE_VALUES.has(s),
+      ) as VariantType[],
+    ),
+    selectedId: p.get('selected') || null,
+    // `collapsed` overrides the default-collapsed set when present (so
+    // `?collapsed=` is "everything open"); absent param keeps the default
+    // (ClinVar group + all per-sig subgroups collapsed).
+    collapsedGroups:
+      collapsedRaw === null
+        ? DEFAULT_COLLAPSED_GROUPS
+        : new Set(csv('collapsed')),
+    hiddenTracks: new Set(
+      csv('hide').filter((s): s is TrackToggleId => TRACK_TOGGLE_IDS.has(s)),
+    ),
+  };
+}
+
+function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+function csvSorted<T>(s: ReadonlySet<T>, cmp?: (a: T, b: T) => number): string {
+  return [...s].sort(cmp).join(',');
 }
 
 function humanSig(s: ClinVarSignificance): string {
