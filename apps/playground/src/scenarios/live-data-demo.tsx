@@ -356,7 +356,11 @@ export function LiveDataDemoScenario() {
         transcript={transcript}
         tracks={tracks}
         defaultMode="transcript"
-        trackHeightBudget={420}
+        // BRCA1's pathogenic stack alone is ~80 rows ≈ 800 px; budget
+        // 420 truncated every sibling sub-group when one was unfolded.
+        // 1600 keeps the unfolded stack + the five folded sibling
+        // summaries all in the figure for the busiest gene we ship.
+        trackHeightBudget={1600}
         collapsedGroupIds={collapsedGroups}
         onCollapsedGroupChange={setCollapsedGroups}
         renderTooltip={renderTooltip}
