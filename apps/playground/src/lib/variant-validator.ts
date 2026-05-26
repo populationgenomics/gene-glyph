@@ -41,8 +41,8 @@ async function getVersionedTranscriptId(transcriptId: string): Promise<string> {
   if (pending) return pending;
   pending = (async () => {
     try {
-      const url = `${ENSEMBL_REST}/lookup/id/${encodeURIComponent(transcriptId)}`;
-      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const url = `${ENSEMBL_REST}/lookup/id/${encodeURIComponent(transcriptId)}?content-type=application/json`;
+      const res = await fetch(url);
       if (!res.ok) return transcriptId;
       const json = (await res.json()) as EnsemblLookupResponse;
       if (typeof json.version === 'number') return `${transcriptId}.${json.version}`;
@@ -179,10 +179,12 @@ async function doResolve(
   // The transcript … is not in the RefSeq data set. Please select
   // Ensembl".
   const url = `${VV_BASE}/VariantValidator/variantvalidator_ensembl/GRCh38/${encoded}/${tx}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
+  // No `Accept: application/json` — VV returns JSON by default, and
+  // the explicit header would force the browser into a CORS preflight
+  // (OPTIONS) which VV's server stalls on, surfacing as a long
+  // "pending" state followed by a 500 in devtools. Same reasoning for
+  // the Ensembl REST lookup above.
+  const res = await fetch(url, { method: 'GET' });
   if (!res.ok) {
     throw new VVError(raw, `VariantValidator HTTP ${res.status}`);
   }
