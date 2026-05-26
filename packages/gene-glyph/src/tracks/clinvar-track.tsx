@@ -46,10 +46,12 @@ export interface ClinVarRecord {
   reviewStatus?: string;
   condition?: string;
   /** Reference allele length in bp. Defaults to 1 (SNV). For deletions
-   *  and other multi-bp variants the renderer extends a horizontal line
-   *  from the marker to `pos + refLen - 1`, indicating the affected
-   *  span. Lane packing sorts by refLen descending so long variants
-   *  take the top rows. */
+   *  and other multi-bp variants the marker anchors at the transcript-5'
+   *  end of the affected range (the HGVS-start) and the renderer extends
+   *  a horizontal line rightward to the transcript-3' end. On minus-
+   *  strand transcripts this means the anchor sits at the CDS coord of
+   *  `pos + refLen - 1`, not `pos`. Lane packing sorts by refLen
+   *  descending so long variants take the top rows. */
   refLen?: number;
   /** Free-form metadata; the playground / host can surface this in tooltips. */
   meta?: Record<string, unknown>;
@@ -116,12 +118,14 @@ export interface PlacedClinVar {
   cPos: number;
   /** Baseline (fit-gene) screen-x within the figure. */
   baselineX: number;
-  /** Baseline screen-x of the variant's reference-allele END
-   *  (`pos + refLen - 1`). Equal to `baselineX` for single-bp variants.
-   *  For multi-bp variants the renderer extends a line from the marker
-   *  to this x. When the variant's end falls in an intron or a different
-   *  exon, this is clamped to the start exon's right edge so the line
-   *  doesn't leak into another exon's CSS-variable-driven group. */
+  /** Baseline screen-x of the variant's transcript-3' end. Equal to
+   *  `baselineX` for single-bp variants. For multi-bp variants the
+   *  renderer extends a line rightward from the marker to this x. The
+   *  marker anchors on the transcript-5' end (HGVS-start), so
+   *  `endBaselineX ≥ baselineX` is invariant regardless of strand. When
+   *  the far end falls in an intron or a different exon, it's clamped
+   *  to the anchor exon's far edge so the line doesn't leak into
+   *  another exon's CSS-variable-driven group. */
   endBaselineX: number;
   /** Live screen-x after pan/zoom; used for clustering. */
   screenX: number;
@@ -199,58 +203,64 @@ export function placeClinVarRecords(
   const placed: PlacedClinVar[] = [];
   const unplaced: ClinVarRecord[] = [];
   for (const r of records) {
-    const cds = mapper.genomicToCds(r.chr, r.pos);
-    if (!cds || cds.offset !== 0) {
+    const startCds = mapper.genomicToCds(r.chr, r.pos);
+    if (!startCds || startCds.offset !== 0) {
       unplaced.push(r);
       continue;
     }
-    const exonHit = mapper.findExonByCds(cds.cPos);
+    // gnomAD ids carry positions on the chromosomal + strand, so on a
+    // minus-strand transcript the variant's *genomic-end* maps to a
+    // LOWER CDS coord than `r.pos`. Project both ends and anchor the
+    // marker on the smaller CDS coord (transcript-5' end of the
+    // variant) — that matches HGVS conventions (c.418_427del anchors
+    // at 418, not 427) and keeps the span line always extending
+    // rightward in figure space.
+    const refLen = Math.max(1, r.refLen ?? 1);
+    let endCpos = startCds.cPos;
+    if (refLen > 1) {
+      const endCds = mapper.genomicToCds(r.chr, r.pos + refLen - 1);
+      if (endCds && endCds.offset === 0) {
+        endCpos = endCds.cPos;
+      } else {
+        // Far end falls in an intron / UTR — clamp to the start exon's
+        // boundary in the variant's transcript direction.
+        const startExonHit = mapper.findExonByCds(startCds.cPos);
+        if (!startExonHit) {
+          unplaced.push(r);
+          continue;
+        }
+        const startExon = mapper.transcript.exons[startExonHit.exonIdx]!;
+        endCpos =
+          mapper.transcript.strand === '+' ? startExon.cdsEnd : startExon.cdsStart;
+      }
+    }
+    const anchorCds = Math.min(startCds.cPos, endCpos);
+    const farCds = Math.max(startCds.cPos, endCpos);
+
+    const exonHit = mapper.findExonByCds(anchorCds);
     if (!exonHit) {
       unplaced.push(r);
       continue;
     }
+    // The line is a within-exon visual extent indicator, not a cross-
+    // exon path — clamp the far end to the anchor exon so the line
+    // can be rendered inside the anchor exon's group transform.
+    const anchorExon = mapper.transcript.exons[exonHit.exonIdx]!;
+    const clampedFar = Math.min(anchorExon.cdsEnd, Math.max(anchorExon.cdsStart, farCds));
+
     // Use the mode-aware Position projection so protein-mode hosts
     // (which expect aa coords on the ruler) still get the records
     // placed at the correct codon centre. The general `toBaselineX` /
     // `toScreen` overloads convert CDS bp → aa internally when the
     // viewport is in protein mode.
-    const startPos = { kind: 'cds' as const, cPos: cds.cPos, offset: 0 };
-    const baselineX = viewport.toBaselineX(startPos);
+    const anchorPos = { kind: 'cds' as const, cPos: anchorCds, offset: 0 };
+    const farPos = { kind: 'cds' as const, cPos: clampedFar, offset: 0 };
+    const baselineX = viewport.toBaselineX(anchorPos);
     if (baselineX === null) {
       unplaced.push(r);
       continue;
     }
-    // End-of-reference for multi-bp variants. Map the variant's last
-    // genomic bp back into the active mode's ruler space and convert
-    // to baseline-x. If the end falls in an intron or extends past the
-    // start exon, clamp to whichever exon boundary the variant is
-    // extending toward — positive-strand transcripts extend toward
-    // higher CDS coords (exonEndCds); negative-strand transcripts
-    // extend toward lower CDS coords (exonStartCds). The line is a
-    // visual extent indicator, not a precise cross-exon path.
-    const refLen = Math.max(1, r.refLen ?? 1);
-    let endBaselineX = baselineX;
-    if (refLen > 1) {
-      const endGenomicPos = r.pos + refLen - 1;
-      const endCds = mapper.genomicToCds(r.chr, endGenomicPos);
-      const exon = mapper.transcript.exons[exonHit.exonIdx]!;
-      const strand = mapper.transcript.strand;
-      const inExon =
-        endCds &&
-        endCds.offset === 0 &&
-        endCds.cPos >= exon.cdsStart &&
-        endCds.cPos <= exon.cdsEnd;
-      const useCds = inExon
-        ? endCds!.cPos
-        : strand === '+'
-          ? exon.cdsEnd
-          : exon.cdsStart;
-      const endPos = { kind: 'cds' as const, cPos: useCds, offset: 0 };
-      const computedEnd = viewport.toBaselineX(endPos);
-      if (computedEnd !== null) {
-        endBaselineX = computedEnd;
-      }
-    }
+    const endBaselineX = viewport.toBaselineX(farPos) ?? baselineX;
     // Records outside the current screen window (toScreen returns
     // null) used to land in `unplaced`. That made the stacked layout
     // re-pack on every pan/zoom — the figure SVG already clips
@@ -259,12 +269,12 @@ export function placeClinVarRecords(
     // with `Infinity` for off-screen records so `clusterClinVar` (which
     // sorts by screen-pixel distance) naturally pushes them past every
     // on-screen cluster and out of the cluster gap window.
-    const liveScreenX = viewport.toScreen(startPos);
+    const liveScreenX = viewport.toScreen(anchorPos);
     const screenX = liveScreenX ?? Infinity;
     placed.push({
       record: r,
       exonIdx: exonHit.exonIdx,
-      cPos: cds.cPos,
+      cPos: anchorCds,
       baselineX,
       endBaselineX,
       screenX,
@@ -372,16 +382,14 @@ export function packStackedClinVar(
       const layoutXStart = viewport.baselineToLayoutX(p.baselineX);
       const layoutXEnd = viewport.baselineToLayoutX(p.endBaselineX);
       const r = encoding.radius?.(p.record) ?? markRadius;
-      // The reference span may extend either side of the marker depending
-      // on transcript strand — pad the smaller side and the larger side
-      // both with the marker radius so packing detects collisions on the
-      // full visual extent.
-      const lo = Math.min(layoutXStart, layoutXEnd);
-      const hi = Math.max(layoutXStart, layoutXEnd);
       return {
         item: p,
-        xStart: lo - r,
-        xEnd: hi + r,
+        xStart: layoutXStart - r,
+        // End of the reference span (right edge of the marker for SNVs, end
+        // of the extension line + marker pad for multi-bp variants).
+        // `placeClinVarRecords` guarantees endBaselineX ≥ baselineX by
+        // anchoring on the transcript-5' end, so layoutXEnd ≥ layoutXStart.
+        xEnd: layoutXEnd + r,
         refLen: Math.max(1, p.record.refLen ?? 1),
       };
     });
@@ -631,9 +639,7 @@ function ClinVarStackedBody({
       const isSelected = interaction.selectedFeatureIds.has(p.record.id);
       const localX = p.baselineX - exon.xStart;
       const localEndX = p.endBaselineX - exon.xStart;
-      // Negative-strand transcripts put the end LEFT of the marker — let
-      // the line draw in either direction (x2 may be negative).
-      const hasSpan = Math.abs(p.endBaselineX - p.baselineX) > 0.5;
+      const hasSpan = p.endBaselineX > p.baselineX + 0.5;
       const cls = [
         'vv-clinvar-mark',
         'vv-clinvar-mark-stacked',
