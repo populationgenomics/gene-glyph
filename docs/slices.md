@@ -254,7 +254,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 **Shipped.**
 ---
 
-### Slice 30 — Segment band track (categorical / boolean colour bands)
+### Slice 30 — Segment band track (categorical / boolean colour bands) — **shipped**
 
 **Motivation:**
 Several of the KIF21A annotations are full-row colour bands keyed by
@@ -377,6 +377,175 @@ Tracer-bullet shape: Slice 34 ships the URL → bare-track render path;
 35 layers selection and the drop-line overlay; 36 routes HGVS through
 VariantValidator; 37 closes the loop with a keyboard-driven entry
 modal.
+
+---
+
+### Slices 38–40 — DECIPHER-aligned variant rendering (tracer-bullet stack)
+
+**Motivation:**
+DECIPHER's variant legend encodes three independent axes on every
+glyph — colour by consequence class (4 buckets), shape by truncating-
+or-not (square / triangle), and fill state by pathogenicity (filled-
+dark / open / filled-grey) — plus a separate Regional Missense
+Constraint strip along the protein. Our current ClinVar render
+re-encodes significance on the glyph, which is redundant with the
+per-significance sub-track decomposition we already ship in EmbedView
+and the live-data scenario; collapsing that redundancy in favour of
+the consequence/truncating axes brings the figure in line with the
+field standard and increases information density per row. DECIPHER's
+fill-state axis is intentionally out of scope — it is already encoded
+by track placement (which significance sub-track a variant lives in),
+so re-encoding it on the glyph would conflict with the existing
+channel rather than add to it.
+
+---
+
+### Slice 38 — `ViewerVariant.consequence` foundation — **shipped**
+
+**Motivation:**
+The 14-value `VariantCategory` enum coarsens VEP's consequence
+vocabulary in a way that loses the LOF-splice / splice-region
+distinction (both collapse to a single `splice` value). Carrying the
+raw VEP term on the variant lets downstream encodings make faithful
+fine-grained colour choices without enum churn.
+
+**In scope:**
+- Add optional `consequence?: string` to `ViewerVariant` in
+  `packages/gene-glyph/src/types.ts` (raw VEP term, e.g.
+  `splice_donor_variant`)
+- `apps/playground/src/lib/gnomad.ts`: pass gnomAD's
+  `major_consequence` through to `ViewerVariant.consequence` wherever
+  a `ViewerVariant` is produced
+- No encoding consumers yet — Slice 39 is the first reader
+
+**Definition of done:**
+- `ViewerVariant.consequence` is populated on every variant produced
+  by the gnomAD adapter that has a non-null `major_consequence`
+- Type-level: existing `ViewerVariant` callers compile unchanged
+- No visual diff — the field is plumbed but unused at render time
+
+---
+
+### Slice 39 — DECIPHER-aligned ClinVar glyph encoding — **shipped**
+
+**Motivation:**
+Inside a per-significance ClinVar sub-track, every glyph today carries
+the same shape and colour (because `defaultClinVarSymbolEncoding`
+re-encodes significance, which is also what selects the sub-track).
+Replacing that with a DECIPHER-aligned encoding turns each sub-track
+into a mini consequence-distribution view.
+
+**In scope:**
+- New `decipherClinVarSymbolEncoding` named export in
+  `packages/gene-glyph/src/symbol-encoding.ts`, alongside the existing
+  `defaultClinVarSymbolEncoding` (kept for callers that still want a
+  single-strip significance-on-glyph render — `clinvar-demo.tsx`
+  scenario)
+- Bucket mapping (colour, from `major_consequence` on
+  `ClinVarRecord.meta`):
+  - **Likely LOF (red):** `stop_gained`, `frameshift_variant`,
+    `splice_donor_variant`, `splice_acceptor_variant`, `start_lost`,
+    `stop_lost`, `transcript_ablation`
+  - **Protein Changing (yellow/olive):** `missense_variant`,
+    `inframe_insertion`, `inframe_deletion`,
+    `protein_altering_variant`
+  - **Splice region (magenta):** `splice_region_variant`,
+    `splice_polypyrimidine_tract_variant`,
+    `splice_donor_5th_base_variant`, `splice_donor_region_variant`
+  - **Synonymous (dark green):** `synonymous_variant`,
+    `stop_retained_variant`, `start_retained_variant`
+  - **Fallback grey:** anything else (UTR, intronic, regulatory,
+    non-coding, …)
+- Four new CSS vars + fallbacks:
+  `--vv-decipher-color-{lof,protein-changing,splice-region,synonymous}`
+- Shape mapping: **square** for `stop_gained` only (DECIPHER: "the
+  location of protein truncating codons"); **`triangle-up`** for
+  everything else, including frameshift (frameshift's position is the
+  indel, not the downstream stop)
+- `lane(r)` returns the consequence bucket id;
+  `laneOrder: ['lof', 'protein-changing', 'splice-region',
+  'synonymous', 'other']` (top-to-bottom severity)
+- Wire-up: `apps/playground/src/scenarios/live-data-demo.tsx` and
+  `apps/playground/src/embed/EmbedView.tsx` swap
+  `defaultClinVarSymbolEncoding` for the new export in the `subgroup`
+  factory. `clinvar-demo.tsx` (single-strip) keeps the existing
+  encoding
+
+**Out of scope:**
+- DECIPHER's fill-state axis (filled-dark / open / filled-grey by
+  pathogenicity) — redundant with our per-significance sub-track
+  decomposition
+- Applying the same encoding to the generic `variantTrack`
+  (`ViewerVariant`) — Slice 38 makes this trivial whenever wanted,
+  but it isn't in this slice's scope
+
+**Definition of done:**
+- A ClinVar sub-track in EmbedView visibly shows the four colour
+  buckets and the square-vs-triangle split at glyph-level
+- Existing `clinvar-track.test.tsx` snapshots / lane-key expectations
+  updated for the new encoding where applicable; the old encoding's
+  tests stay green
+- Unit tests cover the full bucket / shape mapping table including
+  the fallback path
+
+---
+
+### Slice 40 — Regional Missense Constraint via gnomAD GraphQL — **shipped**
+
+**Motivation:**
+DECIPHER's RMC strip shows missense intolerance along the protein
+in five obs/exp bins (plus grey for non-significant). gnomAD's public
+GraphQL exposes the same data on `gene.gnomad_v2_regional_missense_
+constraint`, keyed on the canonical transcript and reported in protein
+coords (`aa_start`/`aa_stop`), which lets us sidestep the GRCh37↔
+GRCh38 build mismatch entirely by ignoring the genomic chr/start/stop.
+
+**Depends on:** Slice 30 (`segmentBandTrack`). RMC is a categorical
+band — six-way palette (`intol-1` … `intol-5` + `not-significant`) —
+so it should ship as a `segmentBandTrack` consumer, not a parallel
+track factory.
+
+**In scope:**
+- gnomAD adapter (`apps/playground/src/lib/gnomad.ts`) gains a
+  `gnomad_v2_regional_missense_constraint { regions { aa_start
+  aa_stop obs_exp p_value } }` field in the gene query
+- `parseAaStart('Lys2009') → 2009` helper handling all 20 three-letter
+  codes (and `Ter` / `Sec` / `Pyl` for completeness)
+- New `rmcDataSource({ geneSymbol })` returns
+  `Array<{ start, end, category }>` in `coordSystem: 'protein'`, where
+  `category` is one of `'intol-1' | 'intol-2' | 'intol-3' | 'intol-4'
+  | 'intol-5' | 'not-significant'` derived from `obs_exp` and
+  `p_value`:
+  - `p_value > 0.001` → `'not-significant'` (grey) — overrides bins
+  - `obs_exp ≤ 0.2` → `intol-1` (red)
+  - `0.2 < obs_exp ≤ 0.4` → `intol-2` (orange)
+  - `0.4 < obs_exp ≤ 0.6` → `intol-3` (gold)
+  - `0.6 < obs_exp ≤ 0.8` → `intol-4` (yellow-green)
+  - `obs_exp > 0.8` → `intol-5` (light green)
+- New playground scenario (and EmbedView toggle) renders the source
+  through `segmentBandTrack` with the six-bin palette. Visible in
+  protein, transcript, and genome modes via the existing CDS↔genomic
+  mapper (the same projection path used by protein-coord ClinVar
+  variants)
+- Empty-state handling: many genes return null regions from gnomAD;
+  the track renders a "No RMC available for this gene" stub rather
+  than an empty strip
+
+**Out of scope:**
+- gnomAD v4 RMC — the v2-only constraint comes from gnomAD; revisit
+  if/when a v4 field appears in the schema
+- Liftover — sidestepped by using `aa_start`/`aa_stop` protein coords
+  directly
+
+**Definition of done:**
+- RMC strip displays for a constraint-rich test gene (e.g. SCN1A)
+  with the five intolerance bins and grey non-significant regions
+- aa_start string parser handles all canonical three-letter codes
+  (unit tests)
+- Bin assignment from (obs_exp, p_value) is fully covered by unit
+  tests including boundary values and the p_value override
+- Genes with no RMC data (e.g. MECP2) render the empty-state stub
+  without console errors
 
 ---
 
