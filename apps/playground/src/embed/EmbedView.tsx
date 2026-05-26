@@ -868,20 +868,35 @@ export function EmbedView() {
               );
             }
             // Render track labels for any track that supplied one
-            // (currently the user-variants track). Aligned with the
-            // chevron text so the gutter reads as one column.
+            // (currently the user-variants track). Mimic the chevron
+            // group layout — same flex structure, same icon-column
+            // width, same label weight — so the text x-aligns with
+            // InterPro / ClinVar even though there's no disclosure
+            // toggle to render. The icon slot is visibility-hidden
+            // rather than display-none so the column still occupies
+            // its width.
             if (!item.label) return null;
             return (
               <span
                 style={{
                   alignSelf: 'flex-start',
-                  paddingTop: 1,
-                  paddingLeft: item.depth * 14 + 18,
-                  fontStyle: 'italic',
-                  color: '#475569',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '2px 6px 2px 4px',
+                  paddingLeft: 4 + item.depth * 14,
                 }}
               >
-                {item.label}
+                <span
+                  aria-hidden
+                  style={{
+                    display: 'inline-flex',
+                    width: 12,
+                    height: 12,
+                    visibility: 'hidden',
+                  }}
+                />
+                <span style={{ fontWeight: 600 }}>{item.label}</span>
               </span>
             );
           }}
