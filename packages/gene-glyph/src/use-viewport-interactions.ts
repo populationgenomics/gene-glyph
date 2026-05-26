@@ -677,8 +677,6 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const key = e.key;
-      const [lo, hi] = viewport.range;
-      const len = hi - lo;
       switch (key) {
         case '+':
         case '=':
@@ -697,14 +695,16 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         case 'ArrowLeft':
         case 'a':
         case 'A':
+          // Pan via display-offset shift (same path as mouse-drag pan) so
+          // tracks don't re-render — only the figure's display offset moves.
           e.preventDefault();
-          applyRange([lo - len * KEYBOARD_PAN_STEP, hi - len * KEYBOARD_PAN_STEP], 'keyboard');
+          panByPx(-viewport.width * KEYBOARD_PAN_STEP, viewport.width / 2, 'keyboard');
           return;
         case 'ArrowRight':
         case 'd':
         case 'D':
           e.preventDefault();
-          applyRange([lo + len * KEYBOARD_PAN_STEP, hi + len * KEYBOARD_PAN_STEP], 'keyboard');
+          panByPx(viewport.width * KEYBOARD_PAN_STEP, viewport.width / 2, 'keyboard');
           return;
         case '1':
           e.preventDefault();
@@ -723,7 +723,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
           return;
       }
     },
-    [viewport, applyRange, zoomAtX],
+    [viewport, applyRange, panByPx, zoomAtX],
   );
 
   const onContextMenu = useCallback(
