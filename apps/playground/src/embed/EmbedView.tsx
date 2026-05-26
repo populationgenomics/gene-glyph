@@ -155,21 +155,59 @@ export function EmbedView() {
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
     initial.hiddenTracks,
   );
-  // Slice 34: user-supplied variants from `?variants=`. The figure
-  // renders these as purple crosses between the exon and InterPro
-  // tracks; unparseable entries surface in the figure footer.
-  const [userVariants] = useState<readonly ParsedUserVariant[]>(initial.userVariants);
-  const [userVariantErrors, setUserVariantErrors] = useState<readonly string[]>(
-    initial.userVariantErrors,
-  );
-  const [userVariantsRaw] = useState<string>(initial.userVariantsRaw);
+  // Slice 34 / 37: the raw `?variants=` string is the source of truth
+  // for the user-variant track. Slice 37's modal mutates this through
+  // `setUserVariantsRaw`; everything downstream re-derives.
+  const [userVariantsRaw, setUserVariantsRaw] = useState<string>(initial.userVariantsRaw);
   // Slice 36: HGVS tokens get resolved through VariantValidator after
   // the local parser hands them off. `hgvsResolved` collects the
-  // successful resolutions; `hgvsPending` is the working count for
-  // the in-flight "resolving via VariantValidator…" banner.
-  const [hgvsTokens] = useState<readonly string[]>(initial.userVariantHgvsTokens);
+  // successful resolutions; `hgvsErrors` carries network failures;
+  // `hgvsPending` is the working count for the in-flight
+  // "Resolving via VariantValidator…" banner.
   const [hgvsResolved, setHgvsResolved] = useState<readonly ParsedUserVariant[]>([]);
-  const [hgvsPending, setHgvsPending] = useState<number>(initial.userVariantHgvsTokens.length);
+  const [hgvsErrors, setHgvsErrors] = useState<readonly string[]>([]);
+  const [hgvsPending, setHgvsPending] = useState<number>(0);
+  const { userVariants, hgvsTokens, parseErrors } = useMemo(() => {
+    if (!userVariantsRaw) {
+      return {
+        userVariants: [] as readonly ParsedUserVariant[],
+        hgvsTokens: [] as readonly string[],
+        parseErrors: [] as readonly string[],
+      };
+    }
+    const r = parseUserVariants(userVariantsRaw);
+    return {
+      userVariants: r.parsed as readonly ParsedUserVariant[],
+      hgvsTokens: r.hgvsTokens as readonly string[],
+      parseErrors: r.errors as readonly string[],
+    };
+  }, [userVariantsRaw]);
+  const userVariantErrors = useMemo(
+    () => [...parseErrors, ...hgvsErrors],
+    [parseErrors, hgvsErrors],
+  );
+  // Slice 37: variant-entry modal. Open on `V` keypress or via the
+  // toolbar `+` button; submit rewrites `userVariantsRaw` so the URL
+  // round-trip + figure update happen through the existing
+  // single-source-of-truth flow.
+  const [variantsModalOpen, setVariantsModalOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'v' && e.key !== 'V') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't intercept the keystroke when the focus already sits in
+      // an editable surface — the user is typing into the modal's
+      // textarea (or one of the filter chips) and `v` is a literal
+      // character, not a hotkey.
+      const target = e.target as Element | null;
+      if (target && isEditableElement(target)) return;
+      e.preventDefault();
+      setVariantsModalOpen((open) => !open);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -239,8 +277,10 @@ export function EmbedView() {
   // loads with the same `?variants=` hit the cache and fire no
   // network call. Cache key = lowercased raw token.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHgvsErrors([]);
     if (!requestedId || hgvsTokens.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHgvsResolved([]);
       setHgvsPending(0);
       return;
     }
@@ -287,9 +327,7 @@ export function EmbedView() {
           }
         }
         setHgvsResolved((prev) => mergeResolved(prev, resolved));
-        if (errors.length > 0) {
-          setUserVariantErrors((prev) => [...prev, ...errors]);
-        }
+        if (errors.length > 0) setHgvsErrors(errors);
         setHgvsPending(0);
       })
       .catch(() => {
@@ -297,7 +335,7 @@ export function EmbedView() {
         // Network-level failure (VV down, CORS rejection, …) — every
         // un-cached token falls into the parse-error footer alongside
         // any pre-existing failures.
-        setUserVariantErrors((prev) => [...prev, ...toFetch]);
+        setHgvsErrors(toFetch);
         setHgvsPending(0);
       });
     return () => controller.abort();
@@ -629,6 +667,7 @@ export function EmbedView() {
           onDensityChange={setDensity}
           hiddenTracks={hiddenTracks}
           onToggleTrack={toggleHiddenTrack}
+          onOpenVariantsModal={() => setVariantsModalOpen(true)}
         />
       )}
       <StatusBar state={state} requestedId={requestedId} />
@@ -846,7 +885,215 @@ export function EmbedView() {
         parsedCount={allUserVariants.length}
         hgvsPending={hgvsPending}
       />
+      {variantsModalOpen && (
+        <VariantsEntryModal
+          initial={userVariantsRaw}
+          onSubmit={(next) => {
+            setUserVariantsRaw(next.trim());
+            setVariantsModalOpen(false);
+          }}
+          onClose={() => setVariantsModalOpen(false)}
+        />
+      )}
     </main>
+  );
+}
+
+function isEditableElement(el: Element): boolean {
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (el instanceof HTMLInputElement) {
+    // Buttons / checkboxes / radio aren't text-editable; only let the
+    // real text inputs swallow `v`.
+    const t = el.type.toLowerCase();
+    return (
+      t === 'text' ||
+      t === 'search' ||
+      t === 'email' ||
+      t === 'url' ||
+      t === 'password' ||
+      t === 'number' ||
+      t === 'tel'
+    );
+  }
+  if ((el as HTMLElement).isContentEditable) return true;
+  return false;
+}
+
+function VariantsEntryModal({
+  initial,
+  onSubmit,
+  onClose,
+}: {
+  initial: string;
+  onSubmit: (next: string) => void;
+  onClose: () => void;
+}) {
+  // Open with the current `?variants=` content, one per line so a
+  // multi-variant URL doesn't read as one long comma-soup line.
+  const initialNewlineSeparated = useMemo(
+    () => initial.split(/[,\n]/).map((s) => s.trim()).filter(Boolean).join('\n'),
+    [initial],
+  );
+  const [value, setValue] = useState(initialNewlineSeparated);
+  const inlineErrors = useMemo(() => {
+    if (!value.trim()) return [];
+    return parseUserVariants(value).errors;
+  }, [value]);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    // Auto-focus the textarea on open so `v → start typing` flows
+    // straight through without a tab.
+    textareaRef.current?.focus();
+  }, []);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      data-testid="embed-variants-modal-backdrop"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15, 23, 42, 0.45)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: '14vh',
+        zIndex: 100,
+      }}
+    >
+      <div
+        data-testid="embed-variants-modal"
+        role="dialog"
+        aria-labelledby="embed-variants-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 480,
+          maxWidth: 'calc(100vw - 32px)',
+          background: '#ffffff',
+          borderRadius: 8,
+          boxShadow: '0 12px 32px rgba(15, 23, 42, 0.25)',
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          color: '#1e293b',
+        }}
+      >
+        <header
+          id="embed-variants-modal-title"
+          style={{
+            fontSize: '0.95rem',
+            fontWeight: 600,
+            color: '#0f172a',
+          }}
+        >
+          Add variants
+        </header>
+        <textarea
+          ref={textareaRef}
+          data-testid="embed-variants-modal-textarea"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              onSubmit(value);
+            }
+          }}
+          placeholder={'17:7674212C>T\n17-7675236-ACTG-A\nc.524G>A'}
+          rows={Math.max(3, Math.min(8, value.split('\n').length + 1))}
+          style={{
+            width: '100%',
+            font: '0.85rem ui-monospace, SFMono-Regular, Menlo, monospace',
+            padding: 8,
+            border: '1px solid #cbd5e1',
+            borderRadius: 4,
+            resize: 'vertical',
+            minHeight: 80,
+          }}
+        />
+        {inlineErrors.length > 0 && (
+          <div
+            data-testid="embed-variants-modal-errors"
+            style={{
+              fontSize: '0.78rem',
+              color: '#b91c1c',
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: 4,
+              padding: '4px 8px',
+            }}
+          >
+            {inlineErrors.length} unparseable entr{inlineErrors.length === 1 ? 'y' : 'ies'}:{' '}
+            {inlineErrors.map((e, i) => (
+              <code
+                key={`${e}-${i}`}
+                style={{ marginRight: 6, background: '#fee2e2', padding: '0 4px' }}
+              >
+                {e}
+              </code>
+            ))}
+          </div>
+        )}
+        <footer
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: '0.75rem',
+            color: '#475569',
+          }}
+        >
+          <span>
+            ⌘/Ctrl+Enter to submit · Esc to cancel
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              data-testid="embed-variants-modal-clear"
+              onClick={() => setValue('')}
+              style={{
+                padding: '4px 10px',
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: 4,
+                color: '#475569',
+                cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              data-testid="embed-variants-modal-submit"
+              onClick={() => onSubmit(value)}
+              style={{
+                padding: '4px 10px',
+                background: '#7c3aed',
+                border: '1px solid #6d28d9',
+                borderRadius: 4,
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
   );
 }
 
@@ -940,6 +1187,7 @@ function Toolbar({
   onDensityChange,
   hiddenTracks,
   onToggleTrack,
+  onOpenVariantsModal,
 }: {
   mode: ViewMode;
   onModeChange: (m: ViewMode) => void;
@@ -947,6 +1195,7 @@ function Toolbar({
   onDensityChange: (d: Density) => void;
   hiddenTracks: ReadonlySet<TrackToggleId>;
   onToggleTrack: (id: TrackToggleId) => void;
+  onOpenVariantsModal: () => void;
 }) {
   return (
     <nav
@@ -1012,7 +1261,27 @@ function Toolbar({
           );
         })}
       </ToolbarGroup>
+      <ToolbarDivider />
+      <ToolbarGroup label="user variants">
+        <ToolbarButton
+          active={false}
+          onClick={onOpenVariantsModal}
+          label="Add variants (V)"
+          testId="embed-open-variants"
+        >
+          <PlusIcon />
+        </ToolbarButton>
+      </ToolbarGroup>
     </nav>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg {...SVG_BASE}>
+      <line x1="8" y1="3" x2="8" y2="13" />
+      <line x1="3" y1="8" x2="13" y2="8" />
+    </svg>
   );
 }
 
