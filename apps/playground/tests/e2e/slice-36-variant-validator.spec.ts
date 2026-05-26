@@ -32,6 +32,16 @@ async function stubBaseNetwork(page: Page) {
     if (url.includes('/sequence/')) {
       return route.fulfill({ status: 200, contentType: 'text/plain', body: 'A'.repeat(101) });
     }
+    if (url.includes('/lookup/id/')) {
+      // VV requires `<accession>.<version>:` on HGVS forms; we look
+      // the version up via Ensembl REST. Stub a fixed version so the
+      // VV URL assertions are deterministic.
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ version: 7 }),
+      });
+    }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 }
@@ -139,6 +149,7 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
     ).toHaveCount(2);
     // Only the HGVS goes through VV.
     expect(vvUrls.length).toBe(1);
-    expect(vvUrls[0]).toContain(encodeURIComponent('ENST_TEST:c.524G>A'));
+    // Includes the version suffix fetched from Ensembl REST.
+    expect(vvUrls[0]).toContain(encodeURIComponent('ENST_TEST.7:c.524G>A'));
   });
 });

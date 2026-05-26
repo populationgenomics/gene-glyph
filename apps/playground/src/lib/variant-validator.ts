@@ -17,14 +17,48 @@
  *  parse-error footer. */
 
 const VV_BASE = 'https://rest.variantvalidator.org';
+const ENSEMBL_REST = 'https://rest.ensembl.org';
 
 const ACCESSION_PREFIX_RE = /^[A-Za-z][A-Za-z0-9_.]*:/;
 const TRANSCRIPT_RELATIVE_PREFIX_RE = /^(?:c|n|r|p)\./i;
+const HAS_VERSION_RE = /\.\d+$/;
 
-function ensureAccession(variant: string, transcriptId: string): string {
+/** Module-level cache for `ENST… → ENST….version` lookups. VV insists
+ *  on a version suffix on Ensembl/RefSeq accessions
+ *  ("RefSeq variant accession numbers MUST include a version number"),
+ *  but the embed's URL parameter only carries the bare id. We fetch
+ *  the current version once per transcript via Ensembl REST and reuse
+ *  it for every HGVS resolution on that transcript. */
+const versionCache = new Map<string, Promise<string>>();
+
+interface EnsemblLookupResponse {
+  version?: number;
+}
+
+async function getVersionedTranscriptId(transcriptId: string): Promise<string> {
+  if (HAS_VERSION_RE.test(transcriptId)) return transcriptId;
+  let pending = versionCache.get(transcriptId);
+  if (pending) return pending;
+  pending = (async () => {
+    try {
+      const url = `${ENSEMBL_REST}/lookup/id/${encodeURIComponent(transcriptId)}`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) return transcriptId;
+      const json = (await res.json()) as EnsemblLookupResponse;
+      if (typeof json.version === 'number') return `${transcriptId}.${json.version}`;
+      return transcriptId;
+    } catch {
+      return transcriptId;
+    }
+  })();
+  versionCache.set(transcriptId, pending);
+  return pending;
+}
+
+function ensureAccession(variant: string, accession: string): string {
   if (ACCESSION_PREFIX_RE.test(variant)) return variant;
   if (TRANSCRIPT_RELATIVE_PREFIX_RE.test(variant)) {
-    return `${transcriptId}:${variant}`;
+    return `${accession}:${variant}`;
   }
   return variant;
 }
@@ -124,18 +158,21 @@ async function doResolve(
   transcriptId: string,
 ): Promise<VVResolvedVariant> {
   // VV requires HGVS forms to carry the reference accession before the
-  // type marker — `<accession>:c.341T>A`, not bare `c.341T>A`. Without
-  // it VV emits "VariantSyntaxError: Unable to identify a colon (:)".
-  // Transcript-relative forms (`c.` / `n.` / `r.`) get prefixed with
-  // the requested transcript id here; protein (`p.`) likewise rides
-  // the transcript. Genomic (`g.`) wants a chromosome accession we
-  // don't have at this layer, so we leave those alone and let VV
-  // reject if the user didn't supply one. The `/transcripts` path
-  // segment at the end of the URL is just a filter on the response,
-  // not the accession for the variant.
-  const variantWithAccession = ensureAccession(trimmed, transcriptId);
+  // type marker — `<accession>.<version>:c.341T>A`, not bare
+  // `c.341T>A`. Without it VV emits "VariantSyntaxError: Unable to
+  // identify a colon (:)"; without the `.version` suffix it emits
+  // "RefSeq variant accession numbers MUST include a version number".
+  // Transcript-relative forms (`c.` / `n.` / `r.` / `p.`) get prefixed
+  // with the versioned transcript id (looked up from Ensembl REST and
+  // cached). Genomic (`g.`) wants a chromosome accession we don't have
+  // at this layer, so we leave those alone and let VV reject if the
+  // user didn't supply one. The `/transcripts` path segment at the
+  // end of the URL is just a filter on the response, not the
+  // accession source for the variant.
+  const versionedTx = await getVersionedTranscriptId(transcriptId);
+  const variantWithAccession = ensureAccession(trimmed, versionedTx);
   const encoded = encodeURIComponent(variantWithAccession);
-  const tx = encodeURIComponent(transcriptId);
+  const tx = encodeURIComponent(versionedTx);
   const url = `${VV_BASE}/VariantValidator/variantvalidator/GRCh38/${encoded}/${tx}`;
   const res = await fetch(url, {
     method: 'GET',
