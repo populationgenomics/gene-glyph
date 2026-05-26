@@ -456,7 +456,7 @@ function GeneGlyphInner(
     onFeatureClick,
     renderTooltip,
     onTrackStateChange,
-    loadDebounceMs = typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.NODE_ENV === 'test' ? 0 : 120,
+    loadDebounceMs = typeof globalThis !== 'undefined' && (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === 'test' ? 0 : 120,
     interactionMode = 'standard',
     viewportRange,
     defaultViewportRange,

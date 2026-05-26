@@ -153,6 +153,9 @@ export function EmbedView() {
   useEffect(() => {
     if (!requestedId) return;
     const controller = new AbortController();
+    // Reset to loading on dep change — the alternative (derive loading
+    // from a ref) doesn't pay for the indirection here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState({ kind: 'loading', transcriptId: requestedId });
     fetchTranscriptData(requestedId, controller.signal, { force })
       .then((data) => {
@@ -174,6 +177,7 @@ export function EmbedView() {
   useEffect(() => {
     if (!requestedId) return;
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProtein(null);
     fetchProteinAnnotations(requestedId, controller.signal)
       .then((p) => {
@@ -193,6 +197,7 @@ export function EmbedView() {
   useEffect(() => {
     if (!requestedId) return;
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCdsSequence(null);
     fetchCdsSequence(requestedId, controller.signal)
       .then((s) => {

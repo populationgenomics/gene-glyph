@@ -24,6 +24,9 @@ function ViewportDebug({ refForward }: { refForward: React.RefObject<GeneGlyphRe
   useEffect(() => {
     const v = refForward.current;
     if (!v) return;
+    // Snapshot before subscribing — getViewportInfo returns a fresh
+    // object so useSyncExternalStore would churn on every render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInfo(v.getViewportInfo());
     return v.subscribe(() => {
       const live = refForward.current;

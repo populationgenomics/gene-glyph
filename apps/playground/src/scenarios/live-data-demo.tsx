@@ -105,6 +105,9 @@ export function LiveDataDemoScenario() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // Reset to loading on dep change — the alternative (derive loading
+    // from a ref) doesn't pay for the indirection here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState({ kind: 'loading' });
     setLastClicked(null);
     fetchGeneData(gene, controller.signal)
