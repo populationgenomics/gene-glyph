@@ -418,16 +418,25 @@ function gutterItemsFor(items: LayoutItem[]): GutterItem[] {
   const out: GutterItem[] = [];
   const walk = (entries: LayoutItem[], depth: number) => {
     for (const item of entries) {
-      out.push({
-        kind: item.kind,
-        id: item.id,
-        label: item.label,
-        rect: item.rect,
-        didTruncate: item.didTruncate,
-        droppedCount: item.droppedCount,
-        depth,
-        headerHeight: item.headerHeight,
-      });
+      // Skip zero-height items — a data-dependent track that
+      // resolved to no rows (e.g. an InterPro sub-track for an
+      // entry-type with no domains in this transcript) shouldn't
+      // emit a phantom label that crashes into the next track's
+      // label. The layout engine already drops it from the figure;
+      // the gutter follows suit.
+      const px = item.rect.yBottom - item.rect.yTop;
+      if (px > 0) {
+        out.push({
+          kind: item.kind,
+          id: item.id,
+          label: item.label,
+          rect: item.rect,
+          didTruncate: item.didTruncate,
+          droppedCount: item.droppedCount,
+          depth,
+          headerHeight: item.headerHeight,
+        });
+      }
       if (item.kind === 'group' && item.children) {
         walk(item.children, depth + 1);
       }
