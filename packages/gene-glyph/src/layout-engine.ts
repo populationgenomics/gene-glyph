@@ -202,12 +202,17 @@ function layoutGroup(
 
   // Reserve a label row at the top of the group's extent so the gutter
   // can render the chevron + label above the first child without
-  // overlapping it. Only takes effect when the group is *expanded*: a
-  // folded group's body is a single-row summary (or nothing), and
-  // pushing the summary down by the header would leave dead space
-  // above it instead of letting the label + strip share the row.
+  // overlapping it. When the group is folded WITH a summary track, the
+  // summary's row stands in for the header (label + strip share one
+  // row), so we skip the header reservation to avoid leaving dead space
+  // above the summary. When the group is folded WITHOUT a summary
+  // track, the header row is the only thing that keeps the chevron
+  // reachable — without it, `gutterItemsFor` would drop the
+  // zero-height group from the gutter and there'd be no way to expand
+  // it again.
   const headerHeight = Math.max(0, group.headerHeight ?? 0);
-  const headerConsumed = collapsed ? 0 : Math.min(headerHeight, budget);
+  const headerConsumed =
+    collapsed && group.summaryTrack ? 0 : Math.min(headerHeight, budget);
   const remainingBudget = Math.max(0, budget - headerConsumed);
   const bodyYStart = yTop + headerConsumed;
 
