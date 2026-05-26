@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   DefaultTrackChevron,
   GeneGlyph,
+  aaTrack,
   clinVarSummaryTrack,
   clinVarTrack,
   defaultClinVarSymbolEncoding,
   exonTrack,
   interProTrack,
+  nucleotideTrack,
   scaleTrack,
 } from '@populationgenomics/gene-glyph';
 import type {
@@ -22,6 +24,7 @@ import type {
 } from '@populationgenomics/gene-glyph';
 import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
 import { fetchProteinAnnotations } from '../lib/protein.js';
+import { fetchCdsSequence } from '../lib/sequence.js';
 
 /**
  * Single-figure embed view. Reads `?transcript=ENST…` from the URL,
@@ -124,6 +127,7 @@ export function EmbedView() {
       ]),
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
+  const [cdsSequence, setCdsSequence] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('transcript');
   const [density, setDensity] = useState<'compact' | 'normal' | 'roomy'>('normal');
   const viewerRef = useRef<GeneGlyphRef | null>(null);
@@ -160,6 +164,25 @@ export function EmbedView() {
       })
       .catch(() => {
         // Swallow — the figure still renders without protein annotations.
+      });
+    return () => controller.abort();
+  }, [requestedId]);
+
+  // Fetch the CDS nucleotide sequence in parallel. Both the nucleotide
+  // track and the aa track (via translation) consume this; both stay
+  // height-0 until live zoom is high enough to render per-bp / per-aa
+  // glyphs, so the upfront fetch only pays off when the user zooms in.
+  useEffect(() => {
+    if (!requestedId) return;
+    const controller = new AbortController();
+    setCdsSequence(null);
+    fetchCdsSequence(requestedId, controller.signal)
+      .then((s) => {
+        if (controller.signal.aborted) return;
+        setCdsSequence(s);
+      })
+      .catch(() => {
+        // Swallow — sequence tracks just stay collapsed.
       });
     return () => controller.abort();
   }, [requestedId]);
@@ -257,9 +280,16 @@ export function EmbedView() {
         }),
       };
     };
+    const sequenceTracks: TrackOrGroup[] = cdsSequence
+      ? [
+          nucleotideTrack({ id: 'nucleotide', source: cdsSequence }),
+          aaTrack({ id: 'aa', nucleotideSource: cdsSequence }),
+        ]
+      : [];
     return [
       scaleTrack({ id: 'scale' }),
       exonTrack({}),
+      ...sequenceTracks,
       interProTrack({}),
       {
         kind: 'group',
@@ -275,7 +305,7 @@ export function EmbedView() {
         }),
       },
     ];
-  }, [records, filter, filterKey, densityConfig]);
+  }, [records, filter, filterKey, densityConfig, cdsSequence]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
