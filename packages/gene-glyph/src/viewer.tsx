@@ -1517,7 +1517,6 @@ function GeneGlyphInner(
           onPointerDown={interactions.onPointerDown}
           onContextMenu={interactions.onContextMenu}
         >
-          <title>{aria}</title>
           {flatTracks.map((t) => {
             const args = trackRenderArgsFor(t);
             if (!args) return null;
