@@ -5,8 +5,10 @@ import {
   aaTrack,
   clinVarSummaryTrack,
   clinVarTrack,
+  decipherBucketColor,
   decipherClinVarSymbolEncoding,
   exonTrack,
+  glyphPath,
   interProTrack,
   nucleotideTrack,
   fnv1a32Hex,
@@ -15,6 +17,7 @@ import {
   scaleTrack,
   segmentBandTrack,
   userVariantTrack,
+  type DecipherConsequenceBucket,
   type RmcCategory,
 } from '@populationgenomics/gene-glyph';
 import type {
@@ -753,8 +756,12 @@ export function EmbedView() {
             background: '#f8fafc',
             border: '1px solid #cbd5e1',
             borderRadius: 6,
+            display: 'flex',
+            gap: 16,
+            alignItems: 'flex-start',
           }}
         >
+          <div style={{ flex: 1, minWidth: 0 }}>
           <header
             style={{
               fontSize: '0.78rem',
@@ -897,6 +904,8 @@ export function EmbedView() {
               );
             })}
           </div>
+          </div>
+          <DecipherLegend />
         </section>
       )}
       <GeneGlyph
@@ -1036,6 +1045,113 @@ function isEditableElement(el: Element): boolean {
   }
   if ((el as HTMLElement).isContentEditable) return true;
   return false;
+}
+
+/** Right-side legend that decodes the DECIPHER-aligned glyph encoding
+ *  used by every per-significance ClinVar sub-track. Sample shapes are
+ *  drawn through the same `glyphPath` the figure uses so a palette
+ *  change in `decipherClinVarSymbolEncoding` carries through here
+ *  without a separate update. */
+const DECIPHER_BUCKETS: readonly DecipherConsequenceBucket[] = [
+  'lof',
+  'protein-changing',
+  'splice-region',
+  'synonymous',
+  'other',
+];
+
+function DecipherLegend() {
+  const labels = decipherClinVarSymbolEncoding.laneLabels!;
+  return (
+    <aside
+      data-testid="embed-decipher-legend"
+      aria-label="ClinVar glyph encoding"
+      style={{
+        flexShrink: 0,
+        width: 200,
+        padding: '8px 10px',
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 6,
+        color: '#475569',
+        fontSize: '0.72rem',
+        lineHeight: 1.35,
+      }}
+    >
+      <header
+        style={{
+          fontSize: '0.74rem',
+          fontWeight: 600,
+          marginBottom: 6,
+          color: '#334155',
+        }}
+      >
+        Glyph encoding
+      </header>
+      <ul
+        style={{
+          listStyle: 'none',
+          padding: 0,
+          margin: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3,
+        }}
+      >
+        {DECIPHER_BUCKETS.map((bucket) => (
+          <li
+            key={bucket}
+            data-vv-legend-bucket={bucket}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <LegendGlyph shape="triangle-up" fill={decipherBucketColor(bucket)} />
+            <span>{labels[bucket]}</span>
+          </li>
+        ))}
+      </ul>
+      <footer
+        style={{
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: '1px dashed #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          color: '#64748b',
+          fontStyle: 'italic',
+        }}
+      >
+        <LegendGlyph shape="square" fill={decipherBucketColor('lof')} />
+        <span>Stop gained</span>
+      </footer>
+    </aside>
+  );
+}
+
+function LegendGlyph({
+  shape,
+  fill,
+}: {
+  shape: 'triangle-up' | 'square';
+  fill: string;
+}) {
+  const r = 5;
+  return (
+    <svg
+      width={14}
+      height={14}
+      viewBox="-7 -7 14 14"
+      aria-hidden
+      style={{ flexShrink: 0 }}
+    >
+      <path
+        d={glyphPath(shape, r)}
+        fill={fill}
+        stroke="#ffffff"
+        strokeWidth={1}
+      />
+    </svg>
+  );
 }
 
 function VariantsEntryModal({
