@@ -139,6 +139,6 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
     ).toHaveCount(2);
     // Only the HGVS goes through VV.
     expect(vvUrls.length).toBe(1);
-    expect(vvUrls[0]).toContain(encodeURIComponent('c.524G>A'));
+    expect(vvUrls[0]).toContain(encodeURIComponent('ENST_TEST:c.524G>A'));
   });
 });

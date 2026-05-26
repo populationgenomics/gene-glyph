@@ -18,6 +18,17 @@
 
 const VV_BASE = 'https://rest.variantvalidator.org';
 
+const ACCESSION_PREFIX_RE = /^[A-Za-z][A-Za-z0-9_.]*:/;
+const TRANSCRIPT_RELATIVE_PREFIX_RE = /^(?:c|n|r|p)\./i;
+
+function ensureAccession(variant: string, transcriptId: string): string {
+  if (ACCESSION_PREFIX_RE.test(variant)) return variant;
+  if (TRANSCRIPT_RELATIVE_PREFIX_RE.test(variant)) {
+    return `${transcriptId}:${variant}`;
+  }
+  return variant;
+}
+
 export interface VVResolvedVariant {
   /** Raw input string as the caller supplied it. */
   raw: string;
@@ -112,7 +123,18 @@ async function doResolve(
   trimmed: string,
   transcriptId: string,
 ): Promise<VVResolvedVariant> {
-  const encoded = encodeURIComponent(trimmed);
+  // VV requires HGVS forms to carry the reference accession before the
+  // type marker — `<accession>:c.341T>A`, not bare `c.341T>A`. Without
+  // it VV emits "VariantSyntaxError: Unable to identify a colon (:)".
+  // Transcript-relative forms (`c.` / `n.` / `r.`) get prefixed with
+  // the requested transcript id here; protein (`p.`) likewise rides
+  // the transcript. Genomic (`g.`) wants a chromosome accession we
+  // don't have at this layer, so we leave those alone and let VV
+  // reject if the user didn't supply one. The `/transcripts` path
+  // segment at the end of the URL is just a filter on the response,
+  // not the accession for the variant.
+  const variantWithAccession = ensureAccession(trimmed, transcriptId);
+  const encoded = encodeURIComponent(variantWithAccession);
   const tx = encodeURIComponent(transcriptId);
   const url = `${VV_BASE}/VariantValidator/variantvalidator/GRCh38/${encoded}/${tx}`;
   const res = await fetch(url, {
