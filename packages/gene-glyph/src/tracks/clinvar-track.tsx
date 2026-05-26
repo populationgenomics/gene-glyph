@@ -223,21 +223,31 @@ export function placeClinVarRecords(
     // End-of-reference for multi-bp variants. Map the variant's last
     // genomic bp back into the active mode's ruler space and convert
     // to baseline-x. If the end falls in an intron or extends past the
-    // start exon, clamp to the start exon's right edge — the line is a
+    // start exon, clamp to whichever exon boundary the variant is
+    // extending toward — positive-strand transcripts extend toward
+    // higher CDS coords (exonEndCds); negative-strand transcripts
+    // extend toward lower CDS coords (exonStartCds). The line is a
     // visual extent indicator, not a precise cross-exon path.
     const refLen = Math.max(1, r.refLen ?? 1);
     let endBaselineX = baselineX;
     if (refLen > 1) {
       const endGenomicPos = r.pos + refLen - 1;
       const endCds = mapper.genomicToCds(r.chr, endGenomicPos);
-      const exonEndCds = mapper.transcript.exons[exonHit.exonIdx]!.cdsEnd;
-      const useCds =
-        endCds && endCds.offset === 0 && endCds.cPos <= exonEndCds
-          ? endCds.cPos
-          : exonEndCds;
+      const exon = mapper.transcript.exons[exonHit.exonIdx]!;
+      const strand = mapper.transcript.strand;
+      const inExon =
+        endCds &&
+        endCds.offset === 0 &&
+        endCds.cPos >= exon.cdsStart &&
+        endCds.cPos <= exon.cdsEnd;
+      const useCds = inExon
+        ? endCds!.cPos
+        : strand === '+'
+          ? exon.cdsEnd
+          : exon.cdsStart;
       const endPos = { kind: 'cds' as const, cPos: useCds, offset: 0 };
       const computedEnd = viewport.toBaselineX(endPos);
-      if (computedEnd !== null && computedEnd > baselineX) {
+      if (computedEnd !== null) {
         endBaselineX = computedEnd;
       }
     }
@@ -362,12 +372,16 @@ export function packStackedClinVar(
       const layoutXStart = viewport.baselineToLayoutX(p.baselineX);
       const layoutXEnd = viewport.baselineToLayoutX(p.endBaselineX);
       const r = encoding.radius?.(p.record) ?? markRadius;
+      // The reference span may extend either side of the marker depending
+      // on transcript strand — pad the smaller side and the larger side
+      // both with the marker radius so packing detects collisions on the
+      // full visual extent.
+      const lo = Math.min(layoutXStart, layoutXEnd);
+      const hi = Math.max(layoutXStart, layoutXEnd);
       return {
         item: p,
-        xStart: layoutXStart - r,
-        // End of the reference span (right edge of the marker for SNVs, end
-        // of the extension line + marker pad for multi-bp variants).
-        xEnd: Math.max(layoutXEnd, layoutXStart) + r,
+        xStart: lo - r,
+        xEnd: hi + r,
         refLen: Math.max(1, p.record.refLen ?? 1),
       };
     });
@@ -617,7 +631,9 @@ function ClinVarStackedBody({
       const isSelected = interaction.selectedFeatureIds.has(p.record.id);
       const localX = p.baselineX - exon.xStart;
       const localEndX = p.endBaselineX - exon.xStart;
-      const hasSpan = p.endBaselineX > p.baselineX + 0.5;
+      // Negative-strand transcripts put the end LEFT of the marker — let
+      // the line draw in either direction (x2 may be negative).
+      const hasSpan = Math.abs(p.endBaselineX - p.baselineX) > 0.5;
       const cls = [
         'vv-clinvar-mark',
         'vv-clinvar-mark-stacked',
