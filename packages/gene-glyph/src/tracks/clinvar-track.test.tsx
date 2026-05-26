@@ -149,6 +149,26 @@ describe('placeClinVarRecords', () => {
       expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
     });
 
+    it('multi-bp variant whose far end overshoots the entire transcript flags the boundary side', () => {
+      const { viewport, mapper } = negSetup();
+      // 5000 bp deletion: r.pos at genomic 1990 (in exon 2, c.110);
+      // r.pos + 4999 at 6989 — past every exon on the genomic-high
+      // side. On minus-strand that overshoots the transcript-5' end,
+      // so endHgvs gets synthesised at c.1 and the marker docks
+      // there with truncatedSide = 'left'.
+      const rec: ClinVarRecord = {
+        id: 'cv-past-transcript',
+        label: 'huge deletion past 5\' end',
+        chr: 'chr1', pos: 1990, refLen: 5000, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.cPos).toBe(1); // synthesised anchor at the boundary
+      expect(p.truncatedSide).toBe('left');
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+    });
+
     it('multi-bp variant spanning multiple exons docks at the host exon edge and flags truncated:right', () => {
       const { viewport, mapper } = negSetup();
       // 1010 bp deletion crossing intron 1 entirely. On minus strand:

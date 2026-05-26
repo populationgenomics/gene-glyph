@@ -336,15 +336,30 @@ export function placeClinVarRecords(
     const refLen = Math.max(1, r.refLen ?? 1);
     const startHgvs: HgvsPos = { cPos: startCds.cPos, offset: 0 };
     let endHgvs: HgvsPos = startHgvs;
+    let pastTranscript: 'left' | 'right' | null = null;
     if (refLen > 1) {
       const endCds = mapper.genomicToCds(r.chr, r.pos + refLen - 1);
-      // If endCds is null (variant extends past the transcript on its
-      // genomic-high side) we leave endHgvs = startHgvs and the marker
-      // renders with no span. Visualising a span that runs into 5'UTR
-      // / promoter territory would mislead more than help — the
-      // truncation arrow stub is reserved for variants whose endpoints
-      // both land in the figure's visible coordinate space.
-      if (endCds) endHgvs = { cPos: endCds.cPos, offset: endCds.offset };
+      if (endCds) {
+        endHgvs = { cPos: endCds.cPos, offset: endCds.offset };
+      } else {
+        // r.pos + refLen − 1 falls past every exon on the genomic-high
+        // side. For plus-strand transcripts that's past the 3' end
+        // (last exon's cdsEnd); for minus-strand it's past the 5' end
+        // (first exon's cdsStart). Synthesise an endHgvs at the
+        // matching transcript boundary so the marker docks at that
+        // edge and the renderer can stamp a truncation arrow showing
+        // the overshoot.
+        const exons = mapper.transcript.exons;
+        const first = exons[0]!;
+        const last = exons[exons.length - 1]!;
+        if (mapper.transcript.strand === '+') {
+          endHgvs = { cPos: last.cdsEnd, offset: 0 };
+          pastTranscript = 'right';
+        } else {
+          endHgvs = { cPos: first.cdsStart, offset: 0 };
+          pastTranscript = 'left';
+        }
+      }
     }
     const [anchor, far] = compareHgvs(startHgvs, endHgvs) <= 0
       ? [startHgvs, endHgvs]
@@ -388,6 +403,10 @@ export function placeClinVarRecords(
     let truncatedSide: 'left' | 'right' | undefined = undefined;
     if (anchorProj.truncated) truncatedSide = 'left';
     else if (farProj.truncated || farClippedToHost) truncatedSide = 'right';
+    // past-transcript overshoot wins — the synthesised boundary sits
+    // at the docked side regardless of any intermediate clipping that
+    // happened on the way to the host exon.
+    if (pastTranscript) truncatedSide = pastTranscript;
 
     // Records outside the current screen window (toScreen returns
     // null) used to land in `unplaced`. That made the stacked layout
