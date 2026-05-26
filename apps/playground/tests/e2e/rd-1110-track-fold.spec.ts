@@ -42,7 +42,9 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     await expect(pathogenic).toHaveAttribute('aria-expanded', 'false');
     await expect(parentSummary).toHaveCount(0);
     await expect(s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]')).toBeAttached();
-    await expect(s.locator('[data-vv-track-id="clinvar-pathogenic-detail"]')).toHaveCount(0);
+    await expect(
+      s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-pathogenic-detail"]'),
+    ).toHaveCount(0);
   });
 
   test('unfolding one sub-group swaps its summary for the stacked detail; others remain folded', async ({ page }) => {
@@ -63,10 +65,16 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     const pathogenic = s.locator('[data-testid="gene-glyph-chevron-clinvar-pathogenic"]');
     await pathogenic.click();
     await expect(pathogenic).toHaveAttribute('aria-expanded', 'true');
-    await expect(s.locator('[data-vv-track-id="clinvar-pathogenic-detail"]')).toBeAttached();
+    // Tracks set `data-vv-track-id` on their own root <g> and the viewer
+    // wraps each in another <g data-vv-track-id> — the class disambiguates.
+    await expect(
+      s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-pathogenic-detail"]'),
+    ).toBeAttached();
     await expect(s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]')).toHaveCount(0);
     await expect(s.locator('[data-testid="gene-glyph-track-clinvar-likely_pathogenic-summary"]')).toBeAttached();
-    await expect(s.locator('[data-vv-track-id="clinvar-likely_pathogenic-detail"]')).toHaveCount(0);
+    await expect(
+      s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-likely_pathogenic-detail"]'),
+    ).toHaveCount(0);
 
     const afterHeight = await figure.evaluate((el) =>
       (el as SVGSVGElement).getBoundingClientRect().height,
