@@ -438,6 +438,30 @@
   pointer-events: none;
 }
 
+/* Slice 35 — selection-range overlay. Drop-line + translucent fill
+ * spans the full figure height through the selected feature's
+ * reference range; SNVs degrade to a single vertical stroke for
+ * visibility. Hosts override the palette via the two custom
+ * properties (parallel to the brush). */
+.gene-glyph {
+  --vv-selection-range-fill: rgba(124, 58, 237, 0.10);
+  --vv-selection-range-stroke: rgba(124, 58, 237, 0.85);
+}
+
+.gene-glyph .vv-selection-range {
+  fill: var(--vv-selection-range-fill);
+  stroke: var(--vv-selection-range-stroke);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.gene-glyph .vv-selection-range-line {
+  stroke: var(--vv-selection-range-stroke);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
 .gene-glyph.vv-brushing,
 .gene-glyph.vv-brushing .vv-figure,
 .gene-glyph.vv-brushing .vv-figure * {

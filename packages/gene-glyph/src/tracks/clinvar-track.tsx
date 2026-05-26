@@ -729,6 +729,21 @@ export function clinVarTrack(
       return viewport.resolveAnchor({ kind: 'genomic-pos', chr: r.chr, pos: r.pos });
     },
 
+    resolveFeatureRange(data, featureId, viewport, mapper) {
+      const r = data.records.find((x) => x.id === featureId);
+      if (!r) return null;
+      // Project this one record through the standard ClinVar placement
+      // pipeline so the range honours HGVS-5' anchoring on minus-strand
+      // transcripts, intron-flank-aware truncation, and multi-bp span
+      // extension. We pass a single-element array to avoid duplicating
+      // the geometry logic — `placeClinVarRecords` already knows how to
+      // turn a record into `{baselineX, endBaselineX}`.
+      const { placed } = placeClinVarRecords([r], viewport, mapper);
+      const p = placed[0];
+      if (!p) return null;
+      return { anchorX: p.baselineX, farX: p.endBaselineX };
+    },
+
     resolveFeature(data, featureId) {
       return data.records.find((x) => x.id === featureId) ?? null;
     },

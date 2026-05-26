@@ -9,7 +9,9 @@ import {
   exonTrack,
   interProTrack,
   nucleotideTrack,
+  fnv1a32Hex,
   parseUserVariants,
+  resolveSelectedId,
   scaleTrack,
   userVariantTrack,
 } from '@populationgenomics/gene-glyph';
@@ -220,45 +222,6 @@ export function EmbedView() {
     return () => controller.abort();
   }, [requestedId]);
 
-  // Mirror visible state into the URL so the page is fully shareable.
-  // Only non-default values land in the query string to keep URLs short.
-  // `history.replaceState` avoids polluting the back-button stack.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const p = new URLSearchParams();
-    if (requestedId) p.set('transcript', requestedId);
-    if (force) p.set('force', '1');
-    if (mode !== 'transcript') p.set('mode', mode);
-    if (density !== 'normal') p.set('density', density);
-    if (excluded.size > 0) p.set('excluded', csvSorted(excluded));
-    if (excludedStars.size > 0)
-      p.set('excludedStars', csvSorted(excludedStars, (a, b) => a - b));
-    if (excludedTypes.size > 0) p.set('excludedTypes', csvSorted(excludedTypes));
-    if (selectedId) p.set('selected', selectedId);
-    // Skip the default-collapsed state; serialise anything else (including
-    // an empty set, which means "all groups expanded").
-    if (!sameSet(collapsedGroups, DEFAULT_COLLAPSED_GROUPS)) {
-      p.set('collapsed', csvSorted(collapsedGroups));
-    }
-    if (hiddenTracks.size > 0) p.set('hide', csvSorted(hiddenTracks));
-    if (userVariantsRaw) p.set('variants', userVariantsRaw);
-    const qs = p.toString();
-    const url = window.location.pathname + (qs ? `?${qs}` : '');
-    window.history.replaceState(null, '', url);
-  }, [
-    requestedId,
-    force,
-    mode,
-    density,
-    excluded,
-    excludedStars,
-    excludedTypes,
-    selectedId,
-    collapsedGroups,
-    hiddenTracks,
-    userVariantsRaw,
-  ]);
-
   const toggleHiddenTrack = (id: TrackToggleId) =>
     setHiddenTracks((prev) => {
       const next = new Set(prev);
@@ -278,15 +241,101 @@ export function EmbedView() {
   // The selection survives chip toggles: when the user excludes the
   // selected variant's significance or star tier the detail card and
   // ring just hide until they re-enable the matching chip.
-  const selectedRecord = useMemo(() => {
+  // Slice 35: `selectedId` may be either the raw canonical id (pre-
+  // Slice-35 share links) or an FNV-1a hash (the new URL form). Build
+  // a candidate-id list from every track the embed can surface, then
+  // resolve the URL value through `resolveSelectedId` which tries the
+  // raw form first and falls back to hashing.
+  const resolvedSelectedId = useMemo(() => {
     if (!selectedId) return null;
-    const r = records.find((r) => r.id === selectedId) ?? null;
+    const ids = [
+      ...records.map((r) => r.id),
+      ...userVariants.map((v) => v.id),
+    ];
+    return resolveSelectedId(selectedId, ids);
+  }, [selectedId, records, userVariants]);
+  // Promote the URL-hash form to its canonical id as soon as the data
+  // loads. Without this, a "click selected variant to deselect"
+  // gesture in the brief load-pending window would compare a hash
+  // against the canonical featureId and silently miss the toggle.
+  useEffect(() => {
+    if (!resolvedSelectedId) return;
+    // Promote the URL form to its canonical id once data loads — a
+    // one-shot reconciliation; lazy state init isn't an option because
+    // the loaders run async.
+    if (resolvedSelectedId !== selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedId(resolvedSelectedId);
+    }
+  }, [resolvedSelectedId, selectedId]);
+
+  // Mirror visible state into the URL so the page is fully shareable.
+  // Only non-default values land in the query string to keep URLs short.
+  // `history.replaceState` avoids polluting the back-button stack.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams();
+    if (requestedId) p.set('transcript', requestedId);
+    if (force) p.set('force', '1');
+    if (mode !== 'transcript') p.set('mode', mode);
+    if (density !== 'normal') p.set('density', density);
+    if (excluded.size > 0) p.set('excluded', csvSorted(excluded));
+    if (excludedStars.size > 0)
+      p.set('excludedStars', csvSorted(excludedStars, (a, b) => a - b));
+    if (excludedTypes.size > 0) p.set('excludedTypes', csvSorted(excludedTypes));
+    // Slice 35: round-trip selection through a short FNV-1a hash so
+    // long deletion ids (`11-5226947-ACCT…CCTGC-A`) don't drag the
+    // URL out to hundreds of characters. URL→state resolution still
+    // accepts the raw id (backward compat with pre-Slice-35 links).
+    // We hash the canonical id once the data has loaded; before that
+    // we pass the raw URL value straight through (so a hash URL stays
+    // a hash URL while load is pending).
+    if (selectedId) {
+      const canonical = resolvedSelectedId ?? selectedId;
+      p.set('selected', fnv1a32Hex(canonical));
+    }
+    // Skip the default-collapsed state; serialise anything else (including
+    // an empty set, which means "all groups expanded").
+    if (!sameSet(collapsedGroups, DEFAULT_COLLAPSED_GROUPS)) {
+      p.set('collapsed', csvSorted(collapsedGroups));
+    }
+    if (hiddenTracks.size > 0) p.set('hide', csvSorted(hiddenTracks));
+    if (userVariantsRaw) p.set('variants', userVariantsRaw);
+    const qs = p.toString();
+    const url = window.location.pathname + (qs ? `?${qs}` : '');
+    window.history.replaceState(null, '', url);
+  }, [
+    requestedId,
+    force,
+    mode,
+    density,
+    excluded,
+    excludedStars,
+    excludedTypes,
+    selectedId,
+    resolvedSelectedId,
+    collapsedGroups,
+    hiddenTracks,
+    userVariantsRaw,
+  ]);
+
+  const selectedRecord = useMemo(() => {
+    if (!resolvedSelectedId) return null;
+    const r = records.find((r) => r.id === resolvedSelectedId) ?? null;
     return r && filter(r) ? r : null;
-  }, [selectedId, records, filter]);
-  const selectedFeatureIds = useMemo(
-    () => (selectedRecord ? new Set([selectedRecord.id]) : new Set<string>()),
-    [selectedRecord],
-  );
+  }, [resolvedSelectedId, records, filter]);
+  // Slice 35: extend selection to user-supplied variants. A selected
+  // user-variant id never appears in ClinVar's records so the lookup
+  // above returns null; we resolve it from the parsed user list here.
+  const selectedUserVariant = useMemo(() => {
+    if (!resolvedSelectedId) return null;
+    return userVariants.find((v) => v.id === resolvedSelectedId) ?? null;
+  }, [resolvedSelectedId, userVariants]);
+  const selectedFeatureIds = useMemo(() => {
+    if (selectedRecord) return new Set([selectedRecord.id]);
+    if (selectedUserVariant) return new Set([selectedUserVariant.id]);
+    return new Set<string>();
+  }, [selectedRecord, selectedUserVariant]);
   // Plain-click toggles a chip; shift-click solos that chip within its group
   // (excludes every other chip in the same row). Shift-click on an already-
   // soloed chip restores the whole group.
@@ -663,7 +712,10 @@ export function EmbedView() {
         renderTooltip={renderTooltip}
         selectedFeatureIds={selectedFeatureIds}
         onFeatureClick={(featureId, trackId) => {
-          if (!trackId.startsWith('clinvar')) return;
+          // Slice 35: user-variant clicks toggle the same selection
+          // state ClinVar uses, so the drop-line / detail card flow
+          // covers both surfaces.
+          if (!trackId.startsWith('clinvar') && trackId !== 'user-variants') return;
           setSelectedId((prev) => (prev === featureId ? null : featureId));
         }}
       >
@@ -691,6 +743,12 @@ export function EmbedView() {
       {selectedRecord && (
         <SelectedVariantCard
           record={selectedRecord}
+          onClear={() => setSelectedId(null)}
+        />
+      )}
+      {selectedUserVariant && (
+        <SelectedUserVariantCard
+          variant={selectedUserVariant}
           onClear={() => setSelectedId(null)}
         />
       )}
@@ -1139,6 +1197,85 @@ function SelectedVariantCard({
         {typeof meta.goldStars !== 'number' && record.reviewStatus && (
           <Row label="Review">{record.reviewStatus}</Row>
         )}
+      </dl>
+    </section>
+  );
+}
+
+function SelectedUserVariantCard({
+  variant,
+  onClear,
+}: {
+  variant: ParsedUserVariant;
+  onClear: () => void;
+}) {
+  return (
+    <section
+      data-testid="embed-selected-user-variant"
+      style={{
+        marginTop: 10,
+        padding: '10px 12px',
+        background: '#faf5ff',
+        border: '1px solid #d8b4fe',
+        borderRadius: 6,
+        color: '#1e293b',
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 6,
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
+          <strong style={{ fontSize: '0.95rem' }}>{variant.raw.trim() || variant.id}</strong>
+          <code
+            style={{
+              fontSize: '0.78rem',
+              opacity: 0.7,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {variant.id}
+          </code>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear selection"
+          style={{
+            border: '1px solid #d8b4fe',
+            background: '#ffffff',
+            color: '#475569',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+          }}
+        >
+          clear
+        </button>
+      </header>
+      <dl
+        style={{
+          margin: 0,
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr',
+          columnGap: 10,
+          rowGap: 2,
+          fontSize: '0.78rem',
+        }}
+      >
+        <Row label="Position">{`${variant.chr}:${variant.pos.toLocaleString()}`}</Row>
+        <Row label="Change">
+          <code>
+            {variant.ref} &rarr; {variant.alt}
+          </code>
+        </Row>
+        <Row label="Source">user-supplied</Row>
       </dl>
     </section>
   );

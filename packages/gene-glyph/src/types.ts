@@ -468,6 +468,16 @@ export interface TrackHeightHint {
   maxPx: number;
 }
 
+/** Baseline-x extent of a feature's reference span. Used by the
+ *  selection-range overlay (Slice 35). `anchorX === farX` for SNVs;
+ *  multi-bp variants report the two ends. Coordinates ride the same
+ *  per-exon CSS transform that placed the feature, so the viewer can
+ *  map them to layout-x with {@link Viewport.baselineToLayoutX}. */
+export interface FeatureRange {
+  anchorX: number;
+  farX: number;
+}
+
 export interface TrackHeightResult {
   px: number;
   didTruncate: boolean;
@@ -599,6 +609,19 @@ export interface Track<TConfig = unknown, TData = unknown> {
    *  hook keeps the below-figure surface simple until then. */
   renderBelow?(args: TrackRenderArgs<TData>): ReactNode | null;
   resolveAnchor?(data: TData, anchorId: string, viewport: Viewport): ScreenPoint | null;
+  /** Resolve the baseline-x extent of a selected feature for the
+   *  selection-range overlay (Slice 35). Returns the two ends of the
+   *  feature's reference span in baseline-x. For SNVs `anchorX ===
+   *  farX` and the viewer falls back to a single vertical drop-line;
+   *  multi-bp variants render as a translucent rect spanning the two
+   *  ends. Tracks that don't carry coordinate-anchored features (e.g.
+   *  the scale ruler) omit this. */
+  resolveFeatureRange?(
+    data: TData,
+    featureId: string,
+    viewport: Viewport,
+    mapper: CoordinateMapper,
+  ): FeatureRange | null;
   /** Resolve the track-specific feature object for `featureId`. The viewer
    *  passes the returned value to host-supplied
    *  {@link GeneGlyphProps.renderTooltip} so hosts can render rich tooltips

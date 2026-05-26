@@ -1343,6 +1343,80 @@ function GeneGlyphInner(
     );
   }, [brush, viewport, totalHeight, viewportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Slice 35 — selection-range overlay. For each selected feature id,
+  // ask every track if it owns a range for that id; the first track
+  // that does contributes a full-figure-height rect (or single
+  // vertical line for SNVs whose anchor == far). The overlay lives
+  // alongside the brush layer so the two share the figure-x coordinate
+  // system + the box-zoom / minimap composition rules. The rects are
+  // derived from `selectedFeatureIds` already on the public surface —
+  // no new prop.
+  const selectionRangeOverlay = useMemo<ReactNode>(() => {
+    if (selectedSet.size === 0) return null;
+    const offset = viewport.displayOffset();
+    const figureHeight = Math.max(totalHeight, OVERFLOW_BRUSH_HEIGHT);
+    const rects: ReactNode[] = [];
+    for (const featureId of selectedSet) {
+      let range: { anchorX: number; farX: number } | null = null;
+      for (const t of flatTracks) {
+        if (!t.resolveFeatureRange) continue;
+        const data = trackData.get(t.id);
+        if (data === undefined) continue;
+        range = t.resolveFeatureRange(data, featureId, viewport, mapper);
+        if (range) break;
+      }
+      if (!range) continue;
+      const layoutLo = viewport.baselineToLayoutX(Math.min(range.anchorX, range.farX));
+      const layoutHi = viewport.baselineToLayoutX(Math.max(range.anchorX, range.farX));
+      const xLo = layoutLo - offset;
+      const xHi = layoutHi - offset;
+      if (xHi < 0 || xLo > viewport.width) continue;
+      const clampedLo = Math.max(0, xLo);
+      const clampedHi = Math.min(viewport.width, xHi);
+      const width = clampedHi - clampedLo;
+      if (width < 0.5) {
+        // SNV — degenerate to a vertical drop-line. Stroke-only so it
+        // reads as a tick without competing visually with the fill of
+        // a multi-bp rect.
+        rects.push(
+          <line
+            key={`sel-${featureId}`}
+            className="vv-selection-range-line"
+            data-vv-feature-id={featureId}
+            x1={clampedLo}
+            x2={clampedLo}
+            y1={0}
+            y2={figureHeight}
+            vectorEffect="non-scaling-stroke"
+          />,
+        );
+        continue;
+      }
+      rects.push(
+        <rect
+          key={`sel-${featureId}`}
+          className="vv-selection-range"
+          data-vv-feature-id={featureId}
+          x={clampedLo}
+          y={0}
+          width={width}
+          height={figureHeight}
+          vectorEffect="non-scaling-stroke"
+        />,
+      );
+    }
+    if (rects.length === 0) return null;
+    return (
+      <g
+        className="vv-selection-range-overlay"
+        data-testid="gene-glyph-selection-range"
+        aria-hidden
+      >
+        {rects}
+      </g>
+    );
+  }, [selectedSet, flatTracks, trackData, viewport, mapper, totalHeight, viewportVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // One shimmer rect per loading track. Lives inside the figure SVG (so it's
   // included in exportSVG snapshots only when the user explicitly chooses to
   // export mid-load) and sits above feature glyphs to read as an overlay. The
@@ -1527,6 +1601,7 @@ function GeneGlyphInner(
             );
           })}
           {brushOverlay}
+          {selectionRangeOverlay}
           {boxZoomPreview && boxZoomPreview[1] > boxZoomPreview[0] && (
             <rect
               className="vv-box-zoom-rect"

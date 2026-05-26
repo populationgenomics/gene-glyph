@@ -55,6 +55,7 @@ export type {
   TrackRect,
   TrackHeightHint,
   TrackHeightResult,
+  FeatureRange,
   TrackLoadArgs,
   TrackHeightArgs,
   TrackRenderArgs,
@@ -82,6 +83,12 @@ export type { LeashedRafOptions } from './debug-leash.js';
 
 export { exportSvgString, exportPngBlob } from './export.js';
 export type { ExportArgs, PrepareExportInput } from './export.js';
+
+export {
+  fnv1a32Hex,
+  buildFeatureIdHashMap,
+  resolveSelectedId,
+} from './feature-id-hash.js';
 
 export { createCoordinateMapper } from './coordinate-mapper.js';
 export {
