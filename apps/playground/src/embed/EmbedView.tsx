@@ -9,17 +9,21 @@ import {
   exonTrack,
   interProTrack,
   nucleotideTrack,
+  parseUserVariants,
   scaleTrack,
+  userVariantTrack,
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
   ClinVarSignificance,
   GeneGlyphRef,
   GutterItem,
+  ParsedUserVariant,
   ProteinAnnotations,
   TooltipRenderArgs,
   TrackOrGroup,
   Transcript,
+  UserVariantRecord,
   ViewMode,
 } from '@populationgenomics/gene-glyph';
 import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
@@ -148,6 +152,12 @@ export function EmbedView() {
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
     initial.hiddenTracks,
   );
+  // Slice 34: user-supplied variants from `?variants=`. The figure
+  // renders these as purple crosses between the exon and InterPro
+  // tracks; unparseable entries surface in the figure footer.
+  const [userVariants] = useState<readonly ParsedUserVariant[]>(initial.userVariants);
+  const [userVariantErrors] = useState<readonly string[]>(initial.userVariantErrors);
+  const [userVariantsRaw] = useState<string>(initial.userVariantsRaw);
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -231,6 +241,7 @@ export function EmbedView() {
       p.set('collapsed', csvSorted(collapsedGroups));
     }
     if (hiddenTracks.size > 0) p.set('hide', csvSorted(hiddenTracks));
+    if (userVariantsRaw) p.set('variants', userVariantsRaw);
     const qs = p.toString();
     const url = window.location.pathname + (qs ? `?${qs}` : '');
     window.history.replaceState(null, '', url);
@@ -245,6 +256,7 @@ export function EmbedView() {
     selectedId,
     collapsedGroups,
     hiddenTracks,
+    userVariantsRaw,
   ]);
 
   const toggleHiddenTrack = (id: TrackToggleId) =>
@@ -322,6 +334,23 @@ export function EmbedView() {
     [density],
   );
 
+  // Slice 34: build the user-variant record list from parsed URL
+  // entries. The figure pulls `chr` (with `chr` prefix) so it matches
+  // exon.chr exactly; `label` defaults to the raw user input so
+  // tooltips read back the form they typed.
+  const userVariantRecords = useMemo<UserVariantRecord[]>(
+    () =>
+      userVariants.map((v) => ({
+        id: v.id,
+        chr: v.chr,
+        pos: v.pos,
+        label: v.raw.trim() || v.id,
+        refLen: Math.max(v.ref.length, 1),
+        meta: { ref: v.ref, alt: v.alt, raw: v.raw },
+      })),
+    [userVariants],
+  );
+
   const tracks = useMemo<TrackOrGroup[]>(() => {
     const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
       const sigFilter = (r: ClinVarRecord) => r.significance === sig && filter(r);
@@ -357,6 +386,19 @@ export function EmbedView() {
     if (!hiddenTracks.has('aa') && cdsSequence) {
       out.push(aaTrack({ id: 'aa', nucleotideSource: cdsSequence }));
     }
+    // Slice 34: user-supplied variants sit between exon and interpro
+    // so they read against the gene structure rather than getting
+    // buried under ClinVar. Only added when the URL provided some.
+    if (userVariantRecords.length > 0) {
+      out.push(
+        userVariantTrack({
+          id: 'user-variants',
+          source: userVariantRecords,
+          markRadius: densityConfig.markRadius,
+          stackLanePx: densityConfig.stackLanePx,
+        }),
+      );
+    }
     if (!hiddenTracks.has('interpro')) out.push(interProTrack({}));
     if (!hiddenTracks.has('clinvar')) {
       out.push({
@@ -374,7 +416,7 @@ export function EmbedView() {
       });
     }
     return out;
-  }, [records, filter, filterKey, densityConfig, cdsSequence, hiddenTracks]);
+  }, [records, filter, filterKey, densityConfig, cdsSequence, hiddenTracks, userVariantRecords]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -652,7 +694,59 @@ export function EmbedView() {
           onClear={() => setSelectedId(null)}
         />
       )}
+      <UserVariantFooter
+        errors={userVariantErrors}
+        parsedCount={userVariants.length}
+      />
     </main>
+  );
+}
+
+function UserVariantFooter({
+  errors,
+  parsedCount,
+}: {
+  errors: readonly string[];
+  parsedCount: number;
+}) {
+  if (errors.length === 0) return null;
+  const word = errors.length === 1 ? 'variant' : 'variants';
+  return (
+    <section
+      data-testid="embed-user-variant-footer"
+      style={{
+        marginTop: 8,
+        padding: '6px 10px',
+        background: '#fef9c3',
+        border: '1px solid #fde68a',
+        borderRadius: 6,
+        color: '#854d0e',
+        fontSize: '0.78rem',
+      }}
+    >
+      <strong>{errors.length}</strong> {word} couldn't be parsed:{' '}
+      {errors.map((e, i) => (
+        <span key={`${e}-${i}`}>
+          <code
+            data-testid="embed-user-variant-error"
+            style={{
+              background: '#fff7ed',
+              border: '1px solid #fed7aa',
+              borderRadius: 3,
+              padding: '0 4px',
+              marginRight: i === errors.length - 1 ? 0 : 4,
+            }}
+          >
+            {e}
+          </code>
+        </span>
+      ))}
+      {parsedCount > 0 && (
+        <span style={{ marginLeft: 8, opacity: 0.7 }}>
+          ({parsedCount} valid variant{parsedCount === 1 ? '' : 's'} rendered)
+        </span>
+      )}
+    </section>
   );
 }
 
@@ -1169,6 +1263,14 @@ interface UrlState {
   selectedId: string | null;
   collapsedGroups: ReadonlySet<string>;
   hiddenTracks: ReadonlySet<TrackToggleId>;
+  /** Slice 34 — parsed user-supplied variants from `?variants=`. */
+  userVariants: readonly ParsedUserVariant[];
+  /** Slice 34 — raw tokens that failed to parse, surfaced verbatim in
+   *  the footer error so the user can see exactly what they typed. */
+  userVariantErrors: readonly string[];
+  /** Slice 34 — the raw `?variants=` string. Kept so the URL round-trip
+   *  preserves user formatting (we only canonicalise on submit). */
+  userVariantsRaw: string;
 }
 
 const SIGNIFICANCE_VALUES: ReadonlySet<string> = new Set(SIGNIFICANCE_CHIPS);
@@ -1186,6 +1288,9 @@ function readUrlParams(): UrlState {
     selectedId: null,
     collapsedGroups: DEFAULT_COLLAPSED_GROUPS,
     hiddenTracks: new Set(),
+    userVariants: [],
+    userVariantErrors: [],
+    userVariantsRaw: '',
   };
   if (typeof window === 'undefined') return fallback;
   const p = new URLSearchParams(window.location.search);
@@ -1233,6 +1338,22 @@ function readUrlParams(): UrlState {
     hiddenTracks: new Set(
       csv('hide').filter((s): s is TrackToggleId => TRACK_TOGGLE_IDS.has(s)),
     ),
+    ...parseUserVariantsParam(p.get('variants') ?? ''),
+  };
+}
+
+function parseUserVariantsParam(
+  raw: string,
+): Pick<UrlState, 'userVariants' | 'userVariantErrors' | 'userVariantsRaw'> {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { userVariants: [], userVariantErrors: [], userVariantsRaw: '' };
+  }
+  const { parsed, errors } = parseUserVariants(trimmed);
+  return {
+    userVariants: parsed,
+    userVariantErrors: errors,
+    userVariantsRaw: trimmed,
   };
 }
 

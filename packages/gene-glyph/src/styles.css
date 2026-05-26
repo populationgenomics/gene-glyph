@@ -71,6 +71,11 @@
   --vv-clinvar-count-fill: #ffffff;
   --vv-clinvar-popover-bg: #ffffff;
   --vv-clinvar-popover-stroke: #cbd5e1;
+
+  /* User-supplied variants (Slice 34). Single deep-purple palette: a
+   * cross glyph + matching stroke / span / chevron. Hosts override on
+   * the gene-glyph root if the default clashes with a study brand. */
+  --vv-user-variant-color: #7c3aed;
 }
 
 .gene-glyph .vv-header {

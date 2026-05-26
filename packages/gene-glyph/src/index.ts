@@ -179,6 +179,23 @@ export type {
 } from './tracks/clinvar-track.js';
 export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
+export {
+  userVariantTrack,
+  userVariantFromRecord,
+} from './tracks/user-variant-track.js';
+export type {
+  UserVariantTrackConfig,
+  UserVariantRecord,
+  UserVariantSource,
+} from './tracks/user-variant-track.js';
+export {
+  parseUserVariant,
+  parseUserVariants,
+} from './tracks/parse-user-variants.js';
+export type {
+  ParsedUserVariant,
+  ParseUserVariantsResult,
+} from './tracks/parse-user-variants.js';
 export { variantSummaryTrack } from './tracks/variant-summary-track.js';
 export type {
   VariantSummaryTrackConfig,
