@@ -110,6 +110,17 @@ export interface PlacedClinVarStacked extends PlacedClinVar {
 export interface ClinVarStackLayout {
   rowCount: number;
   placements: PlacedClinVarStacked[];
+  /** Lane block metadata in the order they were packed (top → bottom).
+   *  `startRow` is inclusive; `endRow` is exclusive. Used by the
+   *  renderer to draw a divider hairline + section label at each lane
+   *  boundary. Empty when no records were packed. */
+  lanes: ClinVarStackLane[];
+}
+
+export interface ClinVarStackLane {
+  key: string;
+  startRow: number;
+  endRow: number;
 }
 
 export interface PlacedClinVar {
@@ -559,6 +570,7 @@ export function packStackedClinVar(
   const groupOrder = orderedLaneKeys(groups, encoding.laneOrder);
 
   const placements: PlacedClinVarStacked[] = [];
+  const lanes: ClinVarStackLane[] = [];
   let rowOffset = 0;
   for (const key of groupOrder) {
     const items = groups.get(key)!;
@@ -622,9 +634,16 @@ export function packStackedClinVar(
         laneKey: key,
       });
     }
+    if (laneIntervals.length > 0) {
+      lanes.push({
+        key,
+        startRow: rowOffset,
+        endRow: rowOffset + laneIntervals.length,
+      });
+    }
     rowOffset += laneIntervals.length;
   }
-  return { rowCount: rowOffset, placements };
+  return { rowCount: rowOffset, placements, lanes };
 }
 
 function compareStrings(a: string, b: string): number {
@@ -658,6 +677,13 @@ export function clinVarTrack(
   const filter = config.filter;
   const stackTopPad = 2;
   const stackBottomPad = 2;
+  // Per-lane top padding reserved above each consequence-bucket
+  // block when the encoding declares `laneLabels` and the track
+  // actually contains >1 lane. Sized to fit the 9px italic label
+  // plus a 4px breathing-room budget; encodings without lane labels
+  // (`defaultClinVarSymbolEncoding`) get 0 — back-compat preserved.
+  const LANE_LABEL_FONT_SIZE = 9;
+  const LANE_TOP_PAD = LANE_LABEL_FONT_SIZE + 4;
 
   return {
     id,
@@ -687,9 +713,14 @@ export function clinVarTrack(
     height({ data }: TrackHeightArgs<ClinVarTrackData>): TrackHeightResult {
       if (stackedEncoding) {
         const rows = data?.stackLayout?.rowCount ?? 0;
+        const laneCount = data?.stackLayout?.lanes?.length ?? 0;
+        const laneHeadroom =
+          stackedEncoding.laneLabels && laneCount > 1
+            ? laneCount * LANE_TOP_PAD
+            : 0;
         const px = Math.max(
           trackHeight,
-          stackTopPad + rows * stackLanePx + stackBottomPad,
+          stackTopPad + rows * stackLanePx + laneHeadroom + stackBottomPad,
         );
         return { px, didTruncate: false };
       }
@@ -706,6 +737,8 @@ export function clinVarTrack(
             markRadius={markRadius}
             laneHeight={stackLanePx}
             topPad={stackTopPad}
+            laneTopPad={LANE_TOP_PAD}
+            laneLabelFontSize={LANE_LABEL_FONT_SIZE}
             filter={filter}
             args={args}
           />
@@ -775,6 +808,8 @@ interface ClinVarStackedBodyProps {
   markRadius: number;
   laneHeight: number;
   topPad: number;
+  laneTopPad: number;
+  laneLabelFontSize: number;
   filter?: (record: ClinVarRecord) => boolean;
   args: TrackRenderArgs<ClinVarTrackData>;
 }
@@ -785,6 +820,8 @@ function ClinVarStackedBody({
   markRadius,
   laneHeight,
   topPad,
+  laneTopPad,
+  laneLabelFontSize,
   filter,
   args,
 }: ClinVarStackedBodyProps): ReactNode {
@@ -818,6 +855,22 @@ function ClinVarStackedBody({
     arr.push(p);
   }
 
+  // Map each row → lane index so the y offset for the glyph can pick up
+  // the cumulative lane-headroom contribution. Dividers only render
+  // when the encoding declares lane labels and the track has > 1 lane;
+  // otherwise `laneHeadroomFor(row) === 0` and everything collapses to
+  // the pre-Slice-39 layout.
+  const useLaneDividers = !!encoding.laneLabels && layout.lanes.length > 1;
+  const laneOfRow: number[] = new Array(layout.rowCount).fill(0);
+  for (let li = 0; li < layout.lanes.length; li++) {
+    const lane = layout.lanes[li]!;
+    for (let r = lane.startRow; r < lane.endRow; r++) {
+      laneOfRow[r] = li;
+    }
+  }
+  const laneHeadroomFor = (row: number) =>
+    useLaneDividers ? (laneOfRow[row]! + 1) * laneTopPad : 0;
+
   const baseline = viewport.baselineGeometry();
   const exonByIdx = new Map<number, ExonBaseline>();
   for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
@@ -829,7 +882,7 @@ function ClinVarStackedBody({
     const counterScale = `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`;
     const inner = placements.map((p) => {
       const r = encoding.radius?.(p.record) ?? markRadius;
-      const cy = rect.yTop + topPad + r + p.row * laneHeight;
+      const cy = rect.yTop + topPad + r + p.row * laneHeight + laneHeadroomFor(p.row);
       const shape = encoding.shape(p.record);
       const fill = encoding.fill(p.record);
       const stroke = encoding.color?.(p.record) ?? fill;
@@ -947,6 +1000,82 @@ function ClinVarStackedBody({
     );
   }
 
+  // Lane dividers — one faint hairline centered in the pre-block pad
+  // of each consequence bucket, with a right-inset section label and a
+  // short stub after the label per the visual spec. Suppressed when
+  // the track has only one lane (would be visual noise on single-
+  // bucket sub-tracks) or the encoding declares no `laneLabels`
+  // (the dividers identify the lanes, so they're meaningless without
+  // names).
+  const laneDividers: ReactNode[] = [];
+  const laneLabels = encoding.laneLabels;
+  if (useLaneDividers && laneLabels) {
+    const figureWidth = baseline.totalWidth;
+    const labelRightPad = 8;
+    const labelGap = 4;
+    for (let li = 0; li < layout.lanes.length; li++) {
+      const lane = layout.lanes[li]!;
+      const labelText = laneLabels[lane.key];
+      if (!labelText) continue;
+      // Divider y: centered inside this lane's pre-block pad. The pad
+      // spans [topPad + S*laneHeight + li*laneTopPad, topPad + S*laneHeight + (li+1)*laneTopPad];
+      // we sit at its midpoint.
+      const y =
+        rect.yTop +
+        topPad +
+        lane.startRow * laneHeight +
+        li * laneTopPad +
+        laneTopPad / 2;
+      // Approximate label width — short bucket names ("LoF", "Splice
+      // region"); the heuristic is the same one Pfam labels use.
+      const estCharW = laneLabelFontSize * 0.58;
+      const textWidth = labelText.length * estCharW;
+      const labelX = figureWidth - labelRightPad;
+      const lineEndX = labelX - textWidth - labelGap;
+      const stubStartX = labelX + labelGap;
+      const stubEndX = figureWidth;
+      laneDividers.push(
+        <g
+          key={`clinvar-lane-${lane.key}`}
+          className="vv-clinvar-lane-divider-group"
+          data-vv-lane-key={lane.key}
+        >
+          <line
+            className="vv-clinvar-lane-divider"
+            x1={0}
+            x2={Math.max(0, lineEndX)}
+            y1={y}
+            y2={y}
+            shapeRendering="crispEdges"
+            pointerEvents="none"
+          />
+          {stubStartX < stubEndX && (
+            <line
+              className="vv-clinvar-lane-divider"
+              x1={stubStartX}
+              x2={stubEndX}
+              y1={y}
+              y2={y}
+              shapeRendering="crispEdges"
+              pointerEvents="none"
+            />
+          )}
+          <text
+            className="vv-clinvar-lane-label"
+            x={labelX}
+            y={y}
+            fontSize={laneLabelFontSize}
+            textAnchor="end"
+            dominantBaseline="central"
+            pointerEvents="none"
+          >
+            {labelText}
+          </text>
+        </g>,
+      );
+    }
+  }
+
   return (
     <g
       className="vv-clinvar-track vv-clinvar-track-stacked"
@@ -954,6 +1083,7 @@ function ClinVarStackedBody({
       data-vv-stack-rows={layout.rowCount}
       key={trackId}
     >
+      {laneDividers}
       {groups}
     </g>
   );

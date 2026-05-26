@@ -44,6 +44,12 @@ export interface SymbolEncoding<T> {
    *  deterministic even when the encoding adds new lanes later. Omit to
    *  fall back to alphabetical-by-key order. */
   laneOrder?: readonly string[];
+  /** Human-readable label for each lane key. Used by tracks that paint
+   *  per-lane section headers (e.g. the ClinVar stacked render's
+   *  consequence-bucket dividers). Lanes whose keys aren't present here
+   *  fall back to the key string itself; encodings that don't paint
+   *  per-lane chrome can omit the field entirely. */
+  laneLabels?: Record<string, string>;
 }
 
 /**
@@ -362,6 +368,13 @@ export const decipherClinVarSymbolEncoding: SymbolEncoding<ClinVarRecord> = {
   fill: (r) => decipherBucketColor(decipherConsequenceBucket(decipherMajorConsequence(r))),
   lane: (r) => decipherConsequenceBucket(decipherMajorConsequence(r)),
   laneOrder: ['lof', 'protein-changing', 'splice-region', 'synonymous', 'other'],
+  laneLabels: {
+    lof: 'LoF',
+    'protein-changing': 'Protein-changing',
+    'splice-region': 'Splice region',
+    synonymous: 'Synonymous',
+    other: 'Other',
+  },
 };
 
 function decipherMajorConsequence(r: ClinVarRecord): string | undefined {

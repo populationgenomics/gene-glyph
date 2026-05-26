@@ -239,6 +239,15 @@ describe('decipherClinVarSymbolEncoding', () => {
       'other',
     ]);
   });
+
+  it('declares a human-readable label for every lane key', () => {
+    const labels = decipherClinVarSymbolEncoding.laneLabels;
+    expect(labels).toBeDefined();
+    for (const key of decipherClinVarSymbolEncoding.laneOrder!) {
+      expect(labels![key]).toBeDefined();
+      expect(labels![key]!.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('decipherBucketColor', () => {

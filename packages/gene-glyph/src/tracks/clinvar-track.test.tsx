@@ -12,7 +12,10 @@ import {
   placeClinVarRecords,
   type ClinVarRecord,
 } from './clinvar-track.js';
-import { defaultClinVarSymbolEncoding } from '../symbol-encoding.js';
+import {
+  decipherClinVarSymbolEncoding,
+  defaultClinVarSymbolEncoding,
+} from '../symbol-encoding.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -436,6 +439,141 @@ describe('clinVarTrack', () => {
     expect(t.featureLabel!(data, 'cv-1')).toContain('Pathogenic');
   });
 
+  it('stacked render emits one consequence-lane divider+label per lane block when the encoding declares laneLabels', async () => {
+    // Two records with distinct major_consequence values so the
+    // DECIPHER encoding carves them into two lane blocks (LoF and
+    // protein-changing). The render should paint two dividers, each
+    // with the matching label inset on the right.
+    const decipherRecords: ClinVarRecord[] = [
+      {
+        id: 'd-1',
+        label: 'c.10G>A',
+        chr: 'chr1',
+        pos: 1009,
+        significance: 'pathogenic',
+        meta: { majorConsequence: 'stop_gained' },
+      },
+      {
+        id: 'd-2',
+        label: 'c.12C>T',
+        chr: 'chr1',
+        pos: 1011,
+        significance: 'pathogenic',
+        meta: { majorConsequence: 'missense_variant' },
+      },
+    ];
+    const t = clinVarTrack({
+      source: decipherRecords,
+      stackedVariantStyle: decipherClinVarSymbolEncoding,
+    });
+    const { mapper, viewport, painter, interaction } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const Probe = () => (
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 100 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>
+    );
+    const { container } = render(<Probe />);
+    const dividers = container.querySelectorAll('.vv-clinvar-lane-divider-group');
+    expect(dividers).toHaveLength(2);
+    const laneKeys = Array.from(dividers).map((g) => g.getAttribute('data-vv-lane-key'));
+    expect(laneKeys).toEqual(['lof', 'protein-changing']);
+    const labels = Array.from(container.querySelectorAll('.vv-clinvar-lane-label')).map(
+      (n) => n.textContent,
+    );
+    expect(labels).toEqual(['LoF', 'Protein-changing']);
+  });
+
+  it('lane dividers are suppressed when only one lane is populated', async () => {
+    // Both records bucket into LoF, so the encoding produces a single
+    // lane — no inter-lane chrome to paint.
+    const oneLane: ClinVarRecord[] = [
+      {
+        id: 'one-1',
+        label: 'c.10G>A',
+        chr: 'chr1',
+        pos: 1009,
+        significance: 'pathogenic',
+        meta: { majorConsequence: 'stop_gained' },
+      },
+      {
+        id: 'one-2',
+        label: 'c.12C>T',
+        chr: 'chr1',
+        pos: 1011,
+        significance: 'pathogenic',
+        meta: { majorConsequence: 'frameshift_variant' },
+      },
+    ];
+    const t = clinVarTrack({
+      source: oneLane,
+      stackedVariantStyle: decipherClinVarSymbolEncoding,
+    });
+    const { mapper, viewport, painter, interaction } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const Probe = () => (
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 80 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>
+    );
+    const { container } = render(<Probe />);
+    expect(container.querySelectorAll('.vv-clinvar-lane-divider-group')).toHaveLength(0);
+  });
+
+  it('lane dividers are suppressed for encodings without laneLabels (back-compat)', async () => {
+    // defaultClinVarSymbolEncoding does not declare laneLabels — the
+    // pre-Slice-39 single-strip render must keep its old layout exactly.
+    const t = clinVarTrack({
+      source: records,
+      stackedVariantStyle: defaultClinVarSymbolEncoding,
+    });
+    const { mapper, viewport, painter, interaction } = setup();
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const Probe = () => (
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 80 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>
+    );
+    const { container } = render(<Probe />);
+    expect(container.querySelectorAll('.vv-clinvar-lane-divider-group')).toHaveLength(0);
+  });
+
   it('stacked render suppresses density clustering and emits one glyph per record', async () => {
     const t = clinVarTrack({
       source: records,
@@ -588,5 +726,23 @@ describe('clinVarTrack', () => {
     // benign (cv-3 likely_benign → benign), benign (cv-4 benign → benign).
     // So we expect 3 lane keys: path, vus, benign.
     expect(lanes).toEqual(new Set(['path', 'vus', 'benign']));
+  });
+
+  it('packStackedClinVar reports lane block metadata in declared laneOrder', () => {
+    const { viewport, mapper } = setup();
+    const { placed } = placeClinVarRecords(records, viewport, mapper);
+    const layout = packStackedClinVar(placed, defaultClinVarSymbolEncoding, viewport, 5);
+    // Declared laneOrder is ['path', 'vus', 'conflicting', 'benign', 'other'];
+    // only path / vus / benign produced placements, so those are the
+    // three lane blocks (in declared order).
+    expect(layout.lanes.map((l) => l.key)).toEqual(['path', 'vus', 'benign']);
+    // Lane block row ranges cover the full row count without overlap.
+    let cursor = 0;
+    for (const lane of layout.lanes) {
+      expect(lane.startRow).toBe(cursor);
+      expect(lane.endRow).toBeGreaterThan(lane.startRow);
+      cursor = lane.endRow;
+    }
+    expect(cursor).toBe(layout.rowCount);
   });
 });

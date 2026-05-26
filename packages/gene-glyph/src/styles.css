@@ -80,6 +80,12 @@
   --vv-decipher-color-splice-region: #c026d3;
   --vv-decipher-color-synonymous: #166534;
   --vv-decipher-color-other: #94a3b8;
+  /* Section dividers inside a stacked ClinVar track — one hairline per
+   * consequence bucket, with the bucket label right-inset on the line.
+   * Faint by default so they read as visual structure rather than
+   * additional data. */
+  --vv-clinvar-lane-divider: #cbd5e1;
+  --vv-clinvar-lane-label: #64748b;
 
   /* User-supplied variants (Slice 34). Single deep-purple palette: a
    * cross glyph + matching stroke / span / chevron. Hosts override on
@@ -945,4 +951,22 @@ body.vv-gg-box-zooming * {
 .gene-glyph .vv-clinvar-mark-stacked:hover .vv-clinvar-ring,
 .gene-glyph .vv-clinvar-mark-stacked:focus-visible .vv-clinvar-ring {
   opacity: 0.7;
+}
+
+/* Consequence-lane dividers + right-inset section labels inside a
+ * stacked ClinVar track (Slice 39 follow-up). The dividers are
+ * structural chrome — fixed-pixel stroke, opacity-muted — so they
+ * don't compete with the glyphs they're separating. */
+.gene-glyph .vv-clinvar-lane-divider {
+  stroke: var(--vv-clinvar-lane-divider, #cbd5e1);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.gene-glyph .vv-clinvar-lane-label {
+  fill: var(--vv-clinvar-lane-label, #64748b);
+  font-family: inherit;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  user-select: none;
 }
