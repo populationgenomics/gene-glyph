@@ -71,11 +71,15 @@ interface PlacedDomain {
   lane: number;
 }
 
+// Order chosen for the gutter top → bottom by visual specificity:
+// Domain (a discrete annotated feature on the protein) → Family
+// (groups the protein into a curated family) → Homologous SF (broader
+// structural / evolutionary grouping) → Repeat (sub-domain motif).
 const DEFAULT_GROUPS: ProteinDomainEntryType[] = [
-  'family',
   'domain',
-  'repeat',
+  'family',
   'homologous_superfamily',
+  'repeat',
 ];
 
 const DEFAULT_LANE_HEIGHT = 22;
@@ -88,7 +92,7 @@ const ENTRY_TYPE_LABEL: Record<ProteinDomainEntryType, string> = {
   family: 'Family',
   domain: 'Domain',
   repeat: 'Repeat',
-  homologous_superfamily: 'Homologous SF',
+  homologous_superfamily: 'Superfamily',
   conserved_site: 'Conserved site',
   active_site: 'Active site',
   binding_site: 'Binding site',
