@@ -154,8 +154,10 @@ describe('placeClinVarRecords', () => {
       // 5000 bp deletion: r.pos at genomic 1990 (in exon 2, c.110);
       // r.pos + 4999 at 6989 — past every exon on the genomic-high
       // side. On minus-strand that overshoots the transcript-5' end,
-      // so endHgvs gets synthesised at c.1 and the marker docks
-      // there with truncatedSide = 'left'.
+      // so endHgvs gets synthesised at the outer UTR edge (= 1 -
+      // utr5Bp). With no utr5Bp set, that's cPos = 1; the line still
+      // covers the in-figure CDS extent and truncatedSide = 'left'
+      // flags the off-figure overshoot.
       const rec: ClinVarRecord = {
         id: 'cv-past-transcript',
         label: 'huge deletion past 5\' end',
@@ -164,7 +166,36 @@ describe('placeClinVarRecords', () => {
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
       const p = placed[0]!;
-      expect(p.cPos).toBe(1); // synthesised anchor at the boundary
+      expect(p.cPos).toBe(1); // synthesised anchor at the boundary (no UTR in fixture)
+      expect(p.truncatedSide).toBe('left');
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+    });
+
+    it('past-transcript overshoot extends through the visible 5\'UTR cap when utr5Bp is set', () => {
+      // Same fixture, but exon 0 carries a 50bp 5'UTR. The
+      // synthesised anchor now sits at cPos = 1 - 50 = -49 (the
+      // outermost visible position) so the line covers the whole
+      // visible UTR cap, not just the CDS.
+      const txWithUtr: Transcript = {
+        ...minusStrand,
+        exons: minusStrand.exons.map((e, i) => i === 0 ? { ...e, utr5Bp: 50 } : e),
+      };
+      const mapper = createCoordinateMapper(txWithUtr);
+      const viewport = new ViewportController({
+        mapper,
+        width: 720,
+        mode: 'genome',
+        collapsedRegions: defaultCollapsedRegions(txWithUtr),
+      });
+      const rec: ClinVarRecord = {
+        id: 'cv-past-transcript-utr',
+        label: 'huge deletion past 5\' UTR',
+        chr: 'chr1', pos: 1990, refLen: 5000, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.cPos).toBe(-49); // 1 - utr5Bp
       expect(p.truncatedSide).toBe('left');
       expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
     });

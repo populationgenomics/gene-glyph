@@ -247,9 +247,24 @@ function projectHgvs(
   if (pos.offset === 0) {
     const x = viewport.toBaselineX({ kind: 'cds', cPos: pos.cPos, offset: 0 });
     if (x === null) return null;
-    const hit = mapper.findExonByCds(pos.cPos);
-    if (!hit) return null;
-    return { baselineX: x, exonIdx: hit.exonIdx, truncated: false };
+    // UTR cPos values (cPos < 1 for 5'UTR, cPos > cdsLength for 3'UTR)
+    // don't match any exon's [cdsStart, cdsEnd] range, but the
+    // viewport's ruler→baseline extrapolation maps them to the UTR
+    // cap pixels just fine. Pin the host to the first/last exon so
+    // the line still rides a real per-exon transform.
+    const exons = mapper.transcript.exons;
+    const cdsLength = mapper.transcript.cdsLength;
+    let exonIdx: number;
+    if (pos.cPos < 1) {
+      exonIdx = 0;
+    } else if (pos.cPos > cdsLength) {
+      exonIdx = exons.length - 1;
+    } else {
+      const hit = mapper.findExonByCds(pos.cPos);
+      if (!hit) return null;
+      exonIdx = hit.exonIdx;
+    }
+    return { baselineX: x, exonIdx, truncated: false };
   }
   if (viewport.mode !== 'genome') return null;
   const geom = viewport.baselineGeometry();
@@ -343,20 +358,27 @@ export function placeClinVarRecords(
         endHgvs = { cPos: endCds.cPos, offset: endCds.offset };
       } else {
         // r.pos + refLen − 1 falls past every exon on the genomic-high
-        // side. For plus-strand transcripts that's past the 3' end
-        // (last exon's cdsEnd); for minus-strand it's past the 5' end
-        // (first exon's cdsStart). Synthesise an endHgvs at the
-        // matching transcript boundary so the marker docks at that
-        // edge and the renderer can stamp a truncation arrow showing
-        // the overshoot.
+        // side. For plus-strand transcripts that's past the 3' end;
+        // for minus-strand it's past the 5' end. Synthesise an endHgvs
+        // at the outer edge of the figure's natural range — `cdsLength
+        // + utr3Bp` for + strand, `1 - utr5Bp` for − strand — so the
+        // line covers the within-figure portion of the deletion
+        // (CDS + visible UTR cap) and the truncation arrow stamps the
+        // boundary side to flag the further off-figure overshoot.
         const exons = mapper.transcript.exons;
         const first = exons[0]!;
         const last = exons[exons.length - 1]!;
         if (mapper.transcript.strand === '+') {
-          endHgvs = { cPos: last.cdsEnd, offset: 0 };
+          endHgvs = {
+            cPos: last.cdsEnd + (last.utr3Bp ?? 0),
+            offset: 0,
+          };
           pastTranscript = 'right';
         } else {
-          endHgvs = { cPos: first.cdsStart, offset: 0 };
+          endHgvs = {
+            cPos: first.cdsStart - (first.utr5Bp ?? 0),
+            offset: 0,
+          };
           pastTranscript = 'left';
         }
       }
