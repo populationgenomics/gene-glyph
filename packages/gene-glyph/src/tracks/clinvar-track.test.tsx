@@ -149,6 +149,34 @@ describe('placeClinVarRecords', () => {
       expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
     });
 
+    it('intronic anchor in transcript mode docks at the splice-site cPos with truncated=true', () => {
+      // Same 25 bp deletion (intronic anchor 20 bp into intron 1 from
+      // exon 2's acceptor) but now in transcript mode — the intron is
+      // fully collapsed, no flank to dock in. Without the splice-site
+      // fallback the variant would unplace entirely. With it, the
+      // marker sits at c.101 (exon 2's transcript-5' edge) and
+      // truncatedSide = 'left' tells the renderer to draw the chevron
+      // pointing into the collapsed intron.
+      const mapper = createCoordinateMapper(minusStrand);
+      const viewport = new ViewportController({
+        mapper,
+        width: 720,
+        mode: 'transcript',
+        collapsedRegions: defaultCollapsedRegions(minusStrand),
+      });
+      const rec: ClinVarRecord = {
+        id: 'cv-intronic-transcript-mode',
+        label: 'c.101-20_105del',
+        chr: 'chr1', pos: 1995, refLen: 25, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.cPos).toBe(101); // splice-site dock, not the intronic c.101-20
+      expect(p.truncatedSide).toBe('left');
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+    });
+
     it('multi-bp variant whose far end overshoots the entire transcript flags the boundary side', () => {
       const { viewport, mapper } = negSetup();
       // 5000 bp deletion: r.pos at genomic 1990 (in exon 2, c.110);

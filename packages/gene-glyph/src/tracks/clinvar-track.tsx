@@ -266,36 +266,49 @@ function projectHgvs(
     }
     return { baselineX: x, exonIdx, truncated: false };
   }
-  if (viewport.mode !== 'genome') return null;
-  const geom = viewport.baselineGeometry();
-  const flanks = geom.flanks ?? [];
-  for (const flank of flanks) {
-    const matchSide =
-      (flank.side === 'donor' && pos.offset > 0) ||
-      (flank.side === 'acceptor' && pos.offset < 0);
-    if (!matchSide) continue;
-    const exonIdx = flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
-    const associatedExon = mapper.transcript.exons[exonIdx];
-    if (!associatedExon) continue;
-    const expectedCpos =
-      flank.side === 'donor' ? associatedExon.cdsEnd : associatedExon.cdsStart;
-    if (pos.cPos !== expectedCpos) continue;
-    const k = Math.abs(pos.offset);
-    if (k <= flank.bp) {
-      const baselineX =
-        flank.side === 'donor'
-          ? flank.xStart + (k - 0.5) * geom.pxPerBp
-          : flank.xStart + (flank.bp - k + 0.5) * geom.pxPerBp;
-      return { baselineX, exonIdx, truncated: false };
+  // Intronic position. In genome mode with visible flanks we try to
+  // project onto the linear-scale flank zone first.
+  if (viewport.mode === 'genome') {
+    const geom = viewport.baselineGeometry();
+    const flanks = geom.flanks ?? [];
+    for (const flank of flanks) {
+      const matchSide =
+        (flank.side === 'donor' && pos.offset > 0) ||
+        (flank.side === 'acceptor' && pos.offset < 0);
+      if (!matchSide) continue;
+      const exonIdx = flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
+      const associatedExon = mapper.transcript.exons[exonIdx];
+      if (!associatedExon) continue;
+      const expectedCpos =
+        flank.side === 'donor' ? associatedExon.cdsEnd : associatedExon.cdsStart;
+      if (pos.cPos !== expectedCpos) continue;
+      const k = Math.abs(pos.offset);
+      if (k <= flank.bp) {
+        const baselineX =
+          flank.side === 'donor'
+            ? flank.xStart + (k - 0.5) * geom.pxPerBp
+            : flank.xStart + (flank.bp - k + 0.5) * geom.pxPerBp;
+        return { baselineX, exonIdx, truncated: false };
+      }
+      // Past the visible flank → dock at the flank's outer edge (donor
+      // = right edge, acceptor = left edge).
+      void role;
+      const baselineX = flank.side === 'donor' ? flank.xEnd : flank.xStart;
+      return { baselineX, exonIdx, truncated: true };
     }
-    // Past the visible flank → dock at the flank's outer edge (donor
-    // = right edge, acceptor = left edge). `role` is unused here
-    // because the docking direction is fully determined by the side.
-    void role;
-    const baselineX = flank.side === 'donor' ? flank.xEnd : flank.xStart;
-    return { baselineX, exonIdx, truncated: true };
   }
-  return null;
+  // Fallback: dock at the splice-site exonic cPos (donor offsets
+  // anchor on the upstream exon's cdsEnd; acceptor offsets on the
+  // downstream exon's cdsStart — both are exonic cPos values), with
+  // truncated=true so the renderer stamps a chevron stub on the
+  // intronic side. This is the only signal the variant can carry in
+  // transcript / protein mode (no flanks, intron fully collapsed) —
+  // without it the variant disappears entirely from those views.
+  const exonHit = mapper.findExonByCds(pos.cPos);
+  if (!exonHit) return null;
+  const baselineX = viewport.toBaselineX({ kind: 'cds', cPos: pos.cPos, offset: 0 });
+  if (baselineX === null) return null;
+  return { baselineX, exonIdx: exonHit.exonIdx, truncated: true };
 }
 
 /** Outer-edge baseline-x for the far end of a line that was supposed
