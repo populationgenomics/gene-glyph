@@ -799,6 +799,7 @@ function ToolbarButton({
       data-active={active}
       aria-pressed={active}
       aria-label={label}
+      title={label}
       onClick={onClick}
       style={{
         width: 28,
