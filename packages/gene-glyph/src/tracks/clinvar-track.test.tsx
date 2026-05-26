@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
-import { createCoordinateMapper } from '../coordinate-mapper.js';
+import { createCoordinateMapper, defaultCollapsedRegions } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
 import type { InteractionState, Transcript } from '../types.js';
 import { ViewportController } from '../viewport.js';
@@ -57,6 +57,118 @@ describe('placeClinVarRecords', () => {
     expect(unplaced.map((r) => r.id)).toEqual(
       expect.arrayContaining(['cv-intronic', 'cv-oob']),
     );
+  });
+
+  describe('multi-bp spans', () => {
+    // Minus-strand fixture mirroring HBB's shape — three exons with a
+    // 100bp intron between each, CDS starts on the genomic-high side
+    // of exon 1 so genomic-end of a deletion at r.pos maps to a LOWER
+    // CDS coord. This is the geometry that triggers the HGVS-anchor
+    // and intron-flank-aware placement paths.
+    const minusStrand: Transcript = {
+      geneSymbol: 'NEG',
+      transcriptId: 'NM_NEG.1',
+      cdsLength: 300,
+      strand: '-',
+      exons: [
+        // Exon 1: c.1–100 at genomic 2900–2999 (transcript-5')
+        { number: 1, cdsStart: 1, cdsEnd: 100, genomicStart: 2900, genomicEnd: 2999, chr: 'chr1' },
+        // Exon 2: c.101–200 at genomic 1900–1999
+        { number: 2, cdsStart: 101, cdsEnd: 200, genomicStart: 1900, genomicEnd: 1999, chr: 'chr1' },
+        // Exon 3: c.201–300 at genomic 900–999 (transcript-3')
+        { number: 3, cdsStart: 201, cdsEnd: 300, genomicStart: 900, genomicEnd: 999, chr: 'chr1' },
+      ],
+    };
+    function negSetup() {
+      const mapper = createCoordinateMapper(minusStrand);
+      const viewport = new ViewportController({
+        mapper,
+        width: 720,
+        mode: 'genome',
+        // Match what the viewer wires up by default — without this the
+        // baseline geometry has no flanks and intronic offsets can't be
+        // projected.
+        collapsedRegions: defaultCollapsedRegions(minusStrand),
+      });
+      return { mapper, viewport };
+    }
+
+    it('multi-bp variant entirely within one exon draws a rightward span and no arrow', () => {
+      const { viewport, mapper } = negSetup();
+      // 5 bp deletion entirely inside exon 2. On minus strand: r.pos at
+      // genomic 1995 maps to c.105 (high CDS in exon 2); r.pos+4 at
+      // 1999 maps to c.101 (low CDS in exon 2). Anchor = c.101, line
+      // extends right to c.105.
+      const rec: ClinVarRecord = {
+        id: 'cv-multibp-exonic',
+        label: 'c.101_105del',
+        chr: 'chr1', pos: 1995, refLen: 5, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.cPos).toBe(101); // anchor at HGVS-start
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX); // line goes right
+      expect(p.truncatedSide).toBeUndefined();
+    });
+
+    it('multi-bp variant whose intronic end fits inside the visible flank gets a real span and no arrow', () => {
+      const { viewport, mapper } = negSetup();
+      // 8 bp deletion: 3 bp into intron 1 (acceptor side of exon 2) +
+      // 5 bp into exon 2. On minus strand the variant's genomic-high
+      // end is at the intron — within the 10 bp flank, so projectable.
+      // r.pos at genomic 1995 = c.105. r.pos+7 at 2002 = c.101 - 3
+      // (in acceptor flank). HGVS-anchor = c.101-3.
+      const rec: ClinVarRecord = {
+        id: 'cv-multibp-flank',
+        label: 'c.101-3_105del',
+        chr: 'chr1', pos: 1995, refLen: 8, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+      expect(p.truncatedSide).toBeUndefined();
+    });
+
+    it('multi-bp variant overshooting the visible flank into the chevron gets truncated:left', () => {
+      const { viewport, mapper } = negSetup();
+      // 25 bp deletion: 20 bp into intron 1 + 5 bp into exon 2.
+      // The intronic 20 bp exceeds flank.bp (10) — the anchor docks
+      // at the acceptor flank's outer edge and `truncatedSide = 'left'`
+      // tells the renderer to draw the arrow stub.
+      const rec: ClinVarRecord = {
+        id: 'cv-multibp-overshoot',
+        label: 'c.101-20_105del',
+        chr: 'chr1', pos: 1995, refLen: 25, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.truncatedSide).toBe('left');
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+    });
+
+    it('multi-bp variant spanning multiple exons docks at the host exon edge and flags truncated:right', () => {
+      const { viewport, mapper } = negSetup();
+      // 1010 bp deletion crossing intron 1 entirely. On minus strand:
+      // r.pos at genomic 1990 = c.110 (mid exon 2); r.pos + 1009 at
+      // 2999 = c.1 (start of exon 1). Anchor = c.1 (exon 0); far =
+      // c.110 (exon 1). Host = anchor's exon (exon 0); far gets
+      // clipped to exon 0's donor flank edge and truncatedSide =
+      // 'right'.
+      const rec: ClinVarRecord = {
+        id: 'cv-multibp-crossexon',
+        label: 'c.1_110del',
+        chr: 'chr1', pos: 1990, refLen: 1010, significance: 'pathogenic',
+      };
+      const { placed } = placeClinVarRecords([rec], viewport, mapper);
+      expect(placed).toHaveLength(1);
+      const p = placed[0]!;
+      expect(p.exonIdx).toBe(0); // host is anchor's exon
+      expect(p.truncatedSide).toBe('right');
+      expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
+    });
   });
 });
 

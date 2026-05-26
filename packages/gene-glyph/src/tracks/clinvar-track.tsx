@@ -122,11 +122,12 @@ export interface PlacedClinVar {
    *  `baselineX` for single-bp variants. For multi-bp variants the
    *  renderer extends a line rightward from the marker to this x. The
    *  marker anchors on the transcript-5' end (HGVS-start), so
-   *  `endBaselineX ≥ baselineX` is invariant regardless of strand. When
-   *  the far end falls in an intron or a different exon, it's clamped
-   *  to the anchor exon's far edge so the line doesn't leak into
-   *  another exon's CSS-variable-driven group. */
+   *  `endBaselineX ≥ baselineX` is invariant regardless of strand. */
   endBaselineX: number;
+  /** Set when the variant extends past the visible intron flank into
+   *  the chevron-compressed bulk on that side. The renderer draws an
+   *  arrow stub at the truncated end to flag the hidden extent. */
+  truncatedSide?: 'left' | 'right';
   /** Live screen-x after pan/zoom; used for clustering. */
   screenX: number;
 }
@@ -191,6 +192,124 @@ export function clinVarSignificanceColor(s: ClinVarSignificance): string {
   return `var(--${SIGNIFICANCE_VAR[s]}, ${SIGNIFICANCE_FALLBACK[s]})`;
 }
 
+/** An HGVS position (cPos + intronic offset). Used to order and project
+ *  the two ends of a multi-bp variant in transcript-5'-to-3' order. */
+interface HgvsPos {
+  cPos: number;
+  offset: number;
+}
+
+/** Order two HGVS positions in transcript-5'-to-3' order. Exonic
+ *  positions order by cPos. Intronic offsets order WITHIN the intron:
+ *  c.X+1 < c.X+2 < … (donor-side, increasing offset is further into
+ *  the intron) and c.X-1 > c.X-2 > … (acceptor-side, more-negative
+ *  offset is further into the intron). The two sides meet in the
+ *  chevron: c.X+N (donor) < c.Y-M (acceptor) when Y = X + 1 (next
+ *  exon). */
+function compareHgvs(a: HgvsPos, b: HgvsPos): number {
+  // Reduce to a sortable triple. Within an intron, donor offsets count
+  // up from the upstream exon's cdsEnd, acceptor offsets count down
+  // from the downstream exon's cdsStart. The midpoint of the intron
+  // sits "after" all donor offsets and "before" all acceptor offsets.
+  const ka = hgvsKey(a);
+  const kb = hgvsKey(b);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  return ka[1] - kb[1];
+}
+
+function hgvsKey(p: HgvsPos): [number, number] {
+  if (p.offset === 0) return [p.cPos, 0];
+  if (p.offset > 0) {
+    // Donor side: c.X+k sits between c.X and c.(X+1), keyed at X.5 +
+    // a small offset-dependent fraction so larger k sorts further from
+    // the upstream exon. Cap the fraction so it never reaches 1.
+    return [p.cPos, 0.5 - 1 / (p.offset + 2)];
+  }
+  // Acceptor side: c.X-k. Donor and acceptor halves of one intron
+  // share the same intron index but key on different cPos values;
+  // reduce both to the upstream exon's index by snapping to cPos − 1.
+  return [p.cPos - 1, 0.5 + 1 / (-p.offset + 2)];
+}
+
+/** Project an HGVS position into baseline-x. Returns the host exon
+ *  index (the exon whose group transform owns the rendered line) plus
+ *  a `truncated` flag — true when the position lives past the visible
+ *  flank, in which case `baselineX` is docked at the flank's outer
+ *  edge. The `role` ('anchor' vs 'far') tells which side to dock when
+ *  the position falls in the chevron-compressed bulk between two
+ *  exons. */
+function projectHgvs(
+  pos: HgvsPos,
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+  role: 'anchor' | 'far',
+): { baselineX: number; exonIdx: number; truncated: boolean } | null {
+  if (pos.offset === 0) {
+    const x = viewport.toBaselineX({ kind: 'cds', cPos: pos.cPos, offset: 0 });
+    if (x === null) return null;
+    const hit = mapper.findExonByCds(pos.cPos);
+    if (!hit) return null;
+    return { baselineX: x, exonIdx: hit.exonIdx, truncated: false };
+  }
+  if (viewport.mode !== 'genome') return null;
+  const geom = viewport.baselineGeometry();
+  const flanks = geom.flanks ?? [];
+  for (const flank of flanks) {
+    const matchSide =
+      (flank.side === 'donor' && pos.offset > 0) ||
+      (flank.side === 'acceptor' && pos.offset < 0);
+    if (!matchSide) continue;
+    const exonIdx = flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
+    const associatedExon = mapper.transcript.exons[exonIdx];
+    if (!associatedExon) continue;
+    const expectedCpos =
+      flank.side === 'donor' ? associatedExon.cdsEnd : associatedExon.cdsStart;
+    if (pos.cPos !== expectedCpos) continue;
+    const k = Math.abs(pos.offset);
+    if (k <= flank.bp) {
+      const baselineX =
+        flank.side === 'donor'
+          ? flank.xStart + (k - 0.5) * geom.pxPerBp
+          : flank.xStart + (flank.bp - k + 0.5) * geom.pxPerBp;
+      return { baselineX, exonIdx, truncated: false };
+    }
+    // Past the visible flank → dock at the flank's outer edge (donor
+    // = right edge, acceptor = left edge). `role` is unused here
+    // because the docking direction is fully determined by the side.
+    void role;
+    const baselineX = flank.side === 'donor' ? flank.xEnd : flank.xStart;
+    return { baselineX, exonIdx, truncated: true };
+  }
+  return null;
+}
+
+/** Outer-edge baseline-x for the far end of a line that was supposed
+ *  to extend out of the anchor's exon into the next/previous exon's
+ *  territory. Returns the docking x at the appropriate flank's far
+ *  edge, or null when no matching flank exists. */
+function exonOuterEdgeForFar(
+  exonIdx: number,
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+): number | null {
+  const geom = viewport.baselineGeometry();
+  const flanks = geom.flanks ?? [];
+  // Find the donor flank attached to this exon's 3' end.
+  for (const flank of flanks) {
+    if (flank.side !== 'donor') continue;
+    if (flank.intronIdx !== exonIdx) continue;
+    return flank.xEnd;
+  }
+  // No flank — use the exon's right edge from baseline geometry.
+  const eb = geom.exons.find((e) => e.exonIdx === exonIdx);
+  if (!eb) {
+    const exon = mapper.transcript.exons[exonIdx];
+    if (!exon) return null;
+    return viewport.toBaselineX({ kind: 'cds', cPos: exon.cdsEnd, offset: 0 });
+  }
+  return eb.xEnd;
+}
+
 /** Project each record into the current viewport. Records whose genomic
  *  coordinate doesn't map to a CDS position (UTR / intergenic) or which fall
  *  on a collapsed intron are dropped — the cluster path is for *visible*
@@ -211,56 +330,65 @@ export function placeClinVarRecords(
     // gnomAD ids carry positions on the chromosomal + strand, so on a
     // minus-strand transcript the variant's *genomic-end* maps to a
     // LOWER CDS coord than `r.pos`. Project both ends and anchor the
-    // marker on the smaller CDS coord (transcript-5' end of the
-    // variant) — that matches HGVS conventions (c.418_427del anchors
-    // at 418, not 427) and keeps the span line always extending
-    // rightward in figure space.
+    // marker on the smaller HGVS coord (transcript-5' end of the
+    // variant) — matches HGVS conventions (c.418_427del anchors at
+    // 418, not 427) and keeps the span line always extending right.
     const refLen = Math.max(1, r.refLen ?? 1);
-    let endCpos = startCds.cPos;
+    const startHgvs: HgvsPos = { cPos: startCds.cPos, offset: 0 };
+    let endHgvs: HgvsPos = startHgvs;
     if (refLen > 1) {
       const endCds = mapper.genomicToCds(r.chr, r.pos + refLen - 1);
-      if (endCds && endCds.offset === 0) {
-        endCpos = endCds.cPos;
-      } else {
-        // Far end falls in an intron / UTR — clamp to the start exon's
-        // boundary in the variant's transcript direction.
-        const startExonHit = mapper.findExonByCds(startCds.cPos);
-        if (!startExonHit) {
-          unplaced.push(r);
-          continue;
-        }
-        const startExon = mapper.transcript.exons[startExonHit.exonIdx]!;
-        endCpos =
-          mapper.transcript.strand === '+' ? startExon.cdsEnd : startExon.cdsStart;
-      }
+      // If endCds is null (variant extends past the transcript on its
+      // genomic-high side) we leave endHgvs = startHgvs and the marker
+      // renders with no span. Visualising a span that runs into 5'UTR
+      // / promoter territory would mislead more than help — the
+      // truncation arrow stub is reserved for variants whose endpoints
+      // both land in the figure's visible coordinate space.
+      if (endCds) endHgvs = { cPos: endCds.cPos, offset: endCds.offset };
     }
-    const anchorCds = Math.min(startCds.cPos, endCpos);
-    const farCds = Math.max(startCds.cPos, endCpos);
+    const [anchor, far] = compareHgvs(startHgvs, endHgvs) <= 0
+      ? [startHgvs, endHgvs]
+      : [endHgvs, startHgvs];
 
-    const exonHit = mapper.findExonByCds(anchorCds);
-    if (!exonHit) {
+    // Resolve both endpoints to baseline-x. Intronic positions in the
+    // linear-scale flank zone get a real baseline-x; positions in the
+    // chevron-compressed bulk get docked at the flank's outer edge and
+    // flagged as truncated so the renderer can draw an arrow stub.
+    const anchorProj = projectHgvs(anchor, viewport, mapper, 'anchor');
+    if (!anchorProj) {
       unplaced.push(r);
       continue;
     }
-    // The line is a within-exon visual extent indicator, not a cross-
-    // exon path — clamp the far end to the anchor exon so the line
-    // can be rendered inside the anchor exon's group transform.
-    const anchorExon = mapper.transcript.exons[exonHit.exonIdx]!;
-    const clampedFar = Math.min(anchorExon.cdsEnd, Math.max(anchorExon.cdsStart, farCds));
-
-    // Use the mode-aware Position projection so protein-mode hosts
-    // (which expect aa coords on the ruler) still get the records
-    // placed at the correct codon centre. The general `toBaselineX` /
-    // `toScreen` overloads convert CDS bp → aa internally when the
-    // viewport is in protein mode.
-    const anchorPos = { kind: 'cds' as const, cPos: anchorCds, offset: 0 };
-    const farPos = { kind: 'cds' as const, cPos: clampedFar, offset: 0 };
-    const baselineX = viewport.toBaselineX(anchorPos);
-    if (baselineX === null) {
+    const farProj = projectHgvs(far, viewport, mapper, 'far');
+    if (!farProj) {
       unplaced.push(r);
       continue;
     }
-    const endBaselineX = viewport.toBaselineX(farPos) ?? baselineX;
+
+    let { baselineX } = anchorProj;
+    let endBaselineX = farProj.baselineX;
+    // Both endpoints must live inside the same exon's group transform
+    // (the line rides per-exon CSS variables). Pick the anchor's host
+    // exon and clamp the far end to that exon's outer flank edge if
+    // necessary — keeps the line renderable in one transform and
+    // flags right-side truncation so the renderer draws an arrow.
+    let farClippedToHost = false;
+    if (anchorProj.exonIdx !== farProj.exonIdx) {
+      const farEdgeX = exonOuterEdgeForFar(anchorProj.exonIdx, viewport, mapper);
+      if (farEdgeX !== null) endBaselineX = farEdgeX;
+      farClippedToHost = true;
+    }
+    if (endBaselineX < baselineX) {
+      // Defensive — should not happen with the HGVS-ordered anchor/far.
+      [baselineX, endBaselineX] = [endBaselineX, baselineX];
+    }
+    // Anchor truncation wins over far truncation: a single-side flag
+    // and an arrow stub are the supported visualisation. Pathological
+    // variants that overshoot both sides report the anchor side.
+    let truncatedSide: 'left' | 'right' | undefined = undefined;
+    if (anchorProj.truncated) truncatedSide = 'left';
+    else if (farProj.truncated || farClippedToHost) truncatedSide = 'right';
+
     // Records outside the current screen window (toScreen returns
     // null) used to land in `unplaced`. That made the stacked layout
     // re-pack on every pan/zoom — the figure SVG already clips
@@ -269,14 +397,16 @@ export function placeClinVarRecords(
     // with `Infinity` for off-screen records so `clusterClinVar` (which
     // sorts by screen-pixel distance) naturally pushes them past every
     // on-screen cluster and out of the cluster gap window.
-    const liveScreenX = viewport.toScreen(anchorPos);
+    const anchorScreenPos = { kind: 'cds' as const, cPos: anchor.cPos, offset: 0 };
+    const liveScreenX = viewport.toScreen(anchorScreenPos);
     const screenX = liveScreenX ?? Infinity;
     placed.push({
       record: r,
-      exonIdx: exonHit.exonIdx,
-      cPos: anchorCds,
+      exonIdx: anchorProj.exonIdx,
+      cPos: anchor.cPos,
       baselineX,
       endBaselineX,
+      truncatedSide,
       screenX,
     });
   }
@@ -686,6 +816,32 @@ function ClinVarStackedBody({
               pointerEvents="stroke"
             />
           )}
+          {p.truncatedSide && (
+            // Truncation arrow stub — flags that the variant's reference
+            // extends past the visible flank into the chevron-compressed
+            // intron bulk. The chevron sits in its own counter-scale group
+            // so the arrowhead stays fixed-pixel regardless of zoom; for
+            // the right-side stub the counter-scale also translates to
+            // the line's far end before cancelling the exon scale.
+            <g
+              className="vv-clinvar-span-arrow"
+              style={{
+                transform:
+                  p.truncatedSide === 'right'
+                    ? `translate(${localEndX - localX}px, 0) scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`
+                    : `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`,
+                transformOrigin: '0 0',
+              }}
+              data-vv-truncated={p.truncatedSide}
+            >
+              <ChevronStub
+                direction={p.truncatedSide}
+                cy={cy}
+                r={r}
+                stroke={fill}
+              />
+            </g>
+          )}
           <g
             className="vv-clinvar-shape"
             style={{ transform: counterScale, transformOrigin: '0 0' }}
@@ -914,6 +1070,48 @@ interface ClusterDiamondProps {
   r: number;
   fill: string;
   count: number;
+}
+
+interface ChevronStubProps {
+  direction: 'left' | 'right';
+  cy: number;
+  r: number;
+  stroke: string;
+}
+
+/** Two stacked chevron arrowheads pointing in `direction`, sized to
+ *  the marker radius. Drawn at fixed pixel size — the parent group
+ *  applies a counter-scale that cancels the exon's CSS-variable
+ *  scale, so the chevron doesn't stretch with zoom. */
+function ChevronStub({ direction, cy, r, stroke }: ChevronStubProps): ReactNode {
+  // Chevron size keyed to marker radius so compact / roomy density
+  // presets get correspondingly smaller / larger stubs.
+  const a = Math.max(2.5, r * 0.9);
+  const sign = direction === 'left' ? -1 : 1;
+  const sw = Math.max(1, r * 0.4);
+  // Two chevrons pointing in `direction`. Inner chevron's tip sits on
+  // the line's end; outer chevron's tip is one chevron-width further
+  // out. The chevron "opens" away from the tip.
+  const d = [
+    `M ${sign * a * 0.8} ${cy - a / 2}`,
+    `L 0 ${cy}`,
+    `L ${sign * a * 0.8} ${cy + a / 2}`,
+    `M ${sign * a * 1.8} ${cy - a / 2}`,
+    `L ${sign * a} ${cy}`,
+    `L ${sign * a * 1.8} ${cy + a / 2}`,
+  ].join(' ');
+  return (
+    <path
+      d={d}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={sw}
+      strokeOpacity={0.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      vectorEffect="non-scaling-stroke"
+    />
+  );
 }
 
 function ClusterDiamond({ cx, cy, r, fill, count }: ClusterDiamondProps): ReactNode {
