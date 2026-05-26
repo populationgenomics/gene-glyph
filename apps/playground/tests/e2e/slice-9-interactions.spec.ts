@@ -68,7 +68,7 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     expect(await lastReason(page)).toBe('wheel');
   });
 
-  test('drag-to-pan moves the gene under the cursor', async ({ page }) => {
+  test('Space+drag pans the gene under the cursor', async ({ page }) => {
     await page.goto('/');
     // Seed an inset range so drag has room to move in either direction.
     const container = page.locator('section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]');
@@ -80,10 +80,14 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     if (!box) throw new Error('figure not visible');
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
+    // Plain drag now means box-zoom (RD-1106, Adobe Hand-tool pattern);
+    // Space holds the pan modifier.
+    await page.keyboard.down('Space');
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx - 100, cy, { steps: 8 });
     await page.mouse.up();
+    await page.keyboard.up('Space');
     const after = await readRange(page);
     // Drag-right-to-left (cursor moves left) = range slides right.
     expect(after[0]).toBeGreaterThan(before[0]);
