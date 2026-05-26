@@ -5,7 +5,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import { resolveSourceData } from '../data-source.js';
-import { packLanes } from '../pack-lanes.js';
 import {
   type CoordinateMapper,
   type DataSource,
@@ -46,6 +45,12 @@ export interface ClinVarRecord {
   significance: ClinVarSignificance;
   reviewStatus?: string;
   condition?: string;
+  /** Reference allele length in bp. Defaults to 1 (SNV). For deletions
+   *  and other multi-bp variants the renderer extends a horizontal line
+   *  from the marker to `pos + refLen - 1`, indicating the affected
+   *  span. Lane packing sorts by refLen descending so long variants
+   *  take the top rows. */
+  refLen?: number;
   /** Free-form metadata; the playground / host can surface this in tooltips. */
   meta?: Record<string, unknown>;
 }
@@ -111,6 +116,13 @@ export interface PlacedClinVar {
   cPos: number;
   /** Baseline (fit-gene) screen-x within the figure. */
   baselineX: number;
+  /** Baseline screen-x of the variant's reference-allele END
+   *  (`pos + refLen - 1`). Equal to `baselineX` for single-bp variants.
+   *  For multi-bp variants the renderer extends a line from the marker
+   *  to this x. When the variant's end falls in an intron or a different
+   *  exon, this is clamped to the start exon's right edge so the line
+   *  doesn't leak into another exon's CSS-variable-driven group. */
+  endBaselineX: number;
   /** Live screen-x after pan/zoom; used for clustering. */
   screenX: number;
 }
@@ -202,11 +214,32 @@ export function placeClinVarRecords(
     // placed at the correct codon centre. The general `toBaselineX` /
     // `toScreen` overloads convert CDS bp → aa internally when the
     // viewport is in protein mode.
-    const pos = { kind: 'cds' as const, cPos: cds.cPos, offset: 0 };
-    const baselineX = viewport.toBaselineX(pos);
+    const startPos = { kind: 'cds' as const, cPos: cds.cPos, offset: 0 };
+    const baselineX = viewport.toBaselineX(startPos);
     if (baselineX === null) {
       unplaced.push(r);
       continue;
+    }
+    // End-of-reference for multi-bp variants. Map the variant's last
+    // genomic bp back into the active mode's ruler space and convert
+    // to baseline-x. If the end falls in an intron or extends past the
+    // start exon, clamp to the start exon's right edge — the line is a
+    // visual extent indicator, not a precise cross-exon path.
+    const refLen = Math.max(1, r.refLen ?? 1);
+    let endBaselineX = baselineX;
+    if (refLen > 1) {
+      const endGenomicPos = r.pos + refLen - 1;
+      const endCds = mapper.genomicToCds(r.chr, endGenomicPos);
+      const exonEndCds = mapper.transcript.exons[exonHit.exonIdx]!.cdsEnd;
+      const useCds =
+        endCds && endCds.offset === 0 && endCds.cPos <= exonEndCds
+          ? endCds.cPos
+          : exonEndCds;
+      const endPos = { kind: 'cds' as const, cPos: useCds, offset: 0 };
+      const computedEnd = viewport.toBaselineX(endPos);
+      if (computedEnd !== null && computedEnd > baselineX) {
+        endBaselineX = computedEnd;
+      }
     }
     // Records outside the current screen window (toScreen returns
     // null) used to land in `unplaced`. That made the stacked layout
@@ -216,13 +249,14 @@ export function placeClinVarRecords(
     // with `Infinity` for off-screen records so `clusterClinVar` (which
     // sorts by screen-pixel distance) naturally pushes them past every
     // on-screen cluster and out of the cluster gap window.
-    const liveScreenX = viewport.toScreen(pos);
+    const liveScreenX = viewport.toScreen(startPos);
     const screenX = liveScreenX ?? Infinity;
     placed.push({
       record: r,
       exonIdx: exonHit.exonIdx,
       cPos: cds.cPos,
       baselineX,
+      endBaselineX,
       screenX,
     });
   }
@@ -325,31 +359,64 @@ export function packStackedClinVar(
   for (const key of groupOrder) {
     const items = groups.get(key)!;
     const inputs = items.map((p) => {
-      const layoutX = viewport.baselineToLayoutX(p.baselineX);
+      const layoutXStart = viewport.baselineToLayoutX(p.baselineX);
+      const layoutXEnd = viewport.baselineToLayoutX(p.endBaselineX);
       const r = encoding.radius?.(p.record) ?? markRadius;
       return {
         item: p,
-        xStart: layoutX - r,
-        xEnd: layoutX + r,
+        xStart: layoutXStart - r,
+        // End of the reference span (right edge of the marker for SNVs, end
+        // of the extension line + marker pad for multi-bp variants).
+        xEnd: Math.max(layoutXEnd, layoutXStart) + r,
+        refLen: Math.max(1, p.record.refLen ?? 1),
       };
     });
 
+    // Sort by reference length descending so long variants are packed
+    // first → they claim the top lanes. Tie-break by midpoint then id
+    // for a stable order across renders.
     inputs.sort(
       (a, b) =>
+        b.refLen - a.refLen ||
         (a.xStart + a.xEnd) / 2 - (b.xStart + b.xEnd) / 2 ||
         compareStrings(a.item.record.id, b.item.record.id),
     );
 
-    const packed = packLanes(inputs, 0);
-
-    for (const p of packed.items) {
+    // Full interval list per lane. A trailing-end sweep (laneEnds-only)
+    // is wrong here because the sort is length-priority not left-to-right:
+    // after two long variants at [10,110] and [200,300] both land in lane
+    // 0, an SNV at x=120 must still fit in lane 0 — but a trailing-end
+    // check would reject it because laneEnds[0] is at 300. Tracking each
+    // lane's full interval set + checking any-overlap finds the gap.
+    const laneIntervals: { xStart: number; xEnd: number }[][] = [];
+    for (const it of inputs) {
+      let lane = -1;
+      for (let i = 0; i < laneIntervals.length; i++) {
+        const intervals = laneIntervals[i]!;
+        let collides = false;
+        for (const existing of intervals) {
+          if (existing.xStart < it.xEnd && existing.xEnd > it.xStart) {
+            collides = true;
+            break;
+          }
+        }
+        if (!collides) {
+          lane = i;
+          break;
+        }
+      }
+      if (lane === -1) {
+        lane = laneIntervals.length;
+        laneIntervals.push([]);
+      }
+      laneIntervals[lane]!.push({ xStart: it.xStart, xEnd: it.xEnd });
       placements.push({
-        ...p.item,
-        row: rowOffset + p.lane,
+        ...it.item,
+        row: rowOffset + lane,
         laneKey: key,
       });
     }
-    rowOffset += packed.laneCount;
+    rowOffset += laneIntervals.length;
   }
   return { rowCount: rowOffset, placements };
 }
@@ -549,6 +616,8 @@ function ClinVarStackedBody({
       const isHovered = interaction.hoveredFeatureId === p.record.id;
       const isSelected = interaction.selectedFeatureIds.has(p.record.id);
       const localX = p.baselineX - exon.xStart;
+      const localEndX = p.endBaselineX - exon.xStart;
+      const hasSpan = p.endBaselineX > p.baselineX + 0.5;
       const cls = [
         'vv-clinvar-mark',
         'vv-clinvar-mark-stacked',
@@ -575,6 +644,26 @@ function ClinVarStackedBody({
           role="button"
           aria-label={p.record.label}
         >
+          {hasSpan && (
+            // Span line drawn outside the counter-scale group so its length
+            // stretches with the exon's CDS-bp content (representing real
+            // biological extent); stroke width is held fixed-pixel via
+            // `non-scaling-stroke`. Stroke scales with the marker radius
+            // so compact-density configs (smaller marks) get correspondingly
+            // thinner extension lines.
+            <line
+              className="vv-clinvar-span"
+              x1={0}
+              x2={localEndX - localX}
+              y1={cy}
+              y2={cy}
+              stroke={fill}
+              strokeWidth={Math.max(1, r * 0.4)}
+              strokeOpacity={0.6}
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="stroke"
+            />
+          )}
           <g
             className="vv-clinvar-shape"
             style={{ transform: counterScale, transformOrigin: '0 0' }}

@@ -534,6 +534,7 @@ function gnomadClinVarToRecords(
     pos: v.pos,
     significance: parseClinVarSignificance(v.clinical_significance ?? ''),
     reviewStatus: v.review_status ?? undefined,
+    refLen: refLenFromVariantId(v.variant_id),
     meta: {
       majorConsequence: v.major_consequence ?? undefined,
       goldStars: v.gold_stars ?? undefined,
@@ -541,6 +542,16 @@ function gnomadClinVarToRecords(
       transcriptId: v.transcript_id ?? undefined,
     },
   }));
+}
+
+/** gnomAD's variant ids encode the reference and alternate alleles as
+ *  `<chr>-<pos>-<ref>-<alt>`. The reference length tells us how many
+ *  genomic bp the variant spans on the reference contig, which the
+ *  ClinVar track turns into a horizontal line extension on multi-bp
+ *  variants. Falls back to 1 (single-bp) when the id doesn't match. */
+function refLenFromVariantId(id: string): number {
+  const m = /^[^-]+-\d+-([A-Za-z]+)-[A-Za-z]+$/.exec(id);
+  return m ? m[1]!.length : 1;
 }
 
 async function doFetch(geneSymbol: string): Promise<LiveGeneData> {
@@ -636,6 +647,7 @@ function toClinVarRecords(gene: GnomadGene): ClinVarRecord[] {
       pos: v.pos,
       significance,
       reviewStatus: v.review_status ?? undefined,
+      refLen: refLenFromVariantId(v.variant_id),
       meta: {
         majorConsequence: v.major_consequence ?? undefined,
         goldStars: v.gold_stars ?? undefined,

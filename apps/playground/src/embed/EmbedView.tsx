@@ -125,6 +125,7 @@ export function EmbedView() {
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
   const [mode, setMode] = useState<ViewMode>('transcript');
+  const [density, setDensity] = useState<'compact' | 'normal' | 'roomy'>('normal');
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -208,16 +209,27 @@ export function EmbedView() {
     });
   };
 
-  // Hash of the active exclusions. Folded into each detail track's
-  // `configKey` so the viewer notices when the host predicate changes
-  // shape — without that, `load()`'s packed `stackLayout` is reused
-  // and the figure's height stays stuck on the pre-filter row count.
+  // Hash of the active exclusions + density preset. Folded into each
+  // detail track's `configKey` so the viewer notices when the host
+  // predicate or row pitch changes — without that, `load()`'s packed
+  // `stackLayout` is reused and the figure's height stays stuck on the
+  // pre-change row count.
   const filterKey = useMemo(() => {
     const sig = [...excluded].sort().join(',');
     const stars = [...excludedStars].sort((a, b) => a - b).join(',');
     const types = [...excludedTypes].sort().join(',');
-    return `s=${sig};r=${stars};t=${types}`;
-  }, [excluded, excludedStars, excludedTypes]);
+    return `s=${sig};r=${stars};t=${types};d=${density}`;
+  }, [excluded, excludedStars, excludedTypes, density]);
+
+  const densityConfig = useMemo(
+    () =>
+      density === 'compact'
+        ? { markRadius: 2.5, stackLanePx: 6 }
+        : density === 'roomy'
+          ? { markRadius: 6, stackLanePx: 14 }
+          : { markRadius: 4, stackLanePx: 10 },
+    [density],
+  );
 
   const tracks = useMemo<TrackOrGroup[]>(() => {
     const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
@@ -234,6 +246,8 @@ export function EmbedView() {
             stackedVariantStyle: defaultClinVarSymbolEncoding,
             filter: sigFilter,
             configKey: filterKey,
+            markRadius: densityConfig.markRadius,
+            stackLanePx: densityConfig.stackLanePx,
           }),
         ],
         summaryTrack: clinVarSummaryTrack({
@@ -261,7 +275,7 @@ export function EmbedView() {
         }),
       },
     ];
-  }, [records, filter, filterKey]);
+  }, [records, filter, filterKey, densityConfig]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -362,6 +376,32 @@ export function EmbedView() {
                 }}
               >
                 {m}
+              </button>
+            );
+          })}
+          <span style={{ opacity: 0.75, minWidth: 80, marginLeft: 16 }}>
+            density:
+          </span>
+          {(['compact', 'normal', 'roomy'] as const).map((d) => {
+            const active = density === d;
+            return (
+              <button
+                key={d}
+                type="button"
+                data-testid={`embed-density-${d}`}
+                data-active={active}
+                onClick={() => setDensity(d)}
+                style={{
+                  padding: '2px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #cbd5e1',
+                  background: active ? '#0c4a6e' : '#f1f5f9',
+                  color: active ? '#e0f2fe' : '#475569',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {d}
               </button>
             );
           })}
