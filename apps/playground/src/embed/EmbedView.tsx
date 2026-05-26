@@ -1024,14 +1024,32 @@ function VariantsEntryModal({
         }}
       >
         <header
-          id="embed-variants-modal-title"
           style={{
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            color: '#0f172a',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
           }}
         >
-          Add variants
+          <h2
+            id="embed-variants-modal-title"
+            style={{
+              margin: 0,
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              color: '#0f172a',
+            }}
+          >
+            Edit variants
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              fontSize: '0.75rem',
+              color: '#64748b',
+            }}
+          >
+            Submit replaces the current set. One variant per line or comma-separated.
+          </p>
         </header>
         <textarea
           ref={textareaRef}
@@ -1045,15 +1063,15 @@ function VariantsEntryModal({
             }
           }}
           placeholder={'17:7674212C>T\n17-7675236-ACTG-A\nc.524G>A'}
-          rows={Math.max(3, Math.min(8, value.split('\n').length + 1))}
+          rows={Math.max(4, Math.min(10, value.split('\n').length + 1))}
           style={{
             width: '100%',
+            boxSizing: 'border-box',
             font: '0.85rem ui-monospace, SFMono-Regular, Menlo, monospace',
             padding: 8,
             border: '1px solid #cbd5e1',
             borderRadius: 4,
             resize: 'vertical',
-            minHeight: 80,
           }}
         />
         {inlineErrors.length > 0 && (
@@ -1085,11 +1103,16 @@ function VariantsEntryModal({
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: 8,
-            fontSize: '0.75rem',
-            color: '#475569',
+            marginTop: 2,
           }}
         >
-          <span>
+          <span
+            style={{
+              fontSize: '0.72rem',
+              color: '#94a3b8',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             ⌘/Ctrl+Enter to submit · Esc to cancel
           </span>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -1098,12 +1121,13 @@ function VariantsEntryModal({
               data-testid="embed-variants-modal-clear"
               onClick={() => setValue('')}
               style={{
-                padding: '4px 10px',
+                padding: '5px 12px',
                 background: '#ffffff',
                 border: '1px solid #cbd5e1',
                 borderRadius: 4,
                 color: '#475569',
                 cursor: 'pointer',
+                fontSize: '0.8rem',
               }}
             >
               Clear
@@ -1113,13 +1137,14 @@ function VariantsEntryModal({
               data-testid="embed-variants-modal-submit"
               onClick={() => onSubmit(value)}
               style={{
-                padding: '4px 10px',
+                padding: '5px 14px',
                 background: '#7c3aed',
                 border: '1px solid #6d28d9',
                 borderRadius: 4,
                 color: '#ffffff',
                 cursor: 'pointer',
                 fontWeight: 600,
+                fontSize: '0.8rem',
               }}
             >
               Apply
@@ -1300,7 +1325,7 @@ function Toolbar({
         <ToolbarButton
           active={false}
           onClick={onOpenVariantsModal}
-          label="Add variants (V)"
+          label="Edit variants (V)"
           testId="embed-open-variants"
         >
           <PlusIcon />
