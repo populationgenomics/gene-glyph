@@ -5,7 +5,7 @@ import {
   aaTrack,
   clinVarSummaryTrack,
   clinVarTrack,
-  defaultClinVarSymbolEncoding,
+  decipherClinVarSymbolEncoding,
   exonTrack,
   interProTrack,
   nucleotideTrack,
@@ -539,7 +539,7 @@ export function EmbedView() {
           clinVarTrack({
             id: `clinvar-${sig}-detail`,
             source: records,
-            stackedVariantStyle: defaultClinVarSymbolEncoding,
+            stackedVariantStyle: decipherClinVarSymbolEncoding,
             filter: sigFilter,
             configKey: filterKey,
             markRadius: densityConfig.markRadius,

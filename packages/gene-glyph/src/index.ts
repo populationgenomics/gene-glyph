@@ -221,8 +221,16 @@ export {
   variantShapeFor,
   defaultVariantSymbolEncoding,
   defaultClinVarSymbolEncoding,
+  decipherClinVarSymbolEncoding,
+  decipherConsequenceBucket,
+  decipherShapeFor,
+  decipherBucketColor,
 } from './symbol-encoding.js';
-export type { GlyphShape, SymbolEncoding } from './symbol-encoding.js';
+export type {
+  GlyphShape,
+  SymbolEncoding,
+  DecipherConsequenceBucket,
+} from './symbol-encoding.js';
 export { segmentBandTrack } from './tracks/segment-band-track.js';
 export type {
   SegmentBandTrackConfig,

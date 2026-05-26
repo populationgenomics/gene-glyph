@@ -71,6 +71,15 @@
   --vv-clinvar-count-fill: #ffffff;
   --vv-clinvar-popover-bg: #ffffff;
   --vv-clinvar-popover-stroke: #cbd5e1;
+  /* DECIPHER-aligned ClinVar encoding (Slice 39). Glyph fill keys on
+   * consequence class rather than significance — significance is
+   * encoded by sub-track placement. Four consequence buckets plus a
+   * grey fallback for non-coding / UTR / regulatory variants. */
+  --vv-decipher-color-lof: #dc2626;
+  --vv-decipher-color-protein-changing: #a16207;
+  --vv-decipher-color-splice-region: #c026d3;
+  --vv-decipher-color-synonymous: #166534;
+  --vv-decipher-color-other: #94a3b8;
 
   /* User-supplied variants (Slice 34). Single deep-purple palette: a
    * cross glyph + matching stroke / span / chevron. Hosts override on

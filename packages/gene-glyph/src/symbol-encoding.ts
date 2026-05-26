@@ -246,3 +246,125 @@ export const defaultClinVarSymbolEncoding: SymbolEncoding<ClinVarRecord> = {
   // ordering.
   laneOrder: ['path', 'vus', 'conflicting', 'benign', 'other'],
 };
+
+// ---------------------------------------------------------------------------
+// DECIPHER-aligned ClinVar encoding (Slice 39)
+// ---------------------------------------------------------------------------
+
+/** Coarse consequence bucket used by {@link decipherClinVarSymbolEncoding}.
+ *  Mirrors the four DECIPHER consequence colour classes plus a fallback
+ *  bucket for anything outside coding-effect space (UTR / intronic /
+ *  regulatory / non-coding). */
+export type DecipherConsequenceBucket =
+  | 'lof'
+  | 'protein-changing'
+  | 'splice-region'
+  | 'synonymous'
+  | 'other';
+
+const DECIPHER_LOF = new Set([
+  'stop_gained',
+  'frameshift_variant',
+  'splice_donor_variant',
+  'splice_acceptor_variant',
+  'start_lost',
+  'stop_lost',
+  'transcript_ablation',
+]);
+
+const DECIPHER_PROTEIN_CHANGING = new Set([
+  'missense_variant',
+  'inframe_insertion',
+  'inframe_deletion',
+  'protein_altering_variant',
+]);
+
+const DECIPHER_SPLICE_REGION = new Set([
+  'splice_region_variant',
+  'splice_polypyrimidine_tract_variant',
+  'splice_donor_5th_base_variant',
+  'splice_donor_region_variant',
+]);
+
+const DECIPHER_SYNONYMOUS = new Set([
+  'synonymous_variant',
+  'stop_retained_variant',
+  'start_retained_variant',
+]);
+
+/** Bucket a raw VEP / SO consequence term into one of the four DECIPHER
+ *  consequence classes (LoF, protein-changing, splice region, synonymous)
+ *  or the fallback `'other'` for UTR / intronic / regulatory / non-coding.
+ *  Pure function — the same input always returns the same bucket. */
+export function decipherConsequenceBucket(
+  consequence: string | null | undefined,
+): DecipherConsequenceBucket {
+  if (!consequence) return 'other';
+  const c = consequence.toLowerCase();
+  if (DECIPHER_LOF.has(c)) return 'lof';
+  if (DECIPHER_PROTEIN_CHANGING.has(c)) return 'protein-changing';
+  if (DECIPHER_SPLICE_REGION.has(c)) return 'splice-region';
+  if (DECIPHER_SYNONYMOUS.has(c)) return 'synonymous';
+  return 'other';
+}
+
+const DECIPHER_BUCKET_VAR: Record<DecipherConsequenceBucket, string> = {
+  lof: 'vv-decipher-color-lof',
+  'protein-changing': 'vv-decipher-color-protein-changing',
+  'splice-region': 'vv-decipher-color-splice-region',
+  synonymous: 'vv-decipher-color-synonymous',
+  other: 'vv-decipher-color-other',
+};
+
+const DECIPHER_BUCKET_FALLBACK: Record<DecipherConsequenceBucket, string> = {
+  lof: '#dc2626',
+  'protein-changing': '#a16207',
+  'splice-region': '#c026d3',
+  synonymous: '#166534',
+  other: '#94a3b8',
+};
+
+/** CSS-var-backed colour for a DECIPHER consequence bucket. Hosts can
+ *  override each of the four buckets (plus the fallback) by setting the
+ *  matching `--vv-decipher-color-*` custom property on the figure. */
+export function decipherBucketColor(bucket: DecipherConsequenceBucket): string {
+  return `var(--${DECIPHER_BUCKET_VAR[bucket]}, ${DECIPHER_BUCKET_FALLBACK[bucket]})`;
+}
+
+/** Pick the DECIPHER-aligned glyph shape for a raw consequence term.
+ *  Square is reserved for `stop_gained` (DECIPHER's "location of protein
+ *  truncating codons"); everything else — including frameshift, whose
+ *  position is the indel rather than the downstream stop — uses
+ *  `triangle-up`. */
+export function decipherShapeFor(consequence: string | null | undefined): GlyphShape {
+  if (!consequence) return 'triangle-up';
+  return consequence.toLowerCase() === 'stop_gained' ? 'square' : 'triangle-up';
+}
+
+/**
+ * DECIPHER-aligned ClinVar encoding (Slice 39). Reads the raw VEP
+ * consequence from `record.meta.majorConsequence` and turns it into:
+ *
+ *   - **fill colour** — DECIPHER's four consequence classes (LoF /
+ *     protein-changing / splice-region / synonymous), plus a grey
+ *     fallback for non-coding;
+ *   - **shape** — `square` for `stop_gained` (protein truncation),
+ *     `triangle-up` otherwise (per DECIPHER's truncating-vs-not axis);
+ *   - **lane** — same five buckets, top-to-bottom severity.
+ *
+ * Designed to live inside a per-significance ClinVar sub-track so each
+ * sub-track reads as a mini consequence-distribution view; the
+ * existing {@link defaultClinVarSymbolEncoding} stays for the single-
+ * strip significance-on-glyph render.
+ */
+export const decipherClinVarSymbolEncoding: SymbolEncoding<ClinVarRecord> = {
+  shape: (r) => decipherShapeFor(decipherMajorConsequence(r)),
+  fill: (r) => decipherBucketColor(decipherConsequenceBucket(decipherMajorConsequence(r))),
+  lane: (r) => decipherConsequenceBucket(decipherMajorConsequence(r)),
+  laneOrder: ['lof', 'protein-changing', 'splice-region', 'synonymous', 'other'],
+};
+
+function decipherMajorConsequence(r: ClinVarRecord): string | undefined {
+  const meta = (r.meta ?? {}) as { majorConsequence?: string };
+  return meta.majorConsequence;
+}

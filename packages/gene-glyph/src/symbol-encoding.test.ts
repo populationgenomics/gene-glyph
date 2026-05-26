@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  decipherBucketColor,
+  decipherClinVarSymbolEncoding,
+  decipherConsequenceBucket,
+  decipherShapeFor,
   defaultClinVarSymbolEncoding,
   defaultVariantSymbolEncoding,
   glyphPath,
@@ -110,5 +114,138 @@ describe('defaultClinVarSymbolEncoding', () => {
     expect(defaultClinVarSymbolEncoding.shape(make('benign'))).toBe('circle');
     expect(defaultClinVarSymbolEncoding.shape(make('conflicting'))).toBe('pentagon');
     expect(defaultClinVarSymbolEncoding.shape(make('uncertain_significance'))).toBe('square');
+  });
+});
+
+describe('decipherConsequenceBucket', () => {
+  it('maps LoF-class consequences to "lof"', () => {
+    for (const c of [
+      'stop_gained',
+      'frameshift_variant',
+      'splice_donor_variant',
+      'splice_acceptor_variant',
+      'start_lost',
+      'stop_lost',
+      'transcript_ablation',
+    ]) {
+      expect(decipherConsequenceBucket(c)).toBe('lof');
+    }
+  });
+
+  it('maps protein-changing consequences to "protein-changing"', () => {
+    for (const c of [
+      'missense_variant',
+      'inframe_insertion',
+      'inframe_deletion',
+      'protein_altering_variant',
+    ]) {
+      expect(decipherConsequenceBucket(c)).toBe('protein-changing');
+    }
+  });
+
+  it('maps splice-region-class consequences to "splice-region"', () => {
+    for (const c of [
+      'splice_region_variant',
+      'splice_polypyrimidine_tract_variant',
+      'splice_donor_5th_base_variant',
+      'splice_donor_region_variant',
+    ]) {
+      expect(decipherConsequenceBucket(c)).toBe('splice-region');
+    }
+  });
+
+  it('maps synonymous-class consequences to "synonymous"', () => {
+    for (const c of [
+      'synonymous_variant',
+      'stop_retained_variant',
+      'start_retained_variant',
+    ]) {
+      expect(decipherConsequenceBucket(c)).toBe('synonymous');
+    }
+  });
+
+  it('falls back to "other" for non-coding / UTR / regulatory / null', () => {
+    for (const c of [
+      '5_prime_UTR_variant',
+      '3_prime_UTR_variant',
+      'intron_variant',
+      'regulatory_region_variant',
+      'non_coding_transcript_exon_variant',
+      'intergenic_variant',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(decipherConsequenceBucket(c)).toBe('other');
+    }
+  });
+
+  it('is case-insensitive (gnomAD lowercases but be tolerant)', () => {
+    expect(decipherConsequenceBucket('Stop_Gained')).toBe('lof');
+    expect(decipherConsequenceBucket('MISSENSE_VARIANT')).toBe('protein-changing');
+  });
+});
+
+describe('decipherShapeFor', () => {
+  it('uses square only for stop_gained', () => {
+    expect(decipherShapeFor('stop_gained')).toBe('square');
+  });
+
+  it('uses triangle-up for everything else, including frameshift', () => {
+    expect(decipherShapeFor('frameshift_variant')).toBe('triangle-up');
+    expect(decipherShapeFor('missense_variant')).toBe('triangle-up');
+    expect(decipherShapeFor('synonymous_variant')).toBe('triangle-up');
+    expect(decipherShapeFor('splice_donor_variant')).toBe('triangle-up');
+    expect(decipherShapeFor(null)).toBe('triangle-up');
+    expect(decipherShapeFor(undefined)).toBe('triangle-up');
+  });
+});
+
+describe('decipherClinVarSymbolEncoding', () => {
+  const make = (consequence: string | null): ClinVarRecord => ({
+    id: `x-${consequence ?? 'null'}`,
+    label: 'x',
+    chr: 'chr1',
+    pos: 0,
+    significance: 'pathogenic',
+    meta: consequence === null ? {} : { majorConsequence: consequence },
+  });
+
+  it('reads majorConsequence from record.meta', () => {
+    const r = make('stop_gained');
+    expect(decipherClinVarSymbolEncoding.shape(r)).toBe('square');
+    expect(decipherClinVarSymbolEncoding.lane!(r)).toBe('lof');
+    expect(decipherClinVarSymbolEncoding.fill(r)).toContain('vv-decipher-color-lof');
+  });
+
+  it('uses triangle-up for frameshift even though it goes in the LoF lane', () => {
+    const r = make('frameshift_variant');
+    expect(decipherClinVarSymbolEncoding.shape(r)).toBe('triangle-up');
+    expect(decipherClinVarSymbolEncoding.lane!(r)).toBe('lof');
+  });
+
+  it('falls back to "other" lane + grey when majorConsequence is absent', () => {
+    const r = make(null);
+    expect(decipherClinVarSymbolEncoding.lane!(r)).toBe('other');
+    expect(decipherClinVarSymbolEncoding.fill(r)).toContain('vv-decipher-color-other');
+  });
+
+  it('lane order is severity descending', () => {
+    expect(decipherClinVarSymbolEncoding.laneOrder).toEqual([
+      'lof',
+      'protein-changing',
+      'splice-region',
+      'synonymous',
+      'other',
+    ]);
+  });
+});
+
+describe('decipherBucketColor', () => {
+  it('returns a CSS-var-backed colour for every bucket', () => {
+    for (const b of ['lof', 'protein-changing', 'splice-region', 'synonymous', 'other'] as const) {
+      const v = decipherBucketColor(b);
+      expect(v).toMatch(/^var\(--vv-decipher-color-/);
+    }
   });
 });

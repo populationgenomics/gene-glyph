@@ -4,7 +4,7 @@ import {
   GeneGlyph,
   clinVarSummaryTrack,
   clinVarTrack,
-  defaultClinVarSymbolEncoding,
+  decipherClinVarSymbolEncoding,
   exonTrack,
 } from '@populationgenomics/gene-glyph';
 import type {
@@ -156,7 +156,7 @@ export function LiveDataDemoScenario() {
             clinVarTrack({
               id: `clinvar-${sig}-detail`,
               source: records,
-              stackedVariantStyle: defaultClinVarSymbolEncoding,
+              stackedVariantStyle: decipherClinVarSymbolEncoding,
               filter: sigFilter,
             }),
           ],
