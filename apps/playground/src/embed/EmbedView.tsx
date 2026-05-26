@@ -82,8 +82,8 @@ type Density = 'compact' | 'normal' | 'roomy';
 const TRACK_TOGGLES = [
   { id: 'scale', label: 'Scale' },
   { id: 'exon', label: 'Exon' },
-  { id: 'nucleotide', label: 'NT' },
-  { id: 'aa', label: 'AA' },
+  { id: 'nucleotide', label: 'Nucleotide' },
+  { id: 'aa', label: 'Amino acid' },
   { id: 'interpro', label: 'InterPro' },
   { id: 'clinvar', label: 'ClinVar' },
 ] as const;
@@ -441,109 +441,17 @@ export function EmbedView() {
         color: '#1e293b',
       }}
     >
+      {state.kind === 'ready' && (
+        <Toolbar
+          mode={mode}
+          onModeChange={setMode}
+          density={density}
+          onDensityChange={setDensity}
+          hiddenTracks={hiddenTracks}
+          onToggleTrack={toggleHiddenTrack}
+        />
+      )}
       <StatusBar state={state} requestedId={requestedId} />
-      {state.kind === 'ready' && (
-        <div
-          data-testid="embed-mode-selector"
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            margin: '8px 0',
-            color: '#475569',
-            fontSize: '0.78rem',
-          }}
-        >
-          <span style={{ opacity: 0.75, minWidth: 80 }}>view:</span>
-          {(['genome', 'transcript', 'protein'] as const).map((m) => {
-            const active = mode === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                data-testid={`embed-mode-${m}`}
-                data-active={active}
-                onClick={() => setMode(m)}
-                style={{
-                  padding: '2px 10px',
-                  borderRadius: 999,
-                  border: '1px solid #cbd5e1',
-                  background: active ? '#0c4a6e' : '#f1f5f9',
-                  color: active ? '#e0f2fe' : '#475569',
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {m}
-              </button>
-            );
-          })}
-          <span style={{ opacity: 0.75, minWidth: 80, marginLeft: 16 }}>
-            density:
-          </span>
-          {(['compact', 'normal', 'roomy'] as const).map((d) => {
-            const active = density === d;
-            return (
-              <button
-                key={d}
-                type="button"
-                data-testid={`embed-density-${d}`}
-                data-active={active}
-                onClick={() => setDensity(d)}
-                style={{
-                  padding: '2px 10px',
-                  borderRadius: 999,
-                  border: '1px solid #cbd5e1',
-                  background: active ? '#0c4a6e' : '#f1f5f9',
-                  color: active ? '#e0f2fe' : '#475569',
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {d}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {state.kind === 'ready' && (
-        <div
-          data-testid="embed-track-toggle"
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            margin: '8px 0',
-            color: '#475569',
-            fontSize: '0.78rem',
-          }}
-        >
-          <span style={{ opacity: 0.75, minWidth: 80 }}>tracks:</span>
-          {TRACK_TOGGLES.map((t) => {
-            const visible = !hiddenTracks.has(t.id);
-            return (
-              <button
-                key={t.id}
-                type="button"
-                data-testid={`embed-track-${t.id}`}
-                data-active={visible}
-                onClick={() => toggleHiddenTrack(t.id)}
-                style={{
-                  padding: '2px 10px',
-                  borderRadius: 999,
-                  border: '1px solid #cbd5e1',
-                  background: visible ? '#0c4a6e' : '#f1f5f9',
-                  color: visible ? '#e0f2fe' : '#94a3b8',
-                  cursor: 'pointer',
-                }}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
       {state.kind === 'ready' && (
         <section
           data-testid="embed-clinvar-filters"
@@ -746,6 +654,292 @@ export function EmbedView() {
       )}
     </main>
   );
+}
+
+const VIEW_MODES: readonly ViewMode[] = ['genome', 'transcript', 'protein'];
+const DENSITIES: readonly Density[] = ['compact', 'normal', 'roomy'];
+
+const VIEW_MODE_LABEL: Record<ViewMode, string> = {
+  genome: 'Genome view',
+  transcript: 'Transcript view',
+  protein: 'Protein view',
+};
+const DENSITY_LABEL: Record<Density, string> = {
+  compact: 'Compact rows',
+  normal: 'Normal rows',
+  roomy: 'Roomy rows',
+};
+
+function Toolbar({
+  mode,
+  onModeChange,
+  density,
+  onDensityChange,
+  hiddenTracks,
+  onToggleTrack,
+}: {
+  mode: ViewMode;
+  onModeChange: (m: ViewMode) => void;
+  density: Density;
+  onDensityChange: (d: Density) => void;
+  hiddenTracks: ReadonlySet<TrackToggleId>;
+  onToggleTrack: (id: TrackToggleId) => void;
+}) {
+  return (
+    <nav
+      data-testid="embed-toolbar"
+      aria-label="Figure controls"
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 4,
+        padding: '6px 12px',
+        margin: '-12px -12px 10px',
+        background: 'rgba(248, 250, 252, 0.92)',
+        borderBottom: '1px solid #e2e8f0',
+        backdropFilter: 'saturate(140%) blur(4px)',
+        WebkitBackdropFilter: 'saturate(140%) blur(4px)',
+      }}
+    >
+      <ToolbarGroup label="view mode">
+        {VIEW_MODES.map((m) => (
+          <ToolbarButton
+            key={m}
+            active={mode === m}
+            onClick={() => onModeChange(m)}
+            label={VIEW_MODE_LABEL[m]}
+            testId={`embed-mode-${m}`}
+          >
+            <ModeIcon mode={m} />
+          </ToolbarButton>
+        ))}
+      </ToolbarGroup>
+      <ToolbarDivider />
+      <ToolbarGroup label="density">
+        {DENSITIES.map((d) => (
+          <ToolbarButton
+            key={d}
+            active={density === d}
+            onClick={() => onDensityChange(d)}
+            label={DENSITY_LABEL[d]}
+            testId={`embed-density-${d}`}
+          >
+            <DensityIcon density={d} />
+          </ToolbarButton>
+        ))}
+      </ToolbarGroup>
+      <ToolbarDivider />
+      <ToolbarGroup label="tracks">
+        {TRACK_TOGGLES.map((t) => {
+          const visible = !hiddenTracks.has(t.id);
+          return (
+            <ToolbarButton
+              key={t.id}
+              active={visible}
+              onClick={() => onToggleTrack(t.id)}
+              label={`${t.label} track${visible ? ' (shown)' : ' (hidden)'}`}
+              testId={`embed-track-${t.id}`}
+            >
+              <TrackIcon id={t.id} />
+            </ToolbarButton>
+          );
+        })}
+      </ToolbarGroup>
+    </nav>
+  );
+}
+
+function ToolbarGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ToolbarDivider() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 1,
+        height: 20,
+        background: '#cbd5e1',
+        margin: '0 6px',
+      }}
+    />
+  );
+}
+
+function ToolbarButton({
+  active,
+  onClick,
+  label,
+  testId,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-active={active}
+      aria-pressed={active}
+      aria-label={label}
+      onClick={onClick}
+      style={{
+        width: 28,
+        height: 28,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 0,
+        borderRadius: 6,
+        border: `1px solid ${active ? '#0c4a6e' : '#cbd5e1'}`,
+        background: active ? '#0c4a6e' : '#ffffff',
+        color: active ? '#e0f2fe' : '#475569',
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+const SVG_BASE: React.SVGProps<SVGSVGElement> = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 16 16',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.5,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+};
+
+function ModeIcon({ mode }: { mode: ViewMode }) {
+  if (mode === 'genome') {
+    return (
+      <svg {...SVG_BASE}>
+        <rect x="1.5" y="5" width="13" height="6" rx="3" />
+        <line x1="5" y1="5" x2="5" y2="11" />
+        <line x1="8" y1="5" x2="8" y2="11" />
+        <line x1="11" y1="5" x2="11" y2="11" />
+      </svg>
+    );
+  }
+  if (mode === 'transcript') {
+    return (
+      <svg {...SVG_BASE}>
+        <rect x="1.5" y="6" width="3" height="4" fill="currentColor" stroke="none" />
+        <line x1="4.5" y1="8" x2="7" y2="8" />
+        <rect x="7" y="6" width="2" height="4" fill="currentColor" stroke="none" />
+        <line x1="9" y1="8" x2="11.5" y2="8" />
+        <rect x="11.5" y="6" width="3" height="4" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...SVG_BASE}>
+      <path d="M2 10 C 4 5, 6 5, 8 8 S 12 11, 14 6" />
+    </svg>
+  );
+}
+
+function DensityIcon({ density }: { density: Density }) {
+  if (density === 'compact') {
+    return (
+      <svg {...SVG_BASE}>
+        <line x1="2" y1="4" x2="14" y2="4" />
+        <line x1="2" y1="7" x2="14" y2="7" />
+        <line x1="2" y1="10" x2="14" y2="10" />
+        <line x1="2" y1="13" x2="14" y2="13" />
+      </svg>
+    );
+  }
+  if (density === 'normal') {
+    return (
+      <svg {...SVG_BASE}>
+        <line x1="2" y1="4" x2="14" y2="4" />
+        <line x1="2" y1="8" x2="14" y2="8" />
+        <line x1="2" y1="12" x2="14" y2="12" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...SVG_BASE}>
+      <line x1="2" y1="5" x2="14" y2="5" />
+      <line x1="2" y1="11" x2="14" y2="11" />
+    </svg>
+  );
+}
+
+function TrackIcon({ id }: { id: TrackToggleId }) {
+  switch (id) {
+    case 'scale':
+      return (
+        <svg {...SVG_BASE}>
+          <line x1="2" y1="11" x2="14" y2="11" />
+          <line x1="3" y1="9" x2="3" y2="11" />
+          <line x1="6" y1="9" x2="6" y2="11" />
+          <line x1="9" y1="6" x2="9" y2="11" />
+          <line x1="12" y1="9" x2="12" y2="11" />
+        </svg>
+      );
+    case 'exon':
+      return (
+        <svg {...SVG_BASE}>
+          <rect x="1.5" y="5" width="4" height="6" fill="currentColor" stroke="none" />
+          <line x1="5.5" y1="8" x2="10.5" y2="8" />
+          <rect x="10.5" y="5" width="4" height="6" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'nucleotide':
+      return (
+        <svg {...SVG_BASE}>
+          <path d="M3 3 Q 8 8 3 13" />
+          <path d="M13 3 Q 8 8 13 13" />
+          <line x1="4" y1="6" x2="12" y2="6" />
+          <line x1="4" y1="10" x2="12" y2="10" />
+        </svg>
+      );
+    case 'aa':
+      return (
+        <svg {...SVG_BASE}>
+          <polyline points="2,11 5,5 8,11 11,5 14,11" />
+        </svg>
+      );
+    case 'interpro':
+      return (
+        <svg {...SVG_BASE}>
+          <rect x="1.5" y="5" width="13" height="6" rx="3" />
+        </svg>
+      );
+    case 'clinvar':
+      return (
+        <svg {...SVG_BASE}>
+          <polygon
+            points="8,1.8 9.85,5.95 14.35,6.5 11.1,9.55 11.95,14 8,11.85 4.05,14 4.9,9.55 1.65,6.5 6.15,5.95"
+            fill="currentColor"
+            stroke="none"
+          />
+        </svg>
+      );
+  }
 }
 
 function SelectedVariantCard({
