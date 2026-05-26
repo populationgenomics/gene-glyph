@@ -68,7 +68,7 @@ describe('parseUserVariant — accepted forms', () => {
 });
 
 describe('parseUserVariant — rejected forms', () => {
-  it('rejects HGVS forms (Slice 36 handles those)', () => {
+  it('parseUserVariant returns null for HGVS forms (parseUserVariants routes them to hgvsTokens instead)', () => {
     expect(parseUserVariant('c.93G>A')).toBeNull();
     expect(parseUserVariant('p.Val123Met')).toBeNull();
     expect(parseUserVariant('g.74642513C>G')).toBeNull();
@@ -120,5 +120,17 @@ describe('parseUserVariants — list input', () => {
     const r = parseUserVariants(',,17-7674212-C-A,,\n,');
     expect(r.parsed).toHaveLength(1);
     expect(r.errors).toEqual([]);
+  });
+
+  it('routes HGVS-shaped tokens into hgvsTokens, not errors (Slice 36)', () => {
+    const r = parseUserVariants('17-7674212-C-A,c.524G>A,p.Arg175His,g.7674212C>T');
+    expect(r.parsed.map((p) => p.id)).toEqual(['17-7674212-C-A']);
+    expect(r.hgvsTokens.sort()).toEqual(['c.524G>A', 'g.7674212C>T', 'p.Arg175His']);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('deduplicates HGVS tokens case-insensitively', () => {
+    const r = parseUserVariants('c.524G>A,C.524G>A,c.524g>a');
+    expect(r.hgvsTokens).toEqual(['c.524G>A']);
   });
 });

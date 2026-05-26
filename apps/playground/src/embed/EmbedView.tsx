@@ -31,6 +31,7 @@ import type {
 import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
 import { fetchProteinAnnotations } from '../lib/protein.js';
 import { fetchCdsSequence } from '../lib/sequence.js';
+import { resolveVariantsViaVV } from '../lib/variant-validator.js';
 
 /**
  * Single-figure embed view. Reads `?transcript=ENST…` from the URL,
@@ -158,8 +159,17 @@ export function EmbedView() {
   // renders these as purple crosses between the exon and InterPro
   // tracks; unparseable entries surface in the figure footer.
   const [userVariants] = useState<readonly ParsedUserVariant[]>(initial.userVariants);
-  const [userVariantErrors] = useState<readonly string[]>(initial.userVariantErrors);
+  const [userVariantErrors, setUserVariantErrors] = useState<readonly string[]>(
+    initial.userVariantErrors,
+  );
   const [userVariantsRaw] = useState<string>(initial.userVariantsRaw);
+  // Slice 36: HGVS tokens get resolved through VariantValidator after
+  // the local parser hands them off. `hgvsResolved` collects the
+  // successful resolutions; `hgvsPending` is the working count for
+  // the in-flight "resolving via VariantValidator…" banner.
+  const [hgvsTokens] = useState<readonly string[]>(initial.userVariantHgvsTokens);
+  const [hgvsResolved, setHgvsResolved] = useState<readonly ParsedUserVariant[]>([]);
+  const [hgvsPending, setHgvsPending] = useState<number>(initial.userVariantHgvsTokens.length);
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -222,6 +232,77 @@ export function EmbedView() {
     return () => controller.abort();
   }, [requestedId]);
 
+  // Slice 36: resolve HGVS tokens via VariantValidator. The
+  // resolution cache lives outside the effect so a transcript change
+  // clears it (new transcript = new c./n. coord space, all cached
+  // resolutions are invalid); within one transcript, repeat URL
+  // loads with the same `?variants=` hit the cache and fire no
+  // network call. Cache key = lowercased raw token.
+  useEffect(() => {
+    if (!requestedId || hgvsTokens.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHgvsPending(0);
+      return;
+    }
+    const controller = new AbortController();
+    setHgvsResolved([]);
+    setHgvsPending(hgvsTokens.length);
+    // Filter against the cache first so already-resolved tokens
+    // surface immediately and only un-cached ones hit the network.
+    const cache = hgvsCacheFor(requestedId);
+    const cached: ParsedUserVariant[] = [];
+    const toFetch: string[] = [];
+    for (const raw of hgvsTokens) {
+      const key = raw.toLowerCase();
+      const hit = cache.get(key);
+      if (hit) cached.push(hit);
+      else toFetch.push(raw);
+    }
+    if (cached.length > 0) {
+      setHgvsResolved(cached);
+      setHgvsPending(toFetch.length);
+    }
+    if (toFetch.length === 0) {
+      return () => controller.abort();
+    }
+    resolveVariantsViaVV(toFetch, requestedId, controller.signal)
+      .then((results) => {
+        if (controller.signal.aborted) return;
+        const resolved: ParsedUserVariant[] = [];
+        const errors: string[] = [];
+        for (const r of results) {
+          if ('result' in r) {
+            const variant: ParsedUserVariant = {
+              id: r.result.id,
+              chr: r.result.chr,
+              pos: r.result.pos,
+              ref: r.result.ref,
+              alt: r.result.alt,
+              raw: r.raw,
+            };
+            cache.set(r.raw.toLowerCase(), variant);
+            resolved.push(variant);
+          } else {
+            errors.push(r.raw);
+          }
+        }
+        setHgvsResolved((prev) => mergeResolved(prev, resolved));
+        if (errors.length > 0) {
+          setUserVariantErrors((prev) => [...prev, ...errors]);
+        }
+        setHgvsPending(0);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // Network-level failure (VV down, CORS rejection, …) — every
+        // un-cached token falls into the parse-error footer alongside
+        // any pre-existing failures.
+        setUserVariantErrors((prev) => [...prev, ...toFetch]);
+        setHgvsPending(0);
+      });
+    return () => controller.abort();
+  }, [requestedId, hgvsTokens]);
+
   const toggleHiddenTrack = (id: TrackToggleId) =>
     setHiddenTracks((prev) => {
       const next = new Set(prev);
@@ -241,6 +322,14 @@ export function EmbedView() {
   // The selection survives chip toggles: when the user excludes the
   // selected variant's significance or star tier the detail card and
   // ring just hide until they re-enable the matching chip.
+  // Slice 36: combined user-variant list — locally-parsed entries
+  // (Slice 34) plus anything VariantValidator resolved from the
+  // HGVS bucket. Dedup by canonical id so an HGVS that collapses to
+  // the same coordinate as a canonical entry doesn't double-render.
+  const allUserVariants = useMemo(
+    () => mergeResolved(userVariants, hgvsResolved),
+    [userVariants, hgvsResolved],
+  );
   // Slice 35: `selectedId` may be either the raw canonical id (pre-
   // Slice-35 share links) or an FNV-1a hash (the new URL form). Build
   // a candidate-id list from every track the embed can surface, then
@@ -250,10 +339,10 @@ export function EmbedView() {
     if (!selectedId) return null;
     const ids = [
       ...records.map((r) => r.id),
-      ...userVariants.map((v) => v.id),
+      ...allUserVariants.map((v) => v.id),
     ];
     return resolveSelectedId(selectedId, ids);
-  }, [selectedId, records, userVariants]);
+  }, [selectedId, records, allUserVariants]);
   // Promote the URL-hash form to its canonical id as soon as the data
   // loads. Without this, a "click selected variant to deselect"
   // gesture in the brief load-pending window would compare a hash
@@ -329,8 +418,8 @@ export function EmbedView() {
   // above returns null; we resolve it from the parsed user list here.
   const selectedUserVariant = useMemo(() => {
     if (!resolvedSelectedId) return null;
-    return userVariants.find((v) => v.id === resolvedSelectedId) ?? null;
-  }, [resolvedSelectedId, userVariants]);
+    return allUserVariants.find((v) => v.id === resolvedSelectedId) ?? null;
+  }, [resolvedSelectedId, allUserVariants]);
   const selectedFeatureIds = useMemo(() => {
     if (selectedRecord) return new Set([selectedRecord.id]);
     if (selectedUserVariant) return new Set([selectedUserVariant.id]);
@@ -389,7 +478,7 @@ export function EmbedView() {
   // tooltips read back the form they typed.
   const userVariantRecords = useMemo<UserVariantRecord[]>(
     () =>
-      userVariants.map((v) => ({
+      allUserVariants.map((v) => ({
         id: v.id,
         chr: v.chr,
         pos: v.pos,
@@ -397,7 +486,7 @@ export function EmbedView() {
         refLen: Math.max(v.ref.length, 1),
         meta: { ref: v.ref, alt: v.alt, raw: v.raw },
       })),
-    [userVariants],
+    [allUserVariants],
   );
 
   const tracks = useMemo<TrackOrGroup[]>(() => {
@@ -754,7 +843,8 @@ export function EmbedView() {
       )}
       <UserVariantFooter
         errors={userVariantErrors}
-        parsedCount={userVariants.length}
+        parsedCount={allUserVariants.length}
+        hgvsPending={hgvsPending}
       />
     </main>
   );
@@ -763,10 +853,31 @@ export function EmbedView() {
 function UserVariantFooter({
   errors,
   parsedCount,
+  hgvsPending,
 }: {
   errors: readonly string[];
   parsedCount: number;
+  hgvsPending: number;
 }) {
+  if (hgvsPending > 0) {
+    const word = hgvsPending === 1 ? 'variant' : 'variants';
+    return (
+      <section
+        data-testid="embed-user-variant-resolving"
+        style={{
+          marginTop: 8,
+          padding: '6px 10px',
+          background: '#eef2ff',
+          border: '1px solid #c7d2fe',
+          borderRadius: 6,
+          color: '#3730a3',
+          fontSize: '0.78rem',
+        }}
+      >
+        Resolving {hgvsPending} HGVS {word} via VariantValidator…
+      </section>
+    );
+  }
   if (errors.length === 0) return null;
   const word = errors.length === 1 ? 'variant' : 'variants';
   return (
@@ -1408,6 +1519,11 @@ interface UrlState {
   /** Slice 34 — the raw `?variants=` string. Kept so the URL round-trip
    *  preserves user formatting (we only canonicalise on submit). */
   userVariantsRaw: string;
+  /** Slice 36 — HGVS tokens (c./p./g./n./r./m.) that need
+   *  VariantValidator resolution. The embed fires VV calls in parallel
+   *  and merges resolved entries into the live user-variant set; any
+   *  that fail collapse into the parse-error footer. */
+  userVariantHgvsTokens: readonly string[];
 }
 
 const SIGNIFICANCE_VALUES: ReadonlySet<string> = new Set(SIGNIFICANCE_CHIPS);
@@ -1428,6 +1544,7 @@ function readUrlParams(): UrlState {
     userVariants: [],
     userVariantErrors: [],
     userVariantsRaw: '',
+    userVariantHgvsTokens: [],
   };
   if (typeof window === 'undefined') return fallback;
   const p = new URLSearchParams(window.location.search);
@@ -1479,18 +1596,59 @@ function readUrlParams(): UrlState {
   };
 }
 
+/** Module-level cache for VariantValidator resolutions, keyed by
+ *  transcript id → (raw HGVS, lowercased) → resolved variant. Lives
+ *  outside the component so React's StrictMode double-mount doesn't
+ *  double up the network calls; gets cleared per-transcript by the
+ *  resolver so c./n. coord-space changes never reuse a stale entry. */
+const hgvsCacheStore = new Map<string, Map<string, ParsedUserVariant>>();
+function hgvsCacheFor(transcriptId: string): Map<string, ParsedUserVariant> {
+  let m = hgvsCacheStore.get(transcriptId);
+  if (!m) {
+    m = new Map<string, ParsedUserVariant>();
+    hgvsCacheStore.set(transcriptId, m);
+  }
+  return m;
+}
+
+/** Merge a newly-resolved batch with the existing resolved list,
+ *  deduping by canonical id so a paste like `c.524G>A` resolving to
+ *  the same coords as `17-7674212-C-T` only renders one mark. */
+function mergeResolved(
+  prev: readonly ParsedUserVariant[],
+  next: readonly ParsedUserVariant[],
+): ParsedUserVariant[] {
+  const out = [...prev];
+  const seen = new Set(out.map((v) => v.id));
+  for (const v of next) {
+    if (seen.has(v.id)) continue;
+    seen.add(v.id);
+    out.push(v);
+  }
+  return out;
+}
+
 function parseUserVariantsParam(
   raw: string,
-): Pick<UrlState, 'userVariants' | 'userVariantErrors' | 'userVariantsRaw'> {
+): Pick<
+  UrlState,
+  'userVariants' | 'userVariantErrors' | 'userVariantsRaw' | 'userVariantHgvsTokens'
+> {
   const trimmed = raw.trim();
   if (!trimmed) {
-    return { userVariants: [], userVariantErrors: [], userVariantsRaw: '' };
+    return {
+      userVariants: [],
+      userVariantErrors: [],
+      userVariantsRaw: '',
+      userVariantHgvsTokens: [],
+    };
   }
-  const { parsed, errors } = parseUserVariants(trimmed);
+  const { parsed, hgvsTokens, errors } = parseUserVariants(trimmed);
   return {
     userVariants: parsed,
     userVariantErrors: errors,
     userVariantsRaw: trimmed,
+    userVariantHgvsTokens: hgvsTokens,
   };
 }
 

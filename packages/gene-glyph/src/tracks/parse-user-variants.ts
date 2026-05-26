@@ -81,28 +81,49 @@ const TRY_FORMS: readonly RegExp[] = [
 
 export interface ParseUserVariantsResult {
   parsed: ParsedUserVariant[];
+  /** Tokens that look like HGVS (start with `c.`, `p.`, `g.`, `n.`,
+   *  `r.`, `m.`). The local parser doesn't resolve these — Slice 36
+   *  routes them through VariantValidator. Deduplicated case-
+   *  insensitively so a paste of the same HGVS twice only fires one
+   *  network call. */
+  hgvsTokens: string[];
+  /** Tokens that matched neither the local genomic forms nor an HGVS
+   *  prefix — the user typed something unparseable. Surfaces in the
+   *  embed's parse-error footer verbatim. */
   errors: string[];
 }
 
-/** Parse a CSV / line-broken / comma-broken list of user variants.
- *  Splits on commas and newlines, ignores empty tokens, deduplicates by
- *  canonical id (first occurrence wins so the raw form the user typed
+const HGVS_PREFIX_RE = /^(?:c|p|g|n|r|m)\./i;
+
+/** Parse a CSV / line-broken list of user variants.
+ *  Splits on commas and newlines, ignores empty tokens, deduplicates
+ *  parsed entries by canonical id and hgvs tokens by their lower-
+ *  cased text (first occurrence wins so the raw form the user typed
  *  stays in the record). */
 export function parseUserVariants(input: string): ParseUserVariantsResult {
   const parsed: ParsedUserVariant[] = [];
+  const hgvsTokens: string[] = [];
   const errors: string[] = [];
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenHgvs = new Set<string>();
   for (const token of input.split(/[,\n]/)) {
     const trimmed = token.trim();
     if (!trimmed) continue;
+    if (HGVS_PREFIX_RE.test(trimmed.replace(/\s+/g, ''))) {
+      const key = trimmed.toLowerCase();
+      if (seenHgvs.has(key)) continue;
+      seenHgvs.add(key);
+      hgvsTokens.push(trimmed);
+      continue;
+    }
     const result = parseUserVariant(trimmed);
     if (!result) {
       errors.push(trimmed);
       continue;
     }
-    if (seen.has(result.id)) continue;
-    seen.add(result.id);
+    if (seenIds.has(result.id)) continue;
+    seenIds.add(result.id);
     parsed.push(result);
   }
-  return { parsed, errors };
+  return { parsed, hgvsTokens, errors };
 }
