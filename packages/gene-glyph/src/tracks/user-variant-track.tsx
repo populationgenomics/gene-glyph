@@ -39,6 +39,13 @@ export interface UserVariantTrackConfig {
   source: UserVariantSource;
   markRadius?: number;
   stackLanePx?: number;
+  /** Display label surfaced to the host gutter (and `GutterItem.label`).
+   *  Defaults to `"User variants"`. */
+  label?: string;
+  /** Pixels of empty space reserved above the track row in layout.
+   *  Mirrors {@link Track.gapAbove}; useful when the user-variants
+   *  row would otherwise sit flush against the track above. */
+  gapAbove?: number;
 }
 
 const USER_VARIANT_COLOR = 'var(--vv-user-variant-color, #7c3aed)';
@@ -121,6 +128,8 @@ export function userVariantTrack(
 
   return {
     ...base,
+    label: config.label ?? 'User variants',
+    gapAbove: config.gapAbove,
     resolveFeature(data, featureId) {
       const r = data.records.find((x) => x.id === featureId);
       return r ? fromClinVarShaped(r) : null;

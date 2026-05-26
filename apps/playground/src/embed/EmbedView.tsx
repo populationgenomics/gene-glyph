@@ -572,6 +572,7 @@ export function EmbedView() {
           source: userVariantRecords,
           markRadius: densityConfig.markRadius,
           stackLanePx: densityConfig.stackLanePx,
+          gapAbove: 8,
         }),
       );
     }
@@ -582,7 +583,7 @@ export function EmbedView() {
         id: CLINVAR_GROUP_ID,
         label: 'ClinVar',
         headerHeight: 22,
-        gapAbove: 12,
+        gapAbove: 20,
         tracks: SIGNIFICANCE_CHIPS.map(subgroup),
         summaryTrack: clinVarSummaryTrack({
           id: 'clinvar-summary',
@@ -849,20 +850,38 @@ export function EmbedView() {
       >
         <GeneGlyph.LeftGutter width={180}>
           {(item: GutterItem) => {
-            if (item.kind !== 'group') return null;
+            if (item.kind === 'group') {
+              return (
+                <span
+                  style={{
+                    alignSelf: 'flex-start',
+                    paddingTop: 1,
+                    paddingLeft: item.depth * 14,
+                  }}
+                >
+                  <DefaultTrackChevron
+                    item={item}
+                    collapsed={collapsedGroups.has(item.id)}
+                    onToggle={() => viewerRef.current?.toggleGroup(item.id)}
+                  />
+                </span>
+              );
+            }
+            // Render track labels for any track that supplied one
+            // (currently the user-variants track). Aligned with the
+            // chevron text so the gutter reads as one column.
+            if (!item.label) return null;
             return (
               <span
                 style={{
                   alignSelf: 'flex-start',
                   paddingTop: 1,
-                  paddingLeft: item.depth * 14,
+                  paddingLeft: item.depth * 14 + 18,
+                  fontStyle: 'italic',
+                  color: '#475569',
                 }}
               >
-                <DefaultTrackChevron
-                  item={item}
-                  collapsed={collapsedGroups.has(item.id)}
-                  onToggle={() => viewerRef.current?.toggleGroup(item.id)}
-                />
+                {item.label}
               </span>
             );
           }}
