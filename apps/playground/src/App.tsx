@@ -11,6 +11,7 @@ import { OverviewTrackDemoScenario } from './scenarios/overview-track-demo.js';
 import { PaperReportScenario } from './scenarios/paper-report.js';
 import { PfamDemoScenario } from './scenarios/pfam-demo.js';
 import { ProfileTracksScenario } from './scenarios/profile-tracks-demo.js';
+import { SegmentBandDemoScenario } from './scenarios/segment-band-demo.js';
 import { SequenceTracksScenario } from './scenarios/sequence-tracks-demo.js';
 import { SlotSystemScenario } from './scenarios/slot-system.js';
 import { StackedVariantsDemoScenario } from './scenarios/stacked-variants-demo.js';
@@ -49,6 +50,7 @@ export function App() {
       <InterProDemoScenario />
       <SequenceTracksScenario />
       <ProfileTracksScenario />
+      <SegmentBandDemoScenario />
     </main>
   );
 }

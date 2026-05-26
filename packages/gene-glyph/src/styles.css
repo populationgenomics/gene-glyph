@@ -643,6 +643,22 @@ body.vv-gg-box-zooming * {
   user-select: none;
 }
 
+/* Segment band track (Slice 30). One row of categorical / boolean
+ * colour bands keyed to a host palette — NMD escape, RMC, secondary
+ * structure. Rects sit inside per-exon `<g>` so they pan / zoom with
+ * the exon ribbon; the optional inline label rides a counter-scale so
+ * it stays legible regardless of live zoom. */
+.gene-glyph .vv-segment-band-rect {
+  pointer-events: visiblePainted;
+}
+
+.gene-glyph .vv-segment-band-label {
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+  fill: var(--vv-segment-band-label, #1e293b);
+}
+
 /* InterPro track. Same structural pattern as Pfam (per-exon segments + linker
  * + centred label), but lane-packed so overlapping IPR entries of the same
  * entry-type stack into rows without crashing. */

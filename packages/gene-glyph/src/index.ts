@@ -223,3 +223,10 @@ export {
   defaultClinVarSymbolEncoding,
 } from './symbol-encoding.js';
 export type { GlyphShape, SymbolEncoding } from './symbol-encoding.js';
+export { segmentBandTrack } from './tracks/segment-band-track.js';
+export type {
+  SegmentBandTrackConfig,
+  SegmentBandTrackData,
+  SegmentBandSource,
+  SegmentBandDatum,
+} from './tracks/segment-band-track.js';
