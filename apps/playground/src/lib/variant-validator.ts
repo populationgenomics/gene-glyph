@@ -173,14 +173,12 @@ async function doResolve(
   const variantWithAccession = ensureAccession(trimmed, versionedTx);
   const encoded = encodeURIComponent(variantWithAccession);
   const tx = encodeURIComponent(versionedTx);
-  // `transcript_set=ensembl` flips VV from its RefSeq default into
-  // Ensembl mode so ENST… ids resolve. Without it VV emits
-  // "InvalidFieldError: The transcript … is not in the RefSeq data
-  // set. Please select Ensembl". RefSeq users explicitly typing
-  // `NM_…:c.…` still get the right answer because VV treats the
-  // accession's namespace as authoritative — the query param is a
-  // hint, not a filter.
-  const url = `${VV_BASE}/VariantValidator/variantvalidator/GRCh38/${encoded}/${tx}?transcript_set=ensembl`;
+  // VV ships a separate `/variantvalidator_ensembl/` endpoint for
+  // Ensembl-namespaced accessions. The default `/variantvalidator/`
+  // path only knows RefSeq and rejects ENST… with "InvalidFieldError:
+  // The transcript … is not in the RefSeq data set. Please select
+  // Ensembl".
+  const url = `${VV_BASE}/VariantValidator/variantvalidator_ensembl/GRCh38/${encoded}/${tx}`;
   const res = await fetch(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
