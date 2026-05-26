@@ -1,6 +1,11 @@
-import { parseClinVarSignificance } from '@populationgenomics/gene-glyph';
+import {
+  parseAaStart,
+  parseClinVarSignificance,
+  rmcCategoryFor,
+} from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
+  RmcCategory,
   Transcript,
 } from '@populationgenomics/gene-glyph';
 
@@ -39,6 +44,21 @@ interface GnomadClinVarVariant {
   transcript_id: string | null;
 }
 
+/** Raw region row returned by gnomAD's
+ *  `gnomad_v2_regional_missense_constraint`. `aa_start` / `aa_stop` are
+ *  string-encoded three-letter codon labels (e.g. `"Lys2009"`); the rest
+ *  are numeric. */
+export interface GnomadRmcRegion {
+  aa_start: string;
+  aa_stop: string;
+  obs_exp: number;
+  p_value: number;
+}
+
+interface GnomadRegionalMissenseConstraint {
+  regions: GnomadRmcRegion[] | null;
+}
+
 interface GnomadGene {
   symbol: string;
   chrom: string;
@@ -46,11 +66,21 @@ interface GnomadGene {
   canonical_transcript_id: string | null;
   transcripts: GnomadTranscript[];
   clinvar_variants: GnomadClinVarVariant[];
+  gnomad_v2_regional_missense_constraint: GnomadRegionalMissenseConstraint | null;
+}
+
+export interface RmcRegion {
+  start: number;
+  end: number;
+  category: RmcCategory;
 }
 
 export interface LiveGeneData {
   transcript: Transcript;
   clinvar: ClinVarRecord[];
+  /** Regional Missense Constraint regions in protein coords. Empty when
+   *  the gene has no RMC data on gnomAD v2 (common — most genes). */
+  rmc: RmcRegion[];
 }
 
 export interface LiveTranscriptData {
@@ -132,6 +162,14 @@ const GENE_QUERY = /* GraphQL */ `
         review_status
         gold_stars
         transcript_id
+      }
+      gnomad_v2_regional_missense_constraint {
+        regions {
+          aa_start
+          aa_stop
+          obs_exp
+          p_value
+        }
       }
     }
   }
@@ -575,7 +613,98 @@ async function doFetch(geneSymbol: string): Promise<LiveGeneData> {
   return {
     transcript: toTranscript(gene),
     clinvar: toClinVarRecords(gene),
+    rmc: toRmcRegions(gene.gnomad_v2_regional_missense_constraint?.regions ?? null),
   };
+}
+
+/** Fetch Regional Missense Constraint regions for `geneSymbol` from
+ *  gnomAD v2. Returns an empty array when the gene has no RMC data on
+ *  v2 (most genes), or when gnomAD's response is missing the field
+ *  (older schema). Caches by upper-cased symbol so re-renders of the
+ *  same gene don't refetch. */
+const rmcCache = new Map<string, RmcRegion[]>();
+const rmcInFlight = new Map<string, Promise<RmcRegion[]>>();
+
+const RMC_QUERY = /* GraphQL */ `
+  query Rmc($geneSymbol: String!) {
+    gene(gene_symbol: $geneSymbol, reference_genome: GRCh38) {
+      gnomad_v2_regional_missense_constraint {
+        regions {
+          aa_start
+          aa_stop
+          obs_exp
+          p_value
+        }
+      }
+    }
+  }
+`;
+
+export function fetchRmcRegions(
+  geneSymbol: string,
+  signal?: AbortSignal,
+): Promise<RmcRegion[]> {
+  const key = geneSymbol.toUpperCase();
+  const cached = rmcCache.get(key);
+  if (cached) return Promise.resolve(cached);
+  let pending = rmcInFlight.get(key);
+  if (!pending) {
+    pending = doFetchRmc(key).then(
+      (regions) => {
+        rmcCache.set(key, regions);
+        rmcInFlight.delete(key);
+        return regions;
+      },
+      (err) => {
+        rmcInFlight.delete(key);
+        throw err;
+      },
+    );
+    rmcInFlight.set(key, pending);
+  }
+  return wrapWithSignal(pending, signal);
+}
+
+async function doFetchRmc(geneSymbol: string): Promise<RmcRegion[]> {
+  const res = await fetch(GNOMAD_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: RMC_QUERY, variables: { geneSymbol } }),
+  });
+  if (!res.ok) {
+    throw new Error(`gnomAD RMC: HTTP ${res.status} ${res.statusText}`);
+  }
+  const json = (await res.json()) as {
+    data?: {
+      gene: {
+        gnomad_v2_regional_missense_constraint: GnomadRegionalMissenseConstraint | null;
+      } | null;
+    };
+    errors?: Array<{ message: string }>;
+  };
+  // gnomAD treats "no such gene" as `data.gene === null` plus a
+  // top-level error; treat that as an empty RMC rather than throwing so
+  // the figure renders an empty-state stub instead of an error banner.
+  const regions = json.data?.gene?.gnomad_v2_regional_missense_constraint?.regions ?? null;
+  return toRmcRegions(regions);
+}
+
+function toRmcRegions(raw: GnomadRmcRegion[] | null): RmcRegion[] {
+  if (!raw) return [];
+  const out: RmcRegion[] = [];
+  for (const r of raw) {
+    const start = parseAaStart(r.aa_start);
+    const end = parseAaStart(r.aa_stop);
+    if (start === null || end === null) continue;
+    if (end < start) continue;
+    out.push({
+      start,
+      end,
+      category: rmcCategoryFor(r.obs_exp, r.p_value),
+    });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
 }
 
 function toTranscript(gene: GnomadGene): Transcript {

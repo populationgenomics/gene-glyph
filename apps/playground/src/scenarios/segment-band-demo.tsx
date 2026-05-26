@@ -22,7 +22,13 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
  * source data differ.
  */
 type NmdCategory = 'escape' | 'sensitive';
-type RmcCategory = 'intol' | 'mod' | 'tol' | 'unconstrained';
+type RmcCategory =
+  | 'intol-1'
+  | 'intol-2'
+  | 'intol-3'
+  | 'intol-4'
+  | 'intol-5'
+  | 'not-significant';
 type SsCategory = 'helix' | 'sheet' | 'loop';
 
 const NMD_PALETTE: Record<NmdCategory, string> = {
@@ -30,11 +36,14 @@ const NMD_PALETTE: Record<NmdCategory, string> = {
   sensitive: '#94a3b8',
 };
 
+// Six-bin RMC palette — matches the gnomAD intolerance tiers (Slice 40).
 const RMC_PALETTE: Record<RmcCategory, string> = {
-  intol: '#b91c1c',
-  mod: '#f97316',
-  tol: '#fde047',
-  unconstrained: '#e2e8f0',
+  'intol-1': '#b91c1c',
+  'intol-2': '#f97316',
+  'intol-3': '#facc15',
+  'intol-4': '#a3e635',
+  'intol-5': '#bbf7d0',
+  'not-significant': '#e2e8f0',
 };
 
 const SS_PALETTE: Record<SsCategory, string> = {
@@ -57,16 +66,17 @@ const NMD_DATA = TP53_TRANSCRIPT.exons.map((e, i, all) => ({
 
 // Synthesised RMC bins along the TP53 protein (393 aa). The intolerant
 // stretch (94-312) covers the Pfam DBD; flanks are increasingly
-// tolerant.
+// tolerant. Uses the six-bin palette that gnomAD's RMC strip would
+// surface for a constraint-rich gene (Slice 40).
 const RMC_DATA = [
-  { id: 'rmc-nter', start: 1, end: 93, category: 'tol' as const, label: 'N-term' },
-  { id: 'rmc-dbd', start: 94, end: 312, category: 'intol' as const, label: 'DBD' },
-  { id: 'rmc-tet', start: 313, end: 356, category: 'mod' as const, label: 'Tetramer' },
+  { id: 'rmc-nter', start: 1, end: 93, category: 'intol-4' as const, label: 'N-term' },
+  { id: 'rmc-dbd', start: 94, end: 312, category: 'intol-1' as const, label: 'DBD' },
+  { id: 'rmc-tet', start: 313, end: 356, category: 'intol-3' as const, label: 'Tetramer' },
   {
     id: 'rmc-cterm',
     start: 357,
     end: TP53_PROTEIN.length,
-    category: 'unconstrained' as const,
+    category: 'not-significant' as const,
     label: 'C-term',
   },
 ];

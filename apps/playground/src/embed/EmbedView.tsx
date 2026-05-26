@@ -13,7 +13,9 @@ import {
   parseUserVariants,
   resolveSelectedId,
   scaleTrack,
+  segmentBandTrack,
   userVariantTrack,
+  type RmcCategory,
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
@@ -28,7 +30,12 @@ import type {
   UserVariantRecord,
   ViewMode,
 } from '@populationgenomics/gene-glyph';
-import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
+import {
+  fetchRmcRegions,
+  fetchTranscriptData,
+  type LiveTranscriptData,
+  type RmcRegion,
+} from '../lib/gnomad.js';
 import { fetchProteinAnnotations } from '../lib/protein.js';
 import { fetchCdsSequence } from '../lib/sequence.js';
 import { resolveVariantsViaVV } from '../lib/variant-validator.js';
@@ -92,6 +99,7 @@ const TRACK_TOGGLES = [
   { id: 'nucleotide', label: 'Nucleotide' },
   { id: 'aa', label: 'Amino acid' },
   { id: 'interpro', label: 'InterPro' },
+  { id: 'rmc', label: 'RMC' },
   { id: 'clinvar', label: 'ClinVar' },
 ] as const;
 type TrackToggleId = (typeof TRACK_TOGGLES)[number]['id'];
@@ -101,6 +109,17 @@ const DEFAULT_COLLAPSED_GROUPS: ReadonlySet<string> = new Set([
   CLINVAR_GROUP_ID,
   ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
 ]);
+
+/** Slice 40 — six-bin RMC palette. Five intolerance tiers ordered
+ *  red → light green, plus a neutral grey for `p_value > 0.001`. */
+const RMC_PALETTE: Record<RmcCategory, string> = {
+  'intol-1': '#b91c1c',
+  'intol-2': '#f97316',
+  'intol-3': '#facc15',
+  'intol-4': '#a3e635',
+  'intol-5': '#bbf7d0',
+  'not-significant': '#e2e8f0',
+};
 
 function recordStars(r: ClinVarRecord): StarLevel {
   const raw = ((r.meta ?? {}) as { goldStars?: number }).goldStars ?? 0;
@@ -150,6 +169,10 @@ export function EmbedView() {
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
   const [cdsSequence, setCdsSequence] = useState<string | null>(null);
+  // Slice 40 — RMC regions loaded after the transcript fetch resolves a
+  // gene symbol. `null` while loading; empty array once gnomAD reports
+  // no v2 RMC for the gene (used to render the empty-state stub).
+  const [rmcRegions, setRmcRegions] = useState<readonly RmcRegion[] | null>(null);
   const [mode, setMode] = useState<ViewMode>(initial.mode);
   const [density, setDensity] = useState<Density>(initial.density);
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
@@ -269,6 +292,30 @@ export function EmbedView() {
       });
     return () => controller.abort();
   }, [requestedId]);
+
+  // Slice 40 — RMC fetch keyed off the *resolved* gene symbol, not the
+  // requested transcript id. gnomAD's RMC field hangs off the `gene`
+  // query, so we wait until the transcript resolver has reported which
+  // gene the requested transcript belongs to.
+  const geneSymbol = state.kind === 'ready' ? state.data.geneSymbol : null;
+  useEffect(() => {
+    if (!geneSymbol) return;
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRmcRegions(null);
+    fetchRmcRegions(geneSymbol, controller.signal)
+      .then((regions) => {
+        if (controller.signal.aborted) return;
+        setRmcRegions(regions);
+      })
+      .catch(() => {
+        // Gracefully degrade — render the empty-state stub on any
+        // network failure (CORS, gnomAD outage, transient 5xx).
+        if (controller.signal.aborted) return;
+        setRmcRegions([]);
+      });
+    return () => controller.abort();
+  }, [geneSymbol]);
 
   // Slice 36: resolve HGVS tokens via VariantValidator. The
   // resolution cache lives outside the effect so a transcript change
@@ -577,6 +624,21 @@ export function EmbedView() {
       );
     }
     if (!hiddenTracks.has('interpro')) out.push(interProTrack({}));
+    // Slice 40 — RMC strip. Only added once gnomAD has surfaced at
+    // least one region for this gene; the empty-state stub (rendered
+    // below the figure) covers the "no v2 RMC for this gene" case.
+    if (!hiddenTracks.has('rmc') && rmcRegions && rmcRegions.length > 0) {
+      out.push(
+        segmentBandTrack({
+          id: 'rmc',
+          source: rmcRegions,
+          coordSystem: 'protein',
+          palette: RMC_PALETTE,
+          heightPx: 12,
+          gapAbove: 6,
+        }),
+      );
+    }
     if (!hiddenTracks.has('clinvar')) {
       out.push({
         kind: 'group',
@@ -593,7 +655,16 @@ export function EmbedView() {
       });
     }
     return out;
-  }, [records, filter, filterKey, densityConfig, cdsSequence, hiddenTracks, userVariantRecords]);
+  }, [
+    records,
+    filter,
+    filterKey,
+    densityConfig,
+    cdsSequence,
+    hiddenTracks,
+    userVariantRecords,
+    rmcRegions,
+  ]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // The nested layout exposes detail tracks as `clinvar-<sig>-detail`
@@ -913,6 +984,20 @@ export function EmbedView() {
           variant={selectedUserVariant}
           onClear={() => setSelectedId(null)}
         />
+      )}
+      {!hiddenTracks.has('rmc') && rmcRegions !== null && rmcRegions.length === 0 && (
+        <p
+          data-testid="embed-rmc-empty"
+          style={{
+            margin: '8px 0 0',
+            fontSize: '0.78rem',
+            color: '#64748b',
+            fontStyle: 'italic',
+          }}
+        >
+          No RMC available for this gene
+          {geneSymbol ? ` (${geneSymbol})` : ''} in gnomAD v2.
+        </p>
       )}
       <UserVariantFooter
         errors={userVariantErrors}
@@ -1519,6 +1604,15 @@ function TrackIcon({ id }: { id: TrackToggleId }) {
       return (
         <svg {...SVG_BASE}>
           <rect x="1.5" y="5" width="13" height="6" rx="3" />
+        </svg>
+      );
+    case 'rmc':
+      return (
+        <svg {...SVG_BASE}>
+          <rect x="1.5" y="6" width="3" height="4" fill="currentColor" stroke="none" />
+          <rect x="4.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.7" />
+          <rect x="7.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.45" />
+          <rect x="10.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.25" />
         </svg>
       );
     case 'clinvar':

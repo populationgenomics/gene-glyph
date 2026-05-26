@@ -186,6 +186,8 @@ export type {
 } from './tracks/clinvar-track.js';
 export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
+export { parseAaStart, rmcCategoryFor } from './adapters/rmc.js';
+export type { RmcCategory } from './adapters/rmc.js';
 export {
   userVariantTrack,
   userVariantFromRecord,
