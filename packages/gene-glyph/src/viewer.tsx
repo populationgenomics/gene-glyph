@@ -1099,13 +1099,10 @@ function GeneGlyphInner(
   const getViewportInfo = useCallback((): ViewportInfo => {
     const range = viewport.range;
     const natural = viewport.naturalRange();
-    const naturalLen = natural[1] - natural[0];
-    const rangeLen = range[1] - range[0];
-    const zoom = rangeLen > 0 ? naturalLen / rangeLen : 1;
     return {
       mode: viewport.mode,
       range,
-      zoom,
+      zoom: viewport.zoom(),
       layout: layout.items,
       naturalRange: natural,
       baselineWindow: viewport.baselineWindow(),

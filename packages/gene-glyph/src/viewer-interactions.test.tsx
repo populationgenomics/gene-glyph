@@ -556,8 +556,16 @@ describe('GeneGlyph — Slice 9 interactions', () => {
         dispatchWheel(svg, { deltaY: -100, ctrlKey: true, clientX: 500 });
       }
       const info = ref.current!.getViewportInfo();
-      expect(info.zoom).toBeLessThanOrEqual(4 + 1e-6);
-      expect(info.zoom).toBeCloseTo(4, 3);
+      // `maxZoom` clamps range-density (= naturalLen / visibleLen). In
+      // genome mode the layout-side `info.zoom` (= `_zoomScale`) can sit
+      // above the range-density value because fixed-budget intronic
+      // bulks shrink the flex baseline without shrinking the ruler — so
+      // the same range needs a larger layout multiplier. The clamp test
+      // asserts the property the clamp actually enforces.
+      const rangeDensity =
+        (info.naturalRange[1] - info.naturalRange[0]) / (info.range[1] - info.range[0]);
+      expect(rangeDensity).toBeLessThanOrEqual(4 + 1e-6);
+      expect(rangeDensity).toBeCloseTo(4, 3);
     });
   });
 

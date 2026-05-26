@@ -1014,13 +1014,18 @@ export class ViewportController implements Viewport {
     }
   }
 
-  /** Zoom scalar relative to fit-gene. >1 = zoomed in. */
+  /** Zoom scalar relative to fit-gene. >1 = zoomed in. Returns the
+   *  layout primary (`_zoomScale`) directly — invariant under pan. An
+   *  earlier definition was derived from `naturalLen / (range[1] -
+   *  range[0])`, which drifted on pan in genome mode: a fixed display-
+   *  width window covers different ruler bp depending on whether it
+   *  sits over an exon, an intronic flank, or a fixed-budget bulk, so
+   *  the range-derived ratio fluctuated even though no relayout was
+   *  happening. The one-mapping principle says layout = f(zoomScale)
+   *  alone, so the user-visible zoom number should track the layout
+   *  primary, not a pan-sensitive derivation. */
   zoom(): number {
-    const naturalSpan = defaultRangeFor(this._mode, this.mapper);
-    const naturalLen = naturalSpan[1] - naturalSpan[0];
-    const [lo, hi] = this.range;
-    const currentLen = hi - lo;
-    return currentLen > 0 ? naturalLen / currentLen : 1;
+    return this._zoomScale;
   }
 
   // ---- Point projection --------------------------------------------------
