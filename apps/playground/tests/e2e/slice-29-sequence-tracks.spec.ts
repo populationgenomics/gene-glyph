@@ -25,20 +25,26 @@ test.describe('Slice 29 — nucleotide + aa sequence tracks', () => {
     await expect(ntLetters.first()).toBeVisible();
     await expect(aaLetters.first()).toBeVisible();
 
-    // …and they actually land inside the figure's visible viewport.
-    // `toBeVisible` passes on any non-empty bbox; an SVG element whose
-    // CSS-transform places it far off-screen still satisfies it. The
-    // gap-correction bug fixed alongside Slice 31 manifested exactly
-    // that way in `genome` mode — pin the assertion here.
+    // …and at least one of them lands inside the figure's visible
+    // viewport. `toBeVisible` passes on any non-empty bbox; an SVG
+    // element whose CSS-transform places it far off-screen still
+    // satisfies it. The gap-correction bug fixed alongside Slice 31
+    // manifested exactly that way in `genome` mode — pin the
+    // assertion here. Letters at the edge of the rendered buffer can
+    // sit slightly outside the figure box without being a regression,
+    // so don't pin to the first DOM letter.
     const onScreen = await s.evaluate((sec) => {
       const fig = sec.querySelector('svg.vv-figure') as SVGSVGElement | null;
       const figBox = fig?.getBoundingClientRect();
       if (!figBox) return { ok: false, why: 'no figure' };
-      const first = sec.querySelector('.vv-nt-letter') as SVGGraphicsElement | null;
-      if (!first) return { ok: false, why: 'no letter' };
-      const r = first.getBoundingClientRect();
-      const relX = r.x - figBox.x;
-      return { ok: relX >= 0 && relX <= figBox.width, relX, figW: figBox.width };
+      const letters = sec.querySelectorAll<SVGGraphicsElement>('.vv-nt-letter');
+      if (letters.length === 0) return { ok: false, why: 'no letters' };
+      const anyInside = Array.from(letters).some((el) => {
+        const r = el.getBoundingClientRect();
+        const relX = r.x - figBox.x;
+        return relX >= 0 && relX + r.width <= figBox.width;
+      });
+      return { ok: anyInside, count: letters.length, figW: figBox.width };
     });
     expect(onScreen.ok).toBe(true);
 
