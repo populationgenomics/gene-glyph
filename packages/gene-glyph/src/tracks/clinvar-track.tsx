@@ -880,12 +880,14 @@ function ClinVarStackedBody({
     );
   }, [records, filter, data.stackLayout, viewport, mapper, encoding, markRadius]);
 
-  // Per-record geometry is in baseline coordinates, which are stable across
-  // both pan (display-offset shift) and zoom (CSS-variable exon scales). So
-  // the cost-heavy work — building 5-7 SVG elements per record — can be
-  // hoisted into a memo keyed on the geometric inputs. Only hover/select
-  // class changes survive into the per-render loop, and they don't bake
-  // into the cache because they're applied on the outer <g> wrapper.
+  // Per-record geometry is in baseline coordinates — stable across both
+  // pan (display-offset shift) and zoom (CSS-variable exon scales). We
+  // bake the entire per-record outer <g> + inner subtree into a memo
+  // keyed on those geometric inputs, so a pan/zoom keypress reuses the
+  // same ReactNode references and React's reconciler short-circuits
+  // diffing this whole track. Hover and selection are applied
+  // imperatively via class toggles (see effects below) so they don't
+  // need to bake into the cached element identities.
   const baseline = viewport.baselineGeometry();
   const cache = useMemo(() => {
     const byExon = new Map<number, PlacedClinVarStacked[]>();
@@ -917,18 +919,12 @@ function ClinVarStackedBody({
     const exonByIdx = new Map<number, ExonBaseline>();
     for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
 
-    type RecordEntry = {
-      record: PlacedClinVarStacked;
-      shape: string;
-      localX: number;
-      inner: ReactNode;
-    };
-    const entriesByExon = new Map<number, RecordEntry[]>();
+    const groupsByExon = new Map<number, ReactNode>();
     for (const [exonIdx, placements] of byExon) {
       const exon = exonByIdx.get(exonIdx);
       if (!exon) continue;
       const counterScale = `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`;
-      const entries: RecordEntry[] = [];
+      const els: ReactNode[] = [];
       for (const p of placements) {
         const r = encoding.radius?.(p.record) ?? markRadius;
         const cy = rect.yTop + topPad + r + p.row * laneHeight + laneHeadroomFor(p.row);
@@ -939,90 +935,99 @@ function ClinVarStackedBody({
         const localX = p.baselineX - exon.xStart;
         const localEndX = p.endBaselineX - exon.xStart;
         const hasSpan = p.endBaselineX > p.baselineX + 0.5;
-        entries.push({
-          record: p,
-          shape,
-          localX,
-          inner: (
-            <Fragment>
-              {hasSpan && (
-                // Span line drawn outside the counter-scale group so its length
-                // stretches with the exon's CDS-bp content (representing real
-                // biological extent); stroke width is held fixed-pixel via
-                // `non-scaling-stroke`. Stroke scales with the marker radius
-                // so compact-density configs (smaller marks) get correspondingly
-                // thinner extension lines.
-                <line
-                  className="vv-clinvar-span"
-                  x1={0}
-                  x2={localEndX - localX}
-                  y1={cy}
-                  y2={cy}
-                  stroke={fill}
-                  strokeWidth={Math.max(1, r * 0.4)}
-                  strokeOpacity={0.6}
-                  vectorEffect="non-scaling-stroke"
-                  pointerEvents="stroke"
-                />
-              )}
-              {p.truncatedSide && (
-                // Truncation arrow stub — flags that the variant's reference
-                // extends past the visible flank into the chevron-compressed
-                // intron bulk. The chevron sits in its own counter-scale group
-                // so the arrowhead stays fixed-pixel regardless of zoom; for
-                // the right-side stub the counter-scale also translates to
-                // the line's far end before cancelling the exon scale.
-                <g
-                  className="vv-clinvar-span-arrow"
-                  style={{
-                    transform:
-                      p.truncatedSide === 'right'
-                        ? `translate(${localEndX - localX}px, 0) scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`
-                        : `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`,
-                    transformOrigin: '0 0',
-                  }}
-                  data-vv-truncated={p.truncatedSide}
-                >
-                  <ChevronStub
-                    direction={p.truncatedSide}
-                    cy={cy}
-                    r={r}
-                    stroke={fill}
-                  />
-                </g>
-              )}
+        els.push(
+          <g
+            key={p.record.id}
+            className="vv-clinvar-mark vv-clinvar-mark-stacked"
+            data-vv-feature-id={p.record.id}
+            data-vv-significance={p.record.significance}
+            data-vv-stack-row={p.row}
+            data-vv-stack-lane={p.laneKey}
+            data-vv-shape={shape}
+            transform={`translate(${localX} 0)`}
+            style={{ cursor: 'pointer' }}
+            tabIndex={0}
+            role="button"
+            aria-label={p.record.label}
+          >
+            {hasSpan && (
+              // Span line drawn outside the counter-scale group so its length
+              // stretches with the exon's CDS-bp content (representing real
+              // biological extent); stroke width is held fixed-pixel via
+              // `non-scaling-stroke`. Stroke scales with the marker radius
+              // so compact-density configs (smaller marks) get correspondingly
+              // thinner extension lines.
+              <line
+                className="vv-clinvar-span"
+                x1={0}
+                x2={localEndX - localX}
+                y1={cy}
+                y2={cy}
+                stroke={fill}
+                strokeWidth={Math.max(1, r * 0.4)}
+                strokeOpacity={0.6}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="stroke"
+              />
+            )}
+            {p.truncatedSide && (
+              // Truncation arrow stub — flags that the variant's reference
+              // extends past the visible flank into the chevron-compressed
+              // intron bulk. The chevron sits in its own counter-scale group
+              // so the arrowhead stays fixed-pixel regardless of zoom; for
+              // the right-side stub the counter-scale also translates to
+              // the line's far end before cancelling the exon scale.
               <g
-                className="vv-clinvar-shape"
-                style={{ transform: counterScale, transformOrigin: '0 0' }}
+                className="vv-clinvar-span-arrow"
+                style={{
+                  transform:
+                    p.truncatedSide === 'right'
+                      ? `translate(${localEndX - localX}px, 0) scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`
+                      : `scaleX(calc(1 / var(--vv-exon-scale-x-${exonIdx}, 1)))`,
+                  transformOrigin: '0 0',
+                }}
+                data-vv-truncated={p.truncatedSide}
               >
-                <g transform={`translate(0 ${cy})`}>
-                  <circle
-                    className="vv-clinvar-ring"
-                    cx={0}
-                    cy={0}
-                    r={r + 3}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <path
-                    className="vv-clinvar-glyph"
-                    d={d}
-                    fill={fill}
-                    stroke="var(--vv-clinvar-dot-stroke, #ffffff)"
-                    strokeWidth={1}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </g>
+                <ChevronStub direction={p.truncatedSide} cy={cy} r={r} stroke={fill} />
               </g>
-            </Fragment>
-          ),
-        });
+            )}
+            <g
+              className="vv-clinvar-shape"
+              style={{ transform: counterScale, transformOrigin: '0 0' }}
+            >
+              <g transform={`translate(0 ${cy})`}>
+                <circle
+                  className="vv-clinvar-ring"
+                  cx={0}
+                  cy={0}
+                  r={r + 3}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={1.5}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <path
+                  className="vv-clinvar-glyph"
+                  d={d}
+                  fill={fill}
+                  stroke="var(--vv-clinvar-dot-stroke, #ffffff)"
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            </g>
+          </g>,
+        );
       }
-      entriesByExon.set(exonIdx, entries);
+      groupsByExon.set(
+        exonIdx,
+        painter.placeInExonGroup(
+          exonIdx,
+          <Fragment key={`clinvar-stacked-exon-${exonIdx}`}>{els}</Fragment>,
+        ),
+      );
     }
-    return { entriesByExon, useLaneDividers };
+    return { groupsByExon, useLaneDividers };
   }, [
     layout,
     baseline,
@@ -1032,52 +1037,56 @@ function ClinVarStackedBody({
     topPad,
     laneTopPad,
     rect.yTop,
+    painter,
   ]);
-  const { entriesByExon, useLaneDividers } = cache;
+  const { groupsByExon, useLaneDividers } = cache;
+  const groups = Array.from(groupsByExon.values());
 
-  // Hover/select are applied via a className on the outer <g>, which we
-  // still construct per render. The inner subtree (line + chevron + shape)
-  // is the memoized ReactNode reference, so React's reconciler short-
-  // circuits diffing those subtrees on stable renders.
-  const groups: ReactNode[] = [];
-  for (const [exonIdx, entries] of entriesByExon) {
-    const inner = entries.map(({ record: p, shape, localX, inner: cachedInner }) => {
-      const isHovered = interaction.hoveredFeatureId === p.record.id;
-      const isSelected = interaction.selectedFeatureIds.has(p.record.id);
-      const cls = [
-        'vv-clinvar-mark',
-        'vv-clinvar-mark-stacked',
-        isHovered && 'is-hovered',
-        isSelected && 'is-selected',
-      ]
-        .filter(Boolean)
-        .join(' ');
-      return (
-        <g
-          key={p.record.id}
-          className={cls}
-          data-vv-feature-id={p.record.id}
-          data-vv-significance={p.record.significance}
-          data-vv-stack-row={p.row}
-          data-vv-stack-lane={p.laneKey}
-          data-vv-shape={shape}
-          transform={`translate(${localX} 0)`}
-          style={{ cursor: 'pointer' }}
-          tabIndex={0}
-          role="button"
-          aria-label={p.record.label}
-        >
-          {cachedInner}
-        </g>
-      );
-    });
-    groups.push(
-      painter.placeInExonGroup(
-        exonIdx,
-        <Fragment key={`clinvar-stacked-exon-${exonIdx}`}>{inner}</Fragment>,
-      ),
-    );
-  }
+  // Hover and selection are applied directly to the DOM (class toggles)
+  // rather than baked into element props, so a hover change doesn't
+  // invalidate the cached per-record elements above. The track root's
+  // ref scopes the queries — without it we'd risk colliding with other
+  // tracks' marks sharing the same feature id.
+  const trackRootRef = useRef<SVGGElement>(null);
+  const hoveredElRef = useRef<Element | null>(null);
+  useEffect(() => {
+    const root = trackRootRef.current;
+    if (!root) return;
+    const prev = hoveredElRef.current;
+    if (prev) prev.classList.remove('is-hovered');
+    const id = interaction.hoveredFeatureId;
+    if (!id) {
+      hoveredElRef.current = null;
+      return;
+    }
+    const next = root.querySelector(`[data-vv-feature-id="${CSS.escape(id)}"]`);
+    if (next) next.classList.add('is-hovered');
+    hoveredElRef.current = next;
+    // The cache identity is in deps so a re-pack (new DOM nodes) re-applies
+    // the class to the fresh element.
+  }, [interaction.hoveredFeatureId, cache]);
+
+  const selectedElsRef = useRef<Set<Element>>(new Set());
+  useEffect(() => {
+    const root = trackRootRef.current;
+    if (!root) return;
+    const prev = selectedElsRef.current;
+    const next = interaction.selectedFeatureIds;
+    for (const el of prev) {
+      const id = el.getAttribute('data-vv-feature-id');
+      if (!id || !next.has(id) || !root.contains(el)) {
+        el.classList.remove('is-selected');
+        prev.delete(el);
+      }
+    }
+    for (const id of next) {
+      const el = root.querySelector(`[data-vv-feature-id="${CSS.escape(id)}"]`);
+      if (el && !prev.has(el)) {
+        el.classList.add('is-selected');
+        prev.add(el);
+      }
+    }
+  }, [interaction.selectedFeatureIds, cache]);
 
   // Lane dividers — one faint hairline centered in the pre-block pad
   // of each consequence bucket, with a right-inset section label and a
@@ -1157,6 +1166,7 @@ function ClinVarStackedBody({
 
   return (
     <g
+      ref={trackRootRef}
       className="vv-clinvar-track vv-clinvar-track-stacked"
       data-vv-track-id={trackId}
       data-vv-stack-rows={layout.rowCount}
