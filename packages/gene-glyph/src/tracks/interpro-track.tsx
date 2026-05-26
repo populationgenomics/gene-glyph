@@ -49,6 +49,10 @@ export interface InterProTrackConfig {
   laneGapPx?: number;
   /** Override the default `source.toLowerCase() === 'interpro'` filter. */
   domainFilter?: (domain: ProteinDomain) => boolean;
+  /** Pixels reserved for the parent "InterPro" label row at the top
+   *  of the group's extent. Mirrors {@link TrackGroup.headerHeight}.
+   *  Defaults to 22 (matches the ClinVar hierarchy). */
+  headerHeight?: number;
 }
 
 export interface InterProSubTrackData {
@@ -675,6 +679,13 @@ export function interProTrack(
     id: baseId,
     label: config.label ?? 'InterPro',
     gapAbove: 6,
+    // Reserve a label row at the top of the group's extent (same
+    // pattern the ClinVar hierarchy uses). Without this, the
+    // "InterPro" parent label sits at the same y as the first
+    // sub-track's label and the two visually crash. The 22px value
+    // matches ClinVar's headerHeight so the two parents line up
+    // when both are visible in the gutter.
+    headerHeight: config.headerHeight ?? 22,
     tracks,
   };
 }
