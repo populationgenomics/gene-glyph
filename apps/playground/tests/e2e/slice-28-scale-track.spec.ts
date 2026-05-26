@@ -8,16 +8,14 @@ test.describe('Slice 28 — coordinate ruler track', () => {
     const scale = s.locator('.vv-scale-track');
     await expect(scale).toBeVisible();
     await expect(scale).toHaveAttribute('data-vv-scale-unit', 'bp');
-    // TP53 CDS = 1182 bp; auto-step picks 50. Crash-aware skipping
-    // drops candidates whose labels would overlap their predecessors;
-    // with the HGVS `c.` prefix each label is two characters wider,
-    // so about half the candidates collide and the emitted count
-    // thins to ~13. Bounds are loose because the assertion is "majors
+    // TP53 CDS = 1182 bp; auto-step picks 50, and intronic flank ticks
+    // add a few per exon edge. Crash-aware skipping drops labels that
+    // would overlap. Bounds are loose because the assertion is "majors
     // render across the gene", not a precise count.
     const majors = scale.locator('.vv-scale-tick-major');
     const count = await majors.count();
     expect(count).toBeGreaterThanOrEqual(10);
-    expect(count).toBeLessThanOrEqual(23);
+    expect(count).toBeLessThanOrEqual(35);
     // Last label carries the unit suffix.
     const labels = scale.locator('.vv-scale-label');
     const texts = await labels.allTextContents();
