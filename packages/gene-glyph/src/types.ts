@@ -95,6 +95,13 @@ export interface ViewerVariant {
   label: string;
   coord: VariantCoord;
   category: VariantCategory;
+  /** Raw VEP / SO consequence term (e.g. `splice_donor_variant`,
+   *  `missense_variant`). Optional. The 14-value {@link VariantCategory}
+   *  coarsens VEP's vocabulary in ways that lose distinctions some
+   *  encodings need (LOF-splice vs splice-region both collapse to
+   *  `splice`); carrying the raw term lets downstream encodings make
+   *  fine-grained colour / shape choices without enum churn. */
+  consequence?: string;
   meta?: Record<string, unknown>;
 }
 
