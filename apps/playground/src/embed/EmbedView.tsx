@@ -7,6 +7,7 @@ import {
   defaultClinVarSymbolEncoding,
   exonTrack,
   interProTrack,
+  scaleTrack,
 } from '@populationgenomics/gene-glyph';
 import type {
   ClinVarRecord,
@@ -17,6 +18,7 @@ import type {
   TooltipRenderArgs,
   TrackOrGroup,
   Transcript,
+  ViewMode,
 } from '@populationgenomics/gene-glyph';
 import { fetchTranscriptData, type LiveTranscriptData } from '../lib/gnomad.js';
 import { fetchProteinAnnotations } from '../lib/protein.js';
@@ -122,6 +124,7 @@ export function EmbedView() {
       ]),
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
+  const [mode, setMode] = useState<ViewMode>('transcript');
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   useEffect(() => {
@@ -241,6 +244,7 @@ export function EmbedView() {
       };
     };
     return [
+      scaleTrack({ id: 'scale' }),
       exonTrack({}),
       interProTrack({}),
       {
@@ -325,6 +329,44 @@ export function EmbedView() {
       }}
     >
       <StatusBar state={state} requestedId={requestedId} />
+      {state.kind === 'ready' && (
+        <div
+          data-testid="embed-mode-selector"
+          style={{
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            margin: '8px 0',
+            color: '#475569',
+            fontSize: '0.78rem',
+          }}
+        >
+          <span style={{ opacity: 0.75, minWidth: 80 }}>view:</span>
+          {(['genome', 'transcript', 'protein'] as const).map((m) => {
+            const active = mode === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                data-testid={`embed-mode-${m}`}
+                data-active={active}
+                onClick={() => setMode(m)}
+                style={{
+                  padding: '2px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #cbd5e1',
+                  background: active ? '#0c4a6e' : '#f1f5f9',
+                  color: active ? '#e0f2fe' : '#475569',
+                  cursor: 'pointer',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {m}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {state.kind === 'ready' && (
         <section
           data-testid="embed-clinvar-filters"
@@ -486,7 +528,8 @@ export function EmbedView() {
         transcript={transcript}
         protein={protein ?? undefined}
         tracks={tracks}
-        defaultMode="transcript"
+        mode={mode}
+        onModeChange={setMode}
         trackHeightBudget={16000}
         collapsedGroupIds={collapsedGroups}
         onCollapsedGroupChange={setCollapsedGroups}

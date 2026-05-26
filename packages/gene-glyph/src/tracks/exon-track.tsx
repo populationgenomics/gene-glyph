@@ -157,6 +157,38 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
                   vectorEffect="non-scaling-stroke"
                   className="vv-exon-rect"
                 />
+                {(eb.utr5Px ?? 0) > 0 && (
+                  <rect
+                    key={`utr5-${eb.exonIdx}`}
+                    x={-eb.utr5Px!}
+                    y={exonY + (exonH - exonH / 2) / 2}
+                    width={eb.utr5Px!}
+                    height={exonH / 2}
+                    fill={painter.color('vv-color-exon-fill', '#94a3b8')}
+                    stroke={painter.color('vv-color-exon-stroke', '#475569')}
+                    strokeWidth={1}
+                    strokeOpacity={0.6}
+                    fillOpacity={0.35}
+                    vectorEffect="non-scaling-stroke"
+                    className="vv-exon-utr vv-exon-utr-5"
+                  />
+                )}
+                {(eb.utr3Px ?? 0) > 0 && (
+                  <rect
+                    key={`utr3-${eb.exonIdx}`}
+                    x={eb.width}
+                    y={exonY + (exonH - exonH / 2) / 2}
+                    width={eb.utr3Px!}
+                    height={exonH / 2}
+                    fill={painter.color('vv-color-exon-fill', '#94a3b8')}
+                    stroke={painter.color('vv-color-exon-stroke', '#475569')}
+                    strokeWidth={1}
+                    strokeOpacity={0.6}
+                    fillOpacity={0.35}
+                    vectorEffect="non-scaling-stroke"
+                    className="vv-exon-utr vv-exon-utr-3"
+                  />
+                )}
               </Fragment>,
             ),
           );

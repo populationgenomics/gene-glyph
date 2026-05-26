@@ -57,6 +57,11 @@ const MIN_GAP_PX = 4;
 /** Cap total collapsed-intron pixels at this fraction of viewport width so
  *  genes with many exons still leave room for in-scale exon drawing. */
 const GAP_BUDGET_FRACTION = 0.35;
+/** Display-width fraction that each UTR bp consumes relative to a CDS bp.
+ *  PTEN and similar genes have 5×+ longer UTRs than their CDS, so showing
+ *  UTRs at full biological scale crushes the protein-coding region. A 1/4
+ *  ratio keeps long UTRs visible as context without dominating the figure. */
+const UTR_DISPLAY_SCALE = 0.25;
 
 interface ExonScreenSegment {
   exonIdx: number;
@@ -81,7 +86,17 @@ function defaultRangeFor(mode: ViewMode, mapper: CoordinateMapper): [number, num
     const aaLength = Math.floor(mapper.transcript.cdsLength / 3);
     return [1, Math.max(1, aaLength)];
   }
-  return [1, Math.max(1, mapper.transcript.cdsLength)];
+  // CDS-coord modes: extend the fit-gene range to include the 5' and 3'
+  // UTR bp carried on the first and last exons. Positions below 1 (5'UTR)
+  // and above cdsLength (3'UTR) are treated by the ruler/baseline
+  // conversion as extrapolations beyond the CDS edge — they map to the
+  // baseline pixels the viewport already allocated for UTR caps.
+  const tx = mapper.transcript;
+  const cdsLen = Math.max(1, tx.cdsLength);
+  if (tx.exons.length === 0) return [1, cdsLen];
+  const utr5 = tx.exons[0]!.utr5Bp ?? 0;
+  const utr3 = tx.exons[tx.exons.length - 1]!.utr3Bp ?? 0;
+  return [1 - utr5, cdsLen + utr3];
 }
 
 function defaultIntronScale(mode: ViewMode): number {
@@ -160,8 +175,15 @@ export class ViewportController implements Viewport {
     // flexible (same scale).
     let visibleFlex = 0;
     let visibleFixed = 0;
-    const firstX = 0;
-    const lastX = baseline.totalWidth;
+    // Edges of the *segment array* — not the baseline edges. UTR baseline
+    // pixels (allocated by `computeBaseline` for the first exon's `utr5Px`
+    // and the last exon's `utr3Px`) sit between `xStart=0`/`xEnd=totalWidth`
+    // and the first/last exon segment, with no segment representation. Using
+    // segment edges here so the "extrapolation past the segments" branches
+    // below count those UTR pixels as flex content, the same way they count
+    // over-scroll past the baseline.
+    const firstX = baseline.exons[0]?.xStart ?? 0;
+    const lastX = baseline.exons[baseline.exons.length - 1]?.xEnd ?? baseline.totalWidth;
     // We walk the baseline geometry directly: exons are flexible at width
     // `eb.width`; gaps are fixed at `gap.width` in genome mode (their
     // baseline width IS their fixed display budget by construction); and
@@ -653,7 +675,11 @@ export class ViewportController implements Viewport {
     // junction — the boundary between the last cell of exon i and the
     // first cell of exon i+1 is a single x-coordinate.
     let linearBp = 0;
-    for (const e of exons) linearBp += e.cdsEnd - e.cdsStart + 1;
+    for (const e of exons) {
+      linearBp +=
+        (e.cdsEnd - e.cdsStart + 1) +
+        ((e.utr5Bp ?? 0) + (e.utr3Bp ?? 0)) * UTR_DISPLAY_SCALE;
+    }
     let fixedBudgetPx = 0;
     let nLegacyGaps = 0; // introns with no flanks → legacy gap shape
     for (const fw of flankWidths) {
@@ -688,11 +714,27 @@ export class ViewportController implements Viewport {
     let x = 0;
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
-      const bpCount = e.cdsEnd - e.cdsStart + 1;
-      const xStart = x;
-      const xEnd = xStart + bpCount * pxPerBp;
-      exonRects.push({ exonIdx: i, xStart, xEnd, width: xEnd - xStart });
-      x = xEnd;
+      const cdsBp = e.cdsEnd - e.cdsStart + 1;
+      const utr5Bp = e.utr5Bp ?? 0;
+      const utr3Bp = e.utr3Bp ?? 0;
+      const utr5Px = utr5Bp * UTR_DISPLAY_SCALE * pxPerBp;
+      const utr3Px = utr3Bp * UTR_DISPLAY_SCALE * pxPerBp;
+      // Display rect = 5'UTR cap + CDS + 3'UTR cap, advancing through
+      // `x`. ExonBaseline.xStart/xEnd cover the CDS portion only so
+      // variant tracks (which map CDS coords through `--vv-exon-x-${i}`)
+      // see the CDS bounds unchanged. The cap widths ride alongside so
+      // the exon track can draw them.
+      const xStart = x + utr5Px;
+      const xEnd = xStart + cdsBp * pxPerBp;
+      exonRects.push({
+        exonIdx: i,
+        xStart,
+        xEnd,
+        width: xEnd - xStart,
+        utr5Px,
+        utr3Px,
+      });
+      x = xEnd + utr3Px;
       if (i < exons.length - 1) {
         const fw = flankWidths[i] ?? { donorBp: 0, acceptorBp: 0 };
         const hasFlanks = fw.donorBp > 0 || fw.acceptorBp > 0;
@@ -777,6 +819,7 @@ export class ViewportController implements Viewport {
       flanks: flankRects,
       flanksByIntron,
       pxPerBp,
+      pxPerBpOutsideCds: pxPerBp * UTR_DISPLAY_SCALE,
       gapPx: this._mode === 'genome' ? naturalGapPx : 0,
       totalWidth: this._width,
     };
@@ -878,6 +921,9 @@ export class ViewportController implements Viewport {
       exons: exonRects,
       gaps: gapRects,
       pxPerBp: pxPerAa,
+      // Protein mode has no UTRs in aa space; extrapolation past the
+      // first/last exon uses the same rate as inside the CDS segments.
+      pxPerBpOutsideCds: pxPerAa,
       gapPx: 0,
       totalWidth: this._width,
     };

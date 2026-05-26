@@ -197,8 +197,18 @@ export function placeClinVarRecords(
       unplaced.push(r);
       continue;
     }
-    const baselineX = viewport.cdsToBaselineX(cds.cPos);
-    // Records outside the current screen window (cdsToScreen returns
+    // Use the mode-aware Position projection so protein-mode hosts
+    // (which expect aa coords on the ruler) still get the records
+    // placed at the correct codon centre. The general `toBaselineX` /
+    // `toScreen` overloads convert CDS bp → aa internally when the
+    // viewport is in protein mode.
+    const pos = { kind: 'cds' as const, cPos: cds.cPos, offset: 0 };
+    const baselineX = viewport.toBaselineX(pos);
+    if (baselineX === null) {
+      unplaced.push(r);
+      continue;
+    }
+    // Records outside the current screen window (toScreen returns
     // null) used to land in `unplaced`. That made the stacked layout
     // re-pack on every pan/zoom — the figure SVG already clips
     // off-figure renderings (per the variant-track pattern) so keeping
@@ -206,7 +216,7 @@ export function placeClinVarRecords(
     // with `Infinity` for off-screen records so `clusterClinVar` (which
     // sorts by screen-pixel distance) naturally pushes them past every
     // on-screen cluster and out of the cluster gap window.
-    const liveScreenX = viewport.cdsToScreen(cds.cPos, 0);
+    const liveScreenX = viewport.toScreen(pos);
     const screenX = liveScreenX ?? Infinity;
     placed.push({
       record: r,

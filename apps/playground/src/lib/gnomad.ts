@@ -407,8 +407,29 @@ function ensemblToTranscript(tx: EnsemblTranscriptResponse): Transcript {
   const inOrder = tx.Exon.slice().sort((a, b) => a.start - b.start);
   if (strand === '-') inOrder.reverse();
 
+  // Sum 5'UTR and 3'UTR bp across *all* exons (UTR-only exons included)
+  // so the totals reflect real biological lengths even when an entire
+  // exon lies outside the CDS. The totals are assigned to the first and
+  // last CDS-containing exons below — UTR-only exons are still skipped
+  // from the rendered exon list (a known interim simplification).
+  let total5UtrBp = 0;
+  let total3UtrBp = 0;
+  for (const e of inOrder) {
+    const leftEnd = Math.min(e.end, cdsLo - 1);
+    const leftLen = leftEnd >= e.start ? leftEnd - e.start + 1 : 0;
+    const rightStart = Math.max(e.start, cdsHi + 1);
+    const rightLen = rightStart <= e.end ? e.end - rightStart + 1 : 0;
+    if (strand === '+') {
+      total5UtrBp += leftLen;
+      total3UtrBp += rightLen;
+    } else {
+      total5UtrBp += rightLen;
+      total3UtrBp += leftLen;
+    }
+  }
+
   let cdsStart = 1;
-  const exons = [];
+  const exons: Transcript['exons'] = [];
   for (const e of inOrder) {
     const start = Math.max(e.start, cdsLo);
     const stop = Math.min(e.end, cdsHi);
@@ -424,6 +445,10 @@ function ensemblToTranscript(tx: EnsemblTranscriptResponse): Transcript {
       chr: prefixChrom(tx.seq_region_name),
     });
     cdsStart = cdsEnd + 1;
+  }
+  if (exons.length > 0) {
+    exons[0]!.utr5Bp = total5UtrBp;
+    exons[exons.length - 1]!.utr3Bp = total3UtrBp;
   }
   return {
     geneSymbol: tx.display_name?.split('-')[0] ?? tx.Parent,
@@ -441,11 +466,15 @@ function gnomadTranscriptToTranscript(tx: GnomadTranscriptResult): Transcript {
     .sort((a, b) => a.start - b.start);
   if (tx.strand === '-') cdsExons.reverse();
 
+  // Sum UTR bp from gnomAD's explicit 'UTR' feature entries, classifying
+  // each as 5' or 3' by its position relative to the CDS genomic bounds.
+  const { utr5Bp, utr3Bp } = summarizeUtrBp(tx.exons, tx.strand);
+
   let cdsStart = 1;
   const exons = cdsExons.map((e, i) => {
     const lengthBp = e.stop - e.start + 1;
     const cdsEnd = cdsStart + lengthBp - 1;
-    const row = {
+    const row: Transcript['exons'][number] = {
       number: i + 1,
       cdsStart,
       cdsEnd,
@@ -456,6 +485,10 @@ function gnomadTranscriptToTranscript(tx: GnomadTranscriptResult): Transcript {
     cdsStart = cdsEnd + 1;
     return row;
   });
+  if (exons.length > 0) {
+    exons[0]!.utr5Bp = utr5Bp;
+    exons[exons.length - 1]!.utr3Bp = utr3Bp;
+  }
   const cdsLength = exons.length === 0 ? 0 : exons[exons.length - 1]!.cdsEnd;
   return {
     geneSymbol: tx.gene.symbol,
@@ -464,6 +497,29 @@ function gnomadTranscriptToTranscript(tx: GnomadTranscriptResult): Transcript {
     strand: tx.strand,
     exons,
   };
+}
+
+function summarizeUtrBp(
+  rawExons: readonly GnomadExon[],
+  strand: '+' | '-',
+): { utr5Bp: number; utr3Bp: number } {
+  const cdsEntries = rawExons.filter((e) => e.feature_type === 'CDS');
+  const utrEntries = rawExons.filter((e) => e.feature_type === 'UTR');
+  if (cdsEntries.length === 0 || utrEntries.length === 0) {
+    return { utr5Bp: 0, utr3Bp: 0 };
+  }
+  const cdsGenomicLo = Math.min(...cdsEntries.map((e) => e.start));
+  const cdsGenomicHi = Math.max(...cdsEntries.map((e) => e.stop));
+  let leftLen = 0; // bp genomically left of CDS lo
+  let rightLen = 0; // bp genomically right of CDS hi
+  for (const u of utrEntries) {
+    const len = u.stop - u.start + 1;
+    if (u.stop < cdsGenomicLo) leftLen += len;
+    else if (u.start > cdsGenomicHi) rightLen += len;
+  }
+  return strand === '+'
+    ? { utr5Bp: leftLen, utr3Bp: rightLen }
+    : { utr5Bp: rightLen, utr3Bp: leftLen };
 }
 
 function gnomadClinVarToRecords(
@@ -530,11 +586,13 @@ function toTranscript(gene: GnomadGene): Transcript {
     .sort((a, b) => a.start - b.start);
   if (gene.strand === '-') cdsExons.reverse();
 
+  const { utr5Bp, utr3Bp } = summarizeUtrBp(tx.exons, gene.strand);
+
   let cdsStart = 1;
   const exons = cdsExons.map((e, i) => {
     const lengthBp = e.stop - e.start + 1;
     const cdsEnd = cdsStart + lengthBp - 1;
-    const row = {
+    const row: Transcript['exons'][number] = {
       number: i + 1,
       cdsStart,
       cdsEnd,
@@ -545,6 +603,10 @@ function toTranscript(gene: GnomadGene): Transcript {
     cdsStart = cdsEnd + 1;
     return row;
   });
+  if (exons.length > 0) {
+    exons[0]!.utr5Bp = utr5Bp;
+    exons[exons.length - 1]!.utr3Bp = utr3Bp;
+  }
   const cdsLength = exons.length === 0 ? 0 : exons[exons.length - 1]!.cdsEnd;
   return {
     geneSymbol: gene.symbol,

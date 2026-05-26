@@ -78,6 +78,7 @@ function withIntronsBaseline(): { baseline: BaselineGeometry; exons: readonly { 
       ],
       gaps: [{ exonIdxA: 0, exonIdxB: 1, xStart: 100, xEnd: 110, width: 10 }],
       pxPerBp: 1,
+      pxPerBpOutsideCds: 1,
       gapPx: 10,
       totalWidth: 210,
     },
@@ -101,6 +102,7 @@ function proteinBaseline(): { baseline: BaselineGeometry; exons: readonly { cdsS
       ],
       gaps: [{ exonIdxA: 0, exonIdxB: 1, xStart: 50, xEnd: 50, width: 0 }],
       pxPerBp: 1,
+      pxPerBpOutsideCds: 1,
       gapPx: 0,
       totalWidth: 100,
     },
@@ -302,7 +304,7 @@ describe('ProjectionFrame — protein mode', () => {
 describe('ProjectionFrame — degenerate inputs', () => {
   it('returns 0/null gracefully when the baseline is empty', () => {
     const baseline: BaselineGeometry = {
-      exons: [], gaps: [], pxPerBp: 0, gapPx: 0, totalWidth: 0,
+      exons: [], gaps: [], pxPerBp: 0, pxPerBpOutsideCds: 0, gapPx: 0, totalWidth: 0,
     };
     const frame = makeFrame({
       baseline, range: [1, 1], width: 0, mode: 'transcript', exons: [],

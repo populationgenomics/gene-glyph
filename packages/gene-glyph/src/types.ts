@@ -11,6 +11,14 @@ export interface Exon {
   genomicStart: number;
   genomicEnd: number;
   chr: string;
+  /** 5' UTR length (bp) within this exon — typically non-zero only on the
+   *  first CDS-containing exon. Optional; defaults to 0. The viewport
+   *  allocates display width for UTR bp at the same `pxPerBp` as CDS bp,
+   *  visually compressing the CDS to make room. */
+  utr5Bp?: number;
+  /** 3' UTR length (bp) within this exon — typically non-zero only on the
+   *  last CDS-containing exon. */
+  utr3Bp?: number;
 }
 
 export interface Transcript {
@@ -267,9 +275,20 @@ export interface CoordinateMapper {
  *  the wrapping `<g>` transforms change, and CSS transitions those. */
 export interface ExonBaseline {
   exonIdx: number;
+  /** Baseline x of the CDS portion's left edge (within the exon's display
+   *  rect — see `utr5Px` for the UTR cap that sits to the left of this). */
   xStart: number;
+  /** Baseline x of the CDS portion's right edge. */
   xEnd: number;
+  /** CDS-portion width: `xEnd - xStart`. */
   width: number;
+  /** Display width allocated to this exon's 5' UTR (bp × pxPerBp). The
+   *  cap sits at `[xStart - utr5Px, xStart]`. Zero when the exon has no
+   *  5' UTR (the common case for everything but the first exon). */
+  utr5Px?: number;
+  /** Display width allocated to this exon's 3' UTR. The cap sits at
+   *  `[xEnd, xEnd + utr3Px]`. */
+  utr3Px?: number;
 }
 
 export interface GapBaseline {
@@ -315,6 +334,13 @@ export interface BaselineGeometry {
   flanks?: FlankBaseline[];
   flanksByIntron?: Map<number, { donor: number; acceptor: number }>;
   pxPerBp: number;
+  /** Rate used when projecting ruler positions outside the first/last
+   *  exon segment (e.g., UTR coordinates). In CDS modes this is
+   *  `pxPerBp × UTR_DISPLAY_SCALE` so each UTR bp consumes a fraction
+   *  of the display a CDS bp does, reflecting that UTRs are visual
+   *  context rather than the protein-coding payload. Equal to `pxPerBp`
+   *  in protein mode (no UTRs in aa space). */
+  pxPerBpOutsideCds: number;
   gapPx: number;
   totalWidth: number;
 }

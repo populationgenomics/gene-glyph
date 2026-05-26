@@ -83,7 +83,9 @@ export class ProjectionFrame {
     if (segments.length === 0) return 0;
     const first = segments[0]!;
     if (rulerPos < first.rulerStart) {
-      return first.xStart - (first.rulerStart - rulerPos) * this.baseline.pxPerBp;
+      // Positions before the first segment's ruler range are UTR bp (or
+      // pan-past-edge over-scroll); both share the UTR rate.
+      return first.xStart - (first.rulerStart - rulerPos) * this.baseline.pxPerBpOutsideCds;
     }
     for (const seg of segments) {
       if (rulerPos <= seg.rulerEnd) {
@@ -94,7 +96,7 @@ export class ProjectionFrame {
       }
     }
     const last = segments[segments.length - 1]!;
-    return last.xEnd + (rulerPos - last.rulerEnd) * this.baseline.pxPerBp;
+    return last.xEnd + (rulerPos - last.rulerEnd) * this.baseline.pxPerBpOutsideCds;
   }
 
   /** Inverse of {@link rulerToBaselineX}. */
@@ -103,7 +105,7 @@ export class ProjectionFrame {
     if (segments.length === 0 || this.baseline.pxPerBp === 0) return 0;
     const first = segments[0]!;
     if (S < first.xStart) {
-      return first.rulerStart - (first.xStart - S) / this.baseline.pxPerBp;
+      return first.rulerStart - (first.xStart - S) / this.baseline.pxPerBpOutsideCds;
     }
     for (const seg of segments) {
       if (S <= seg.xEnd) {
@@ -113,7 +115,7 @@ export class ProjectionFrame {
       }
     }
     const last = segments[segments.length - 1]!;
-    return last.rulerEnd + (S - last.xEnd) / this.baseline.pxPerBp;
+    return last.rulerEnd + (S - last.xEnd) / this.baseline.pxPerBpOutsideCds;
   }
 
   /** Baseline screen-x → live screen-x. Pure: layout(zoom) lookup plus

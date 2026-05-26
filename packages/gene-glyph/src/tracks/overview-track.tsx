@@ -288,6 +288,7 @@ function OverviewTrackImpl({
       exons: scaledExons,
       gaps: scaledGaps,
       pxPerBp: scaledPxPerBp,
+      pxPerBpOutsideCds: scaledPxPerBp,
       gapPx: scaledGapPx,
       totalWidth: width,
     };
