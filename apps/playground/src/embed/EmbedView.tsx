@@ -1401,21 +1401,7 @@ function Toolbar({
     <nav
       data-testid="embed-toolbar"
       aria-label="Figure controls"
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 4,
-        padding: '6px 12px',
-        margin: '-12px -12px 10px',
-        background: 'rgba(248, 250, 252, 0.92)',
-        borderBottom: '1px solid #e2e8f0',
-        backdropFilter: 'saturate(140%) blur(4px)',
-        WebkitBackdropFilter: 'saturate(140%) blur(4px)',
-      }}
+      className="embed-toolbar"
     >
       <ToolbarGroup label="view mode">
         {VIEW_MODES.map((m) => (
@@ -1498,17 +1484,7 @@ function ToolbarGroup({ label, children }: { label: string; children: ReactNode 
 }
 
 function ToolbarDivider() {
-  return (
-    <span
-      aria-hidden
-      style={{
-        width: 1,
-        height: 20,
-        background: '#cbd5e1',
-        margin: '0 6px',
-      }}
-    />
-  );
+  return <span aria-hidden className="embed-toolbar-divider" />;
 }
 
 function ToolbarButton({
@@ -1527,25 +1503,13 @@ function ToolbarButton({
   return (
     <button
       type="button"
+      className="embed-toolbar-button"
       data-testid={testId}
       data-active={active}
       aria-pressed={active}
       aria-label={label}
       title={label}
       onClick={onClick}
-      style={{
-        width: 28,
-        height: 28,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 0,
-        borderRadius: 6,
-        border: `1px solid ${active ? '#0c4a6e' : '#cbd5e1'}`,
-        background: active ? '#0c4a6e' : '#ffffff',
-        color: active ? '#e0f2fe' : '#475569',
-        cursor: 'pointer',
-      }}
     >
       {children}
     </button>
