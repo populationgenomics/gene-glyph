@@ -792,15 +792,7 @@ export function EmbedView() {
                   onClick={(e) =>
                     chipClick(e, SIGNIFICANCE_CHIPS, sig, excluded, setExcluded)
                   }
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '0.78rem',
-                    borderRadius: 999,
-                    border: '1px solid #cbd5e1',
-                    background: active ? '#e0f2fe' : '#f1f5f9',
-                    color: active ? '#0c4a6e' : '#94a3b8',
-                    cursor: 'pointer',
-                  }}
+                  className="pg-chip"
                 >
                   {humanSig(sig)}
                 </button>
@@ -836,16 +828,8 @@ export function EmbedView() {
                       ? 'no review stars'
                       : `${n} review star${n === 1 ? '' : 's'}`
                   }
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '0.78rem',
-                    borderRadius: 999,
-                    border: '1px solid #cbd5e1',
-                    background: active ? '#e0f2fe' : '#f1f5f9',
-                    color: active ? '#0c4a6e' : '#94a3b8',
-                    cursor: 'pointer',
-                    letterSpacing: 1,
-                  }}
+                  className="pg-chip"
+                  style={{ letterSpacing: 1 }}
                 >
                   {label}
                 </button>
@@ -875,15 +859,7 @@ export function EmbedView() {
                   onClick={(e) =>
                     chipClick(e, VARIANT_TYPES, t, excludedTypes, setExcludedTypes)
                   }
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '0.78rem',
-                    borderRadius: 999,
-                    border: '1px solid #cbd5e1',
-                    background: active ? '#e0f2fe' : '#f1f5f9',
-                    color: active ? '#0c4a6e' : '#94a3b8',
-                    cursor: 'pointer',
-                  }}
+                  className="pg-chip"
                 >
                   {VARIANT_TYPE_LABELS[t]}
                 </button>

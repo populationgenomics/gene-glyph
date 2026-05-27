@@ -16,12 +16,26 @@
 
   --page-bg: #ffffff;
   --page-text: #1e293b;
+
+  /* Filter chips — significance / star / variant-type pills shared by
+   * the playground main view and the embed. Active state lights up
+   * via `data-active='true'`. */
+  --chip-border: #cbd5e1;
+  --chip-bg: #f1f5f9;
+  --chip-fg: #94a3b8;
+  --chip-active-bg: #e0f2fe;
+  --chip-active-fg: #0c4a6e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-vv-theme='light']) {
     --page-bg: #0f172a;
     --page-text: #e2e8f0;
+    --chip-border: #334155;
+    --chip-bg: #1e293b;
+    --chip-fg: #64748b;
+    --chip-active-bg: rgba(96, 165, 250, 0.18);
+    --chip-active-fg: #93c5fd;
   }
 }
 
@@ -29,10 +43,30 @@
 [data-vv-theme='dark'] {
   --page-bg: #0f172a;
   --page-text: #e2e8f0;
+  --chip-border: #334155;
+  --chip-bg: #1e293b;
+  --chip-fg: #64748b;
+  --chip-active-bg: rgba(96, 165, 250, 0.18);
+  --chip-active-fg: #93c5fd;
 }
 
 body {
   margin: 0;
   background: var(--page-bg);
   color: var(--page-text);
+}
+
+.pg-chip {
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  cursor: pointer;
+}
+
+.pg-chip[data-active='true'] {
+  background: var(--chip-active-bg);
+  color: var(--chip-active-fg);
 }

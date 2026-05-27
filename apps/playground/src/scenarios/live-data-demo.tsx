@@ -336,15 +336,7 @@ export function LiveDataDemoScenario() {
               data-testid={`live-data-chip-${sig}`}
               data-active={active}
               onClick={() => toggleExcluded(sig)}
-              style={{
-                padding: '2px 8px',
-                fontSize: '0.78rem',
-                borderRadius: 999,
-                border: '1px solid #cbd5e1',
-                background: active ? '#e0f2fe' : '#f1f5f9',
-                color: active ? '#0c4a6e' : '#94a3b8',
-                cursor: 'pointer',
-              }}
+              className="pg-chip"
             >
               {humanSig(sig)}
             </button>
