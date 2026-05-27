@@ -47,15 +47,16 @@ We use [Changesets](https://github.com/changesets/changesets).
 4. Merging that PR publishes to npm.
 
 Versioning:
-- **0.x** while the API is shaking out — break freely.
-- **1.0.0** at lit-manager cutover (Slice 13).
-- Strict semver from 1.0.
+- **1.0.0** is the first tagged release — the lit-manager cutover (Slice 13)
+  plus all post-cutover slice work. See [`CHANGELOG.md`](./CHANGELOG.md).
+- Strict semver from 1.0: additive features go in `1.x`; breaking API
+  changes require a `2.0`.
 
 ## Testing
 
 Three layers of tests:
 
-- **Unit / integration (JSDOM)** — `npm run test` runs the Vitest suite across all workspaces (102+ tests covering coordinate math, layout, tracks, viewer wiring, gesture handlers).
+- **Unit / integration (JSDOM)** — `npm run test` runs the Vitest suite across all workspaces (430+ tests covering coordinate math, layout, tracks, viewer wiring, gesture handlers).
 - **Browser end-to-end (Playwright + Chromium)** — `npm run test:e2e` boots the playground via Vite, drives Chromium, and asserts each slice's acceptance bar against the rendered figure. Tests live under `apps/playground/tests/e2e/`.
 - **CI** — both layers run on every push and PR (`.github/workflows/ci.yml`). The Playwright job uploads its HTML report and `test-results/` as artifacts on failure.
 
