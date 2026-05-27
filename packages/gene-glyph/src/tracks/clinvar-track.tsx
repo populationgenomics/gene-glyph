@@ -831,11 +831,16 @@ function ClinVarStackedBody({
   // Delegated pointer handlers: one set of listeners on the track root, vs
   // per-record closures × N records. Refs hold the latest host callbacks so
   // the handler identities are stable across renders, and `lastHoverIdRef`
-  // dedupes the mouseover bubble stream into enter/leave transitions.
+  // dedupes the mouseover bubble stream into enter/leave transitions. The
+  // refs are written from an effect (not during render) to satisfy
+  // react-hooks/refs — pointer events fire after commit, so the values are
+  // current by the time a handler reads them.
   const onFeatureHoverRef = useRef(onFeatureHover);
-  onFeatureHoverRef.current = onFeatureHover;
   const onFeatureClickRef = useRef(onFeatureClick);
-  onFeatureClickRef.current = onFeatureClick;
+  useEffect(() => {
+    onFeatureHoverRef.current = onFeatureHover;
+    onFeatureClickRef.current = onFeatureClick;
+  });
   const lastHoverIdRef = useRef<string | null>(null);
   const handleMouseOver = useCallback((e: React.MouseEvent<SVGGElement>) => {
     const cb = onFeatureHoverRef.current;
