@@ -56,6 +56,8 @@ export interface GnomadRmcRegion {
 }
 
 interface GnomadRegionalMissenseConstraint {
+  passed_qc: boolean | null;
+  has_no_rmc_evidence: boolean | null;
   regions: GnomadRmcRegion[] | null;
 }
 
@@ -74,6 +76,18 @@ export interface RmcRegion {
   end: number;
   category: RmcCategory;
 }
+
+/** Status of gnomAD's v2 Regional Missense Constraint analysis for a gene.
+ *  The three states are visually distinct in the UI — collapsing them
+ *  all to "empty array" makes a successful "no significant constraint"
+ *  result look identical to a broken fetch.
+ *  - `has_regions`: gene passed QC and has at least one constrained sub-region.
+ *  - `no_evidence`: gene was analysed but no significant sub-regions detected.
+ *  - `not_analysed`: gene is absent from the v2 RMC dataset entirely. */
+export type RmcResult =
+  | { status: 'has_regions'; regions: RmcRegion[] }
+  | { status: 'no_evidence' }
+  | { status: 'not_analysed' };
 
 export interface LiveGeneData {
   transcript: Transcript;
@@ -617,18 +631,20 @@ async function doFetch(geneSymbol: string): Promise<LiveGeneData> {
   };
 }
 
-/** Fetch Regional Missense Constraint regions for `geneSymbol` from
- *  gnomAD v2. Returns an empty array when the gene has no RMC data on
- *  v2 (most genes), or when gnomAD's response is missing the field
- *  (older schema). Caches by upper-cased symbol so re-renders of the
+/** Fetch the Regional Missense Constraint result for `geneSymbol` from
+ *  gnomAD v2. Distinguishes "has regions", "analysed but no significant
+ *  regions" (`has_no_rmc_evidence`) and "not in the v2 RMC dataset"
+ *  (sub-object null). Caches by upper-cased symbol so re-renders of the
  *  same gene don't refetch. */
-const rmcCache = new Map<string, RmcRegion[]>();
-const rmcInFlight = new Map<string, Promise<RmcRegion[]>>();
+const rmcCache = new Map<string, RmcResult>();
+const rmcInFlight = new Map<string, Promise<RmcResult>>();
 
 const RMC_QUERY = /* GraphQL */ `
   query Rmc($geneSymbol: String!) {
     gene(gene_symbol: $geneSymbol, reference_genome: GRCh38) {
       gnomad_v2_regional_missense_constraint {
+        passed_qc
+        has_no_rmc_evidence
         regions {
           aa_start
           aa_stop
@@ -640,20 +656,20 @@ const RMC_QUERY = /* GraphQL */ `
   }
 `;
 
-export function fetchRmcRegions(
+export function fetchRmcResult(
   geneSymbol: string,
   signal?: AbortSignal,
-): Promise<RmcRegion[]> {
+): Promise<RmcResult> {
   const key = geneSymbol.toUpperCase();
   const cached = rmcCache.get(key);
   if (cached) return Promise.resolve(cached);
   let pending = rmcInFlight.get(key);
   if (!pending) {
     pending = doFetchRmc(key).then(
-      (regions) => {
-        rmcCache.set(key, regions);
+      (result) => {
+        rmcCache.set(key, result);
         rmcInFlight.delete(key);
-        return regions;
+        return result;
       },
       (err) => {
         rmcInFlight.delete(key);
@@ -665,7 +681,7 @@ export function fetchRmcRegions(
   return wrapWithSignal(pending, signal);
 }
 
-async function doFetchRmc(geneSymbol: string): Promise<RmcRegion[]> {
+async function doFetchRmc(geneSymbol: string): Promise<RmcResult> {
   const res = await fetch(GNOMAD_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -683,10 +699,22 @@ async function doFetchRmc(geneSymbol: string): Promise<RmcRegion[]> {
     errors?: Array<{ message: string }>;
   };
   // gnomAD treats "no such gene" as `data.gene === null` plus a
-  // top-level error; treat that as an empty RMC rather than throwing so
+  // top-level error; treat that as `not_analysed` rather than throwing so
   // the figure renders an empty-state stub instead of an error banner.
-  const regions = json.data?.gene?.gnomad_v2_regional_missense_constraint?.regions ?? null;
-  return toRmcRegions(regions);
+  const rmc = json.data?.gene?.gnomad_v2_regional_missense_constraint ?? null;
+  return toRmcResult(rmc);
+}
+
+function toRmcResult(rmc: GnomadRegionalMissenseConstraint | null): RmcResult {
+  if (!rmc) return { status: 'not_analysed' };
+  const regions = toRmcRegions(rmc.regions);
+  if (regions.length > 0) return { status: 'has_regions', regions };
+  // `has_no_rmc_evidence === true` is gnomAD's explicit "we analysed this
+  // gene and found no significant constraint regions". If the flag is
+  // absent (older schema) but the sub-object exists, we fall back to
+  // `no_evidence` rather than `not_analysed` — the gene clearly is in
+  // the analysis dataset.
+  return { status: 'no_evidence' };
 }
 
 function toRmcRegions(raw: GnomadRmcRegion[] | null): RmcRegion[] {

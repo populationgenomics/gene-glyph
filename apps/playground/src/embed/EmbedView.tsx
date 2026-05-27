@@ -34,10 +34,10 @@ import type {
   ViewMode,
 } from '@populationgenomics/gene-glyph';
 import {
-  fetchRmcRegions,
+  fetchRmcResult,
   fetchTranscriptData,
   type LiveTranscriptData,
-  type RmcRegion,
+  type RmcResult,
 } from '../lib/gnomad.js';
 import { fetchProteinAnnotations } from '../lib/protein.js';
 import { fetchCdsSequence } from '../lib/sequence.js';
@@ -172,10 +172,11 @@ export function EmbedView() {
   );
   const [protein, setProtein] = useState<ProteinAnnotations | null>(null);
   const [cdsSequence, setCdsSequence] = useState<string | null>(null);
-  // Slice 40 — RMC regions loaded after the transcript fetch resolves a
-  // gene symbol. `null` while loading; empty array once gnomAD reports
-  // no v2 RMC for the gene (used to render the empty-state stub).
-  const [rmcRegions, setRmcRegions] = useState<readonly RmcRegion[] | null>(null);
+  // Slice 40 — RMC result loaded after the transcript fetch resolves a
+  // gene symbol. `null` while loading; otherwise a discriminated result
+  // that the empty-state stub uses to distinguish "no significant
+  // constraint" from "not in the v2 RMC dataset".
+  const [rmcResult, setRmcResult] = useState<RmcResult | null>(null);
   const [mode, setMode] = useState<ViewMode>(initial.mode);
   const [density, setDensity] = useState<Density>(initial.density);
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
@@ -305,17 +306,18 @@ export function EmbedView() {
     if (!geneSymbol) return;
     const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRmcRegions(null);
-    fetchRmcRegions(geneSymbol, controller.signal)
-      .then((regions) => {
+    setRmcResult(null);
+    fetchRmcResult(geneSymbol, controller.signal)
+      .then((result) => {
         if (controller.signal.aborted) return;
-        setRmcRegions(regions);
+        setRmcResult(result);
       })
       .catch(() => {
-        // Gracefully degrade — render the empty-state stub on any
-        // network failure (CORS, gnomAD outage, transient 5xx).
+        // Gracefully degrade — surface as `not_analysed` on any network
+        // failure (CORS, gnomAD outage, transient 5xx) so the stub
+        // appears rather than an error banner.
         if (controller.signal.aborted) return;
-        setRmcRegions([]);
+        setRmcResult({ status: 'not_analysed' });
       });
     return () => controller.abort();
   }, [geneSymbol]);
@@ -629,12 +631,12 @@ export function EmbedView() {
     if (!hiddenTracks.has('interpro')) out.push(interProTrack({}));
     // Slice 40 — RMC strip. Only added once gnomAD has surfaced at
     // least one region for this gene; the empty-state stub (rendered
-    // below the figure) covers the "no v2 RMC for this gene" case.
-    if (!hiddenTracks.has('rmc') && rmcRegions && rmcRegions.length > 0) {
+    // below the figure) covers the "no v2 RMC for this gene" cases.
+    if (!hiddenTracks.has('rmc') && rmcResult?.status === 'has_regions') {
       out.push(
         segmentBandTrack({
           id: 'rmc',
-          source: rmcRegions,
+          source: rmcResult.regions,
           coordSystem: 'protein',
           palette: RMC_PALETTE,
           heightPx: 12,
@@ -666,7 +668,7 @@ export function EmbedView() {
     cdsSequence,
     hiddenTracks,
     userVariantRecords,
-    rmcRegions,
+    rmcResult,
   ]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
@@ -994,9 +996,10 @@ export function EmbedView() {
           onClear={() => setSelectedId(null)}
         />
       )}
-      {!hiddenTracks.has('rmc') && rmcRegions !== null && rmcRegions.length === 0 && (
+      {!hiddenTracks.has('rmc') && rmcResult !== null && rmcResult.status !== 'has_regions' && (
         <p
           data-testid="embed-rmc-empty"
+          data-rmc-status={rmcResult.status}
           style={{
             margin: '8px 0 0',
             fontSize: '0.78rem',
@@ -1004,8 +1007,9 @@ export function EmbedView() {
             fontStyle: 'italic',
           }}
         >
-          No RMC available for this gene
-          {geneSymbol ? ` (${geneSymbol})` : ''} in gnomAD v2.
+          {rmcResult.status === 'no_evidence'
+            ? `No significant regional missense constraint detected${geneSymbol ? ` for ${geneSymbol}` : ''} in gnomAD v2.`
+            : `${geneSymbol ?? 'This gene'} is not in the gnomAD v2 regional missense constraint dataset.`}
         </p>
       )}
       <UserVariantFooter
