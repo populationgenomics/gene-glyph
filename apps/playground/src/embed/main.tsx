@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@populationgenomics/gene-glyph/styles.css';
+import '../page-theme.css';
 import './embed.css';
 import { EmbedView } from './EmbedView.js';
 

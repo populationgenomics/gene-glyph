@@ -1,0 +1,38 @@
+/* Page-level theming shared by the playground and embed entries.
+ *
+ * The gene-glyph library auto-themes via `prefers-color-scheme: dark`;
+ * without a matching page theme the figure ends up dark on a still-
+ * light body. This file gives `<body>` its own variable-driven palette
+ * with the same trigger taxonomy as the library (and `embed.css`):
+ *   - `@media (prefers-color-scheme: dark)` — auto, gated so an
+ *     explicit `[data-vv-theme='light']` from the host wins.
+ *   - `[data-vv-theme='dark']` on `:root` (or any ancestor) for opt-in.
+ *
+ * `color-scheme: light dark` lets the browser pick its native palette
+ * for default chrome — scrollbars, form controls, focus rings. */
+
+:root {
+  color-scheme: light dark;
+
+  --page-bg: #ffffff;
+  --page-text: #1e293b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-vv-theme='light']) {
+    --page-bg: #0f172a;
+    --page-text: #e2e8f0;
+  }
+}
+
+:root[data-vv-theme='dark'],
+[data-vv-theme='dark'] {
+  --page-bg: #0f172a;
+  --page-text: #e2e8f0;
+}
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--page-text);
+}

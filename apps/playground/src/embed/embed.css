@@ -1,16 +1,14 @@
 /* Playground embed view — repeated surface patterns and theming.
  *
- * Colours flow through CSS variables so the dark-theme block at the
- * bottom can flip them in one place. Two triggers match the library's
- * taxonomy: `@media (prefers-color-scheme: dark)` for auto-detect, and
- * `[data-vv-theme='dark']` on the `<html>` / `<body>` / `<main>` for
- * explicit opt-in (a host theme switcher, Playwright tests). */
+ * Page-level palette (body bg / text, `color-scheme`) lives in
+ * `../page-theme.css` and is shared with the main playground entry.
+ * This file owns the embed-only surfaces: cards, the encoding aside,
+ * and the filter section's secondary text. Variables flip under both
+ * `@media (prefers-color-scheme: dark)` (gated by `data-vv-theme`)
+ * and explicit `[data-vv-theme='dark']`, matching the library's
+ * trigger taxonomy. */
 
 :root {
-  color-scheme: light dark;
-
-  --embed-bg: #ffffff;
-  --embed-text: #1e293b;
   --embed-text-strong: #0f172a;
   --embed-text-secondary: #475569;
   --embed-muted: #64748b;
@@ -24,8 +22,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-vv-theme='light']) {
-    --embed-bg: #0f172a;
-    --embed-text: #e2e8f0;
     --embed-text-strong: #f1f5f9;
     --embed-text-secondary: #cbd5e1;
     --embed-muted: #94a3b8;
@@ -40,8 +36,6 @@
 
 :root[data-vv-theme='dark'],
 [data-vv-theme='dark'] {
-  --embed-bg: #0f172a;
-  --embed-text: #e2e8f0;
   --embed-text-strong: #f1f5f9;
   --embed-text-secondary: #cbd5e1;
   --embed-muted: #94a3b8;
@@ -53,17 +47,10 @@
   --embed-user-card-border: #6b21a8;
 }
 
-body {
-  margin: 0;
-  background: var(--embed-bg);
-}
-
 .embed-root {
   padding: 12px;
   font-family: system-ui, sans-serif;
   font-size: 0.85rem;
-  color: var(--embed-text);
-  background: var(--embed-bg);
   min-height: 100vh;
 }
 
@@ -73,7 +60,6 @@ body {
   background: var(--embed-card-bg);
   border: 1px solid var(--embed-card-border);
   border-radius: 6px;
-  color: var(--embed-text);
 }
 
 .embed-card-filters {
