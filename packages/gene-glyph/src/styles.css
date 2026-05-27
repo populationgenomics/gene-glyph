@@ -920,6 +920,116 @@ body.vv-gg-box-zooming * {
   opacity: 0.6;
 }
 
+/* Dark theme. Same trigger taxonomy as reduced-motion / print:
+ *   1. `@media (prefers-color-scheme: dark)` — automatic, gated so an
+ *      explicit `[data-vv-theme="light"]` from the host always wins.
+ *   2. `[data-vv-theme="dark"]` on the figure root or any ancestor —
+ *      manual opt-in (host-driven theme switcher, Playwright tests).
+ * Only chrome palette variables flip. Category palettes (variant /
+ * ClinVar significance / DECIPHER consequence) stay identity-stable
+ * across themes — meaning shifts when a "pathogenic" red turns into
+ * something else under a different theme. The few category overrides
+ * here are contrast adjustments: dark-green benign and dark-slate
+ * "other" need a lightness bump to stay legible on a slate-700 track. */
+.gene-glyph[data-vv-theme='dark'],
+[data-vv-theme='dark'] .gene-glyph {
+  --vv-color-text-primary: #e2e8f0;
+  --vv-color-text-secondary: #94a3b8;
+  --vv-color-text-tertiary: #64748b;
+  --vv-color-exon-fill: #334155;
+  --vv-color-exon-stroke: #94a3b8;
+  --vv-color-intron-line: #64748b;
+  --vv-color-bg-surface: transparent;
+
+  --vv-color-mane-bg: #1e3a8a;
+  --vv-color-mane-text: #93c5fd;
+  --vv-color-focus: #60a5fa;
+  --vv-color-chevron-hover: rgba(248, 250, 252, 0.08);
+  --vv-color-minimap-bg: #1e293b;
+  --vv-color-minimap-border: #475569;
+  --vv-color-minimap-window-fill: rgba(96, 165, 250, 0.22);
+  --vv-color-minimap-window-stroke: #60a5fa;
+  --vv-color-minimap-handle: #60a5fa;
+  --vv-color-overview-window-fill: rgba(96, 165, 250, 0.22);
+  --vv-color-overview-window-stroke: #60a5fa;
+  --vv-color-overview-handle: #60a5fa;
+
+  --vv-variant-dot-stroke: #0f172a;
+  --vv-clinvar-dot-stroke: #0f172a;
+  --vv-clinvar-count-fill: #0f172a;
+  --vv-clinvar-popover-bg: #1e293b;
+  --vv-clinvar-popover-stroke: #475569;
+  --vv-clinvar-popover-row-hover: rgba(248, 250, 252, 0.06);
+  --vv-clinvar-lane-divider: #475569;
+  --vv-clinvar-lane-label: #94a3b8;
+
+  --vv-clinvar-color-benign: hsl(162, 60%, 50%);
+  --vv-clinvar-color-other: #94a3b8;
+
+  --vv-segment-band-label: #e2e8f0;
+
+  --vv-brush-fill: rgba(96, 165, 250, 0.16);
+  --vv-brush-stroke: rgba(96, 165, 250, 0.75);
+  --vv-selection-range-fill: rgba(192, 132, 252, 0.12);
+  --vv-selection-range-stroke: rgba(192, 132, 252, 0.9);
+  --vv-box-zoom-fill: rgba(52, 211, 153, 0.2);
+  --vv-box-zoom-stroke: rgba(52, 211, 153, 0.9);
+
+  --vv-tooltip-bg: rgba(248, 250, 252, 0.96);
+  --vv-tooltip-color: #0f172a;
+  --vv-tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  .gene-glyph:not([data-vv-theme='light']) {
+    --vv-color-text-primary: #e2e8f0;
+    --vv-color-text-secondary: #94a3b8;
+    --vv-color-text-tertiary: #64748b;
+    --vv-color-exon-fill: #334155;
+    --vv-color-exon-stroke: #94a3b8;
+    --vv-color-intron-line: #64748b;
+    --vv-color-bg-surface: transparent;
+
+    --vv-color-mane-bg: #1e3a8a;
+    --vv-color-mane-text: #93c5fd;
+    --vv-color-focus: #60a5fa;
+    --vv-color-chevron-hover: rgba(248, 250, 252, 0.08);
+    --vv-color-minimap-bg: #1e293b;
+    --vv-color-minimap-border: #475569;
+    --vv-color-minimap-window-fill: rgba(96, 165, 250, 0.22);
+    --vv-color-minimap-window-stroke: #60a5fa;
+    --vv-color-minimap-handle: #60a5fa;
+    --vv-color-overview-window-fill: rgba(96, 165, 250, 0.22);
+    --vv-color-overview-window-stroke: #60a5fa;
+    --vv-color-overview-handle: #60a5fa;
+
+    --vv-variant-dot-stroke: #0f172a;
+    --vv-clinvar-dot-stroke: #0f172a;
+    --vv-clinvar-count-fill: #0f172a;
+    --vv-clinvar-popover-bg: #1e293b;
+    --vv-clinvar-popover-stroke: #475569;
+    --vv-clinvar-popover-row-hover: rgba(248, 250, 252, 0.06);
+    --vv-clinvar-lane-divider: #475569;
+    --vv-clinvar-lane-label: #94a3b8;
+
+    --vv-clinvar-color-benign: hsl(162, 60%, 50%);
+    --vv-clinvar-color-other: #94a3b8;
+
+    --vv-segment-band-label: #e2e8f0;
+
+    --vv-brush-fill: rgba(96, 165, 250, 0.16);
+    --vv-brush-stroke: rgba(96, 165, 250, 0.75);
+    --vv-selection-range-fill: rgba(192, 132, 252, 0.12);
+    --vv-selection-range-stroke: rgba(192, 132, 252, 0.9);
+    --vv-box-zoom-fill: rgba(52, 211, 153, 0.2);
+    --vv-box-zoom-stroke: rgba(52, 211, 153, 0.9);
+
+    --vv-tooltip-bg: rgba(248, 250, 252, 0.96);
+    --vv-tooltip-color: #0f172a;
+    --vv-tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+}
+
 /* ClinVar track. Density-clustered marks render either as a circle (single
  * record) or a diamond (cluster of N) with a count overlay. Each mark sits
  * inside its host exon's per-exon `<g>` so it animates with that exon during
