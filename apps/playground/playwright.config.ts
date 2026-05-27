@@ -22,6 +22,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Pin colorScheme so dark-mode-aware styles stay stable across hosts
+    // (CI Chromium ignores the OS preference, but a dev machine running
+    // with macOS dark mode would otherwise flip the theme mid-test).
+    colorScheme: 'light',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

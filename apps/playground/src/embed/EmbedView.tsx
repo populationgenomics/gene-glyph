@@ -728,14 +728,7 @@ export function EmbedView() {
   const transcript = state.kind === 'ready' ? state.data.transcript : placeholder;
 
   return (
-    <main
-      style={{
-        padding: 12,
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '0.85rem',
-        color: '#1e293b',
-      }}
-    >
+    <main className="embed-root">
       {state.kind === 'ready' && (
         <Toolbar
           mode={mode}
@@ -759,7 +752,7 @@ export function EmbedView() {
             style={{
               fontSize: '0.78rem',
               fontWeight: 600,
-              color: '#475569',
+              color: 'var(--embed-text-secondary)',
               marginBottom: 6,
               letterSpacing: 0.2,
             }}
@@ -784,7 +777,7 @@ export function EmbedView() {
               flexWrap: 'wrap',
               alignItems: 'center',
               margin: '4px 0',
-              color: '#475569',
+              color: 'var(--embed-text-secondary)',
             }}
           >
             <span style={{ opacity: 0.75, minWidth: 80 }}>significance:</span>
@@ -822,7 +815,7 @@ export function EmbedView() {
               flexWrap: 'wrap',
               alignItems: 'center',
               margin: '4px 0',
-              color: '#475569',
+              color: 'var(--embed-text-secondary)',
             }}
           >
             <span style={{ opacity: 0.75, minWidth: 80 }}>review:</span>
@@ -867,7 +860,7 @@ export function EmbedView() {
               flexWrap: 'wrap',
               alignItems: 'center',
               margin: '4px 0',
-              color: '#475569',
+              color: 'var(--embed-text-secondary)',
             }}
           >
             <span style={{ opacity: 0.75, minWidth: 80 }}>type:</span>
@@ -1056,28 +1049,9 @@ function DecipherLegend() {
     <aside
       data-testid="embed-decipher-legend"
       aria-label="ClinVar glyph encoding"
-      style={{
-        flexShrink: 0,
-        width: 200,
-        padding: '8px 10px',
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: 6,
-        color: '#475569',
-        fontSize: '0.72rem',
-        lineHeight: 1.35,
-      }}
+      className="embed-aside"
     >
-      <header
-        style={{
-          fontSize: '0.74rem',
-          fontWeight: 600,
-          marginBottom: 6,
-          color: '#334155',
-        }}
-      >
-        Glyph encoding
-      </header>
+      <header className="embed-aside-header">Glyph encoding</header>
       <ul
         style={{
           listStyle: 'none',
