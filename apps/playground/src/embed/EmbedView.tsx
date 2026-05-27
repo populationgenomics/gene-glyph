@@ -1759,8 +1759,12 @@ function SelectedVariantCard({
     majorConsequence?: string;
     goldStars?: number;
     hgvsp?: string;
+    clinvarVariationId?: string;
   };
   const parsed = parseVariantId(record.id);
+  const clinvarHref = meta.clinvarVariationId
+    ? `https://www.ncbi.nlm.nih.gov/clinvar/variation/${meta.clinvarVariationId}/`
+    : null;
   return (
     <section
       data-testid="embed-selected-variant"
@@ -1794,22 +1798,39 @@ function SelectedVariantCard({
             {record.id}
           </code>
         </div>
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label="Clear selection"
-          style={{
-            border: '1px solid #cbd5e1',
-            background: '#ffffff',
-            color: '#475569',
-            borderRadius: 4,
-            padding: '2px 8px',
-            fontSize: '0.75rem',
-            cursor: 'pointer',
-          }}
-        >
-          clear
-        </button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {clinvarHref && (
+            <a
+              data-testid="embed-selected-variant-clinvar-link"
+              href={clinvarHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: '0.75rem',
+                color: '#2563eb',
+                textDecoration: 'none',
+              }}
+            >
+              ClinVar ↗
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label="Clear selection"
+            style={{
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              color: '#475569',
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+            }}
+          >
+            clear
+          </button>
+        </div>
       </header>
       <dl
         style={{

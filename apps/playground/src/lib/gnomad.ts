@@ -34,6 +34,7 @@ interface GnomadTranscript {
 
 interface GnomadClinVarVariant {
   variant_id: string;
+  clinvar_variation_id: string | null;
   clinical_significance: string | null;
   major_consequence: string | null;
   pos: number;
@@ -138,6 +139,7 @@ const TRANSCRIPT_QUERY = /* GraphQL */ `
       }
       clinvar_variants {
         variant_id
+        clinvar_variation_id
         clinical_significance
         major_consequence
         pos
@@ -168,6 +170,7 @@ const GENE_QUERY = /* GraphQL */ `
       }
       clinvar_variants {
         variant_id
+        clinvar_variation_id
         clinical_significance
         major_consequence
         pos
@@ -592,6 +595,7 @@ function gnomadClinVarToRecords(
       goldStars: v.gold_stars ?? undefined,
       hgvsp: v.hgvsp ?? undefined,
       transcriptId: v.transcript_id ?? undefined,
+      clinvarVariationId: v.clinvar_variation_id ?? undefined,
     },
   }));
 }
@@ -810,6 +814,7 @@ function toClinVarRecords(gene: GnomadGene): ClinVarRecord[] {
         goldStars: v.gold_stars ?? undefined,
         hgvsp: v.hgvsp ?? undefined,
         transcriptId: v.transcript_id ?? undefined,
+        clinvarVariationId: v.clinvar_variation_id ?? undefined,
       },
     });
   }
