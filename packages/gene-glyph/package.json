@@ -15,7 +15,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": [
     "*.css"
@@ -55,5 +56,9 @@
     "type": "git",
     "url": "git+https://github.com/populationgenomics/gene-glyph.git"
   },
-  "homepage": "https://github.com/populationgenomics/gene-glyph#readme"
+  "bugs": {
+    "url": "https://github.com/populationgenomics/gene-glyph/issues"
+  },
+  "homepage": "https://github.com/populationgenomics/gene-glyph#readme",
+  "author": "Centre for Population Genomics"
 }
