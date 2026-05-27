@@ -1053,11 +1053,11 @@ function DecipherLegend() {
         style={{
           marginTop: 8,
           paddingTop: 6,
-          borderTop: '1px dashed #e2e8f0',
+          borderTop: '1px dashed var(--embed-aside-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          color: '#64748b',
+          color: 'var(--embed-muted)',
           fontStyle: 'italic',
         }}
       >
