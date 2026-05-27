@@ -302,6 +302,13 @@
  * of the minimap so a figure carrying both still reads as one chrome. */
 .gene-glyph .vv-overview-track {
   user-select: none;
+  touch-action: none;
+}
+.gene-glyph .vv-overview-window {
+  cursor: grab;
+}
+.gene-glyph .vv-overview-handle {
+  cursor: ew-resize;
 }
 .gene-glyph .vv-overview-handle:hover {
   opacity: 0.85;
@@ -531,6 +538,10 @@ body.vv-gg-box-zooming * {
  * so the lift is a CSS-only animation. */
 .gene-glyph .vv-variant {
   outline: none;
+}
+
+.gene-glyph .vv-variant.is-clickable {
+  cursor: pointer;
 }
 
 .gene-glyph .vv-variant-inner {
@@ -916,6 +927,7 @@ body.vv-gg-box-zooming * {
  * round regardless of the parent exon's horizontal scaleX. */
 .gene-glyph .vv-clinvar-mark {
   outline: none;
+  cursor: pointer;
 }
 
 .gene-glyph .vv-clinvar-mark.is-open .vv-clinvar-shape {
@@ -933,6 +945,11 @@ body.vv-gg-box-zooming * {
 
 .gene-glyph .vv-clinvar-popover-backdrop {
   pointer-events: all;
+  cursor: default;
+}
+
+.gene-glyph .vv-clinvar-popover-row {
+  cursor: pointer;
 }
 
 /* Stacked ClinVar render (Slice 27). Density clustering is suppressed —

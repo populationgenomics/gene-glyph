@@ -950,7 +950,6 @@ function ClinVarStackedBody({
             data-vv-stack-lane={p.laneKey}
             data-vv-shape={shape}
             transform={`translate(${localX} 0)`}
-            style={{ cursor: 'pointer' }}
             tabIndex={0}
             role="button"
             aria-label={p.record.label}
@@ -1276,7 +1275,6 @@ function ClinVarBody({ trackId, clusterPx, markRadius, filter, args }: ClinVarBo
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
           onClick={handleClick}
-          style={{ cursor: 'pointer' }}
           tabIndex={0}
           role="button"
           aria-label={
@@ -1511,7 +1509,6 @@ function ClusterPopover({
         height={10000}
         fill="transparent"
         onClick={onClose}
-        style={{ cursor: 'default' }}
       />
       <g transform={`translate(${popX} ${popY})`} className="vv-clinvar-popover">
         <rect
@@ -1551,7 +1548,6 @@ function ClusterPopover({
                 e.stopPropagation();
                 onMemberClick(r.id);
               }}
-              style={{ cursor: 'pointer' }}
             >
               <rect
                 x={0}

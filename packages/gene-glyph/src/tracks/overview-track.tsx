@@ -565,7 +565,6 @@ function OverviewTrackImpl({
       className="vv-overview-track"
       data-vv-track-id={trackId}
       data-testid="gene-glyph-overview-track"
-      style={{ touchAction: 'none' }}
     >
       <rect
         className="vv-overview-bg"
@@ -592,7 +591,6 @@ function OverviewTrackImpl({
         stroke={windowStroke}
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
-        style={{ cursor: 'grab' }}
         onPointerDown={beginDrag('pan')}
       />
       <rect
@@ -604,7 +602,6 @@ function OverviewTrackImpl({
         height={trackHeight}
         fill={handleFill}
         opacity={0.5}
-        style={{ cursor: 'ew-resize' }}
         onPointerDown={beginDrag('resize-left')}
       />
       <rect
@@ -616,7 +613,6 @@ function OverviewTrackImpl({
         height={trackHeight}
         fill={handleFill}
         opacity={0.5}
-        style={{ cursor: 'ew-resize' }}
         onPointerDown={beginDrag('resize-right')}
       />
     </g>

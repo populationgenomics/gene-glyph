@@ -609,6 +609,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
         'vv-variant',
         'vv-variant-stacked',
         `vv-variant-${v.category}`,
+        onFeatureClick && 'is-clickable',
         isHovered && 'is-hovered',
         isSelected && 'is-selected',
         inBrush && 'is-in-brush',
@@ -629,7 +630,6 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
           onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
-          style={{ cursor: onFeatureClick ? 'pointer' : undefined }}
           tabIndex={0}
           role="button"
           aria-label={v.label}
@@ -704,6 +704,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
   const wrapperClass = [
     'vv-variant',
     `vv-variant-${v.category}`,
+    onFeatureClick && 'is-clickable',
     isHovered && 'is-hovered',
     isSelected && 'is-selected',
     inBrush && 'is-in-brush',
@@ -728,7 +729,6 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
       onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
-      style={{ cursor: onFeatureClick ? 'pointer' : undefined }}
       tabIndex={0}
       role="button"
       aria-label={v.label}
