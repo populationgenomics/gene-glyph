@@ -22,7 +22,7 @@
     "*.css"
   ],
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly && cp src/styles.css dist/styles.css",
+    "build": "vite build && tsc -b --force && cp src/styles.css dist/styles.css",
     "test": "vitest run",
     "test:watch": "vitest"
   },
