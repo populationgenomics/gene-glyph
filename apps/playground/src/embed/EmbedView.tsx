@@ -108,6 +108,24 @@ const TRACK_TOGGLES = [
 type TrackToggleId = (typeof TRACK_TOGGLES)[number]['id'];
 const TRACK_TOGGLE_IDS = new Set<string>(TRACK_TOGGLES.map((t) => t.id));
 
+type ThemePref = 'auto' | 'light' | 'dark';
+const THEME_PREFS: readonly ThemePref[] = ['auto', 'light', 'dark'];
+const THEME_LABEL: Record<ThemePref, string> = {
+  auto: 'System theme',
+  light: 'Light theme',
+  dark: 'Dark theme',
+};
+const THEME_STORAGE_KEY = 'gg-embed-theme';
+function readStoredTheme(): ThemePref {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY);
+    if (v === 'light' || v === 'dark') return v;
+  } catch {
+    // localStorage may be unavailable (file://, sandboxed iframe).
+  }
+  return 'auto';
+}
+
 const DEFAULT_COLLAPSED_GROUPS: ReadonlySet<string> = new Set([
   CLINVAR_GROUP_ID,
   ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
@@ -182,6 +200,22 @@ export function EmbedView() {
   const [hiddenTracks, setHiddenTracks] = useState<ReadonlySet<TrackToggleId>>(
     initial.hiddenTracks,
   );
+  // Theme tristate. `auto` defers to `prefers-color-scheme` (no attribute);
+  // `light` / `dark` pin via `data-vv-theme` on <html>, which both the
+  // library figure CSS and the page/embed stylesheets respond to.
+  const [theme, setTheme] = useState<ThemePref>(() => readStoredTheme());
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'auto') root.removeAttribute('data-vv-theme');
+    else root.setAttribute('data-vv-theme', theme);
+    try {
+      if (theme === 'auto') localStorage.removeItem(THEME_STORAGE_KEY);
+      else localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // localStorage can throw in private mode / quota-exceeded — the
+      // in-memory state still drives the attribute, so just swallow.
+    }
+  }, [theme]);
   // Slice 34 / 37: the raw `?variants=` string is the source of truth
   // for the user-variant track. Slice 37's modal mutates this through
   // `setUserVariantsRaw`; everything downstream re-derives.
@@ -729,17 +763,18 @@ export function EmbedView() {
 
   return (
     <main className="embed-root">
-      {state.kind === 'ready' && (
-        <Toolbar
-          mode={mode}
-          onModeChange={setMode}
-          density={density}
-          onDensityChange={setDensity}
-          hiddenTracks={hiddenTracks}
-          onToggleTrack={toggleHiddenTrack}
-          onOpenVariantsModal={() => setVariantsModalOpen(true)}
-        />
-      )}
+      <Toolbar
+        mode={mode}
+        onModeChange={setMode}
+        density={density}
+        onDensityChange={setDensity}
+        hiddenTracks={hiddenTracks}
+        onToggleTrack={toggleHiddenTrack}
+        onOpenVariantsModal={() => setVariantsModalOpen(true)}
+        theme={theme}
+        onThemeChange={setTheme}
+        showFigureControls={state.kind === 'ready'}
+      />
       <StatusBar state={state} requestedId={requestedId} />
       {state.kind === 'ready' && (
         <section
@@ -1387,6 +1422,9 @@ function Toolbar({
   hiddenTracks,
   onToggleTrack,
   onOpenVariantsModal,
+  theme,
+  onThemeChange,
+  showFigureControls,
 }: {
   mode: ViewMode;
   onModeChange: (m: ViewMode) => void;
@@ -1395,6 +1433,11 @@ function Toolbar({
   hiddenTracks: ReadonlySet<TrackToggleId>;
   onToggleTrack: (id: TrackToggleId) => void;
   onOpenVariantsModal: () => void;
+  theme: ThemePref;
+  onThemeChange: (t: ThemePref) => void;
+  // Figure-driving controls (mode/density/tracks/variants) need data to
+  // be loaded; the theme tristate is page-meta and renders unconditionally.
+  showFigureControls: boolean;
 }) {
   return (
     <nav
@@ -1402,60 +1445,78 @@ function Toolbar({
       aria-label="Figure controls"
       className="embed-toolbar"
     >
-      <ToolbarGroup label="view mode">
-        {VIEW_MODES.map((m) => (
-          <ToolbarButton
-            key={m}
-            active={mode === m}
-            onClick={() => onModeChange(m)}
-            label={VIEW_MODE_LABEL[m]}
-            testId={`embed-mode-${m}`}
-          >
-            <ModeIcon mode={m} />
-          </ToolbarButton>
-        ))}
-      </ToolbarGroup>
-      <ToolbarDivider />
-      <ToolbarGroup label="density">
-        {DENSITIES.map((d) => (
-          <ToolbarButton
-            key={d}
-            active={density === d}
-            onClick={() => onDensityChange(d)}
-            label={DENSITY_LABEL[d]}
-            testId={`embed-density-${d}`}
-          >
-            <DensityIcon density={d} />
-          </ToolbarButton>
-        ))}
-      </ToolbarGroup>
-      <ToolbarDivider />
-      <ToolbarGroup label="tracks">
-        {TRACK_TOGGLES.map((t) => {
-          const visible = !hiddenTracks.has(t.id);
-          return (
+      {showFigureControls && (
+        <>
+          <ToolbarGroup label="view mode">
+            {VIEW_MODES.map((m) => (
+              <ToolbarButton
+                key={m}
+                active={mode === m}
+                onClick={() => onModeChange(m)}
+                label={VIEW_MODE_LABEL[m]}
+                testId={`embed-mode-${m}`}
+              >
+                <ModeIcon mode={m} />
+              </ToolbarButton>
+            ))}
+          </ToolbarGroup>
+          <ToolbarDivider />
+          <ToolbarGroup label="density">
+            {DENSITIES.map((d) => (
+              <ToolbarButton
+                key={d}
+                active={density === d}
+                onClick={() => onDensityChange(d)}
+                label={DENSITY_LABEL[d]}
+                testId={`embed-density-${d}`}
+              >
+                <DensityIcon density={d} />
+              </ToolbarButton>
+            ))}
+          </ToolbarGroup>
+          <ToolbarDivider />
+          <ToolbarGroup label="tracks">
+            {TRACK_TOGGLES.map((t) => {
+              const visible = !hiddenTracks.has(t.id);
+              return (
+                <ToolbarButton
+                  key={t.id}
+                  active={visible}
+                  onClick={() => onToggleTrack(t.id)}
+                  label={`${t.label} track${visible ? ' (shown)' : ' (hidden)'}`}
+                  testId={`embed-track-${t.id}`}
+                >
+                  <TrackIcon id={t.id} />
+                </ToolbarButton>
+              );
+            })}
+          </ToolbarGroup>
+          <ToolbarDivider />
+          <ToolbarGroup label="user variants">
             <ToolbarButton
-              key={t.id}
-              active={visible}
-              onClick={() => onToggleTrack(t.id)}
-              label={`${t.label} track${visible ? ' (shown)' : ' (hidden)'}`}
-              testId={`embed-track-${t.id}`}
+              active={false}
+              onClick={onOpenVariantsModal}
+              label="Edit variants (V)"
+              testId="embed-open-variants"
             >
-              <TrackIcon id={t.id} />
+              <PlusIcon />
             </ToolbarButton>
-          );
-        })}
-      </ToolbarGroup>
-      <ToolbarDivider />
-      <ToolbarGroup label="user variants">
-        <ToolbarButton
-          active={false}
-          onClick={onOpenVariantsModal}
-          label="Edit variants (V)"
-          testId="embed-open-variants"
-        >
-          <PlusIcon />
-        </ToolbarButton>
+          </ToolbarGroup>
+          <ToolbarDivider />
+        </>
+      )}
+      <ToolbarGroup label="theme">
+        {THEME_PREFS.map((t) => (
+          <ToolbarButton
+            key={t}
+            active={theme === t}
+            onClick={() => onThemeChange(t)}
+            label={THEME_LABEL[t]}
+            testId={`embed-theme-${t}`}
+          >
+            <ThemeIcon theme={t} />
+          </ToolbarButton>
+        ))}
       </ToolbarGroup>
     </nav>
   );
@@ -1466,6 +1527,39 @@ function PlusIcon() {
     <svg {...SVG_BASE}>
       <line x1="8" y1="3" x2="8" y2="13" />
       <line x1="3" y1="8" x2="13" y2="8" />
+    </svg>
+  );
+}
+
+function ThemeIcon({ theme }: { theme: ThemePref }) {
+  if (theme === 'light') {
+    return (
+      <svg {...SVG_BASE}>
+        <circle cx="8" cy="8" r="3" />
+        <line x1="8" y1="1.5" x2="8" y2="3" />
+        <line x1="8" y1="13" x2="8" y2="14.5" />
+        <line x1="1.5" y1="8" x2="3" y2="8" />
+        <line x1="13" y1="8" x2="14.5" y2="8" />
+        <line x1="3.4" y1="3.4" x2="4.5" y2="4.5" />
+        <line x1="11.5" y1="11.5" x2="12.6" y2="12.6" />
+        <line x1="3.4" y1="12.6" x2="4.5" y2="11.5" />
+        <line x1="11.5" y1="4.5" x2="12.6" y2="3.4" />
+      </svg>
+    );
+  }
+  if (theme === 'dark') {
+    return (
+      <svg {...SVG_BASE}>
+        <path d="M13 9.5 A 5.5 5.5 0 1 1 6.5 3 A 4.5 4.5 0 0 0 13 9.5 Z" />
+      </svg>
+    );
+  }
+  // 'auto' — monitor glyph, signals "follow system".
+  return (
+    <svg {...SVG_BASE}>
+      <rect x="2" y="3" width="12" height="8" rx="1" />
+      <line x1="6" y1="13.5" x2="10" y2="13.5" />
+      <line x1="8" y1="11" x2="8" y2="13.5" />
     </svg>
   );
 }
