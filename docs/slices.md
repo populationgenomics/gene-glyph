@@ -375,10 +375,14 @@ gnomAD's `gnomad_v2_regional_missense_constraint` field.
 - Bundle-size budget enforced post-Slice 13 (target: <50KB gzipped for the core lib)
 
 ### Versioning milestones
-- `0.1.0` — after Slice 3 (first real render)
-- `0.5.0` — after Slice 12 (parity render path complete, no cutover yet)
-- `1.0.0` — Slice 13 (lit-manager cutover)
-- `1.x` — subsequent slices (additive features, no breaking changes)
+The 0.x milestones were never tagged — development ran straight through to
+the lit-manager cutover (Slice 13) and beyond.
+- `1.0.0` — current. Slices 1–40 shipped: full parity render path, the
+  lit-manager cutover, post-cutover feature work (mode transitions, brush
+  selection, overlay layer, DataSource adapter, exports, ClinVar/RMC/
+  stacked variant view, user-supplied variants, DECIPHER-aligned encoding).
+  See [`CHANGELOG.md`](../CHANGELOG.md).
+- `1.x` — subsequent slices (additive features, no breaking changes).
 
 ---
 
