@@ -936,8 +936,8 @@ body.vv-gg-box-zooming * {
   --vv-color-text-primary: #e2e8f0;
   --vv-color-text-secondary: #94a3b8;
   --vv-color-text-tertiary: #64748b;
-  --vv-color-exon-fill: #334155;
-  --vv-color-exon-stroke: #94a3b8;
+  --vv-color-exon-fill: #475569;
+  --vv-color-exon-stroke: #cbd5e1;
   --vv-color-intron-line: #64748b;
   --vv-color-bg-surface: transparent;
 
@@ -961,7 +961,7 @@ body.vv-gg-box-zooming * {
   --vv-clinvar-popover-stroke: #475569;
   --vv-clinvar-popover-row-hover: rgba(248, 250, 252, 0.06);
   --vv-clinvar-lane-divider: #475569;
-  --vv-clinvar-lane-label: #94a3b8;
+  --vv-clinvar-lane-label: #cbd5e1;
 
   --vv-clinvar-color-benign: hsl(162, 60%, 50%);
   --vv-clinvar-color-other: #94a3b8;
@@ -985,8 +985,8 @@ body.vv-gg-box-zooming * {
     --vv-color-text-primary: #e2e8f0;
     --vv-color-text-secondary: #94a3b8;
     --vv-color-text-tertiary: #64748b;
-    --vv-color-exon-fill: #334155;
-    --vv-color-exon-stroke: #94a3b8;
+    --vv-color-exon-fill: #475569;
+    --vv-color-exon-stroke: #cbd5e1;
     --vv-color-intron-line: #64748b;
     --vv-color-bg-surface: transparent;
 
@@ -1010,7 +1010,7 @@ body.vv-gg-box-zooming * {
     --vv-clinvar-popover-stroke: #475569;
     --vv-clinvar-popover-row-hover: rgba(248, 250, 252, 0.06);
     --vv-clinvar-lane-divider: #475569;
-    --vv-clinvar-lane-label: #94a3b8;
+    --vv-clinvar-lane-label: #cbd5e1;
 
     --vv-clinvar-color-benign: hsl(162, 60%, 50%);
     --vv-clinvar-color-other: #94a3b8;
