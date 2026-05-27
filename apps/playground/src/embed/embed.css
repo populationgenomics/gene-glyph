@@ -1,0 +1,43 @@
+/* Playground embed view — repeated surface patterns. The three card
+ * sections (ClinVar filters, selected ClinVar variant, selected user
+ * variant) and the RMC empty-state stub were duplicated as inline
+ * styles before this file existed; lifting them out keeps the JSX
+ * focused on structure and gives a single home to retheme.
+ *
+ * Colours stay literal here; dark-mode variants land in a follow-up
+ * change that promotes them to CSS custom properties. */
+
+.embed-card {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #1e293b;
+}
+
+.embed-card-filters {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.embed-card-user-variant {
+  background: #faf5ff;
+  border-color: #d8b4fe;
+}
+
+.embed-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.embed-rmc-empty {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-style: italic;
+}

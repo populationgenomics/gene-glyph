@@ -752,16 +752,7 @@ export function EmbedView() {
         <section
           data-testid="embed-clinvar-filters"
           aria-label="ClinVar filters"
-          style={{
-            margin: '10px 0',
-            padding: '10px 12px',
-            background: '#f8fafc',
-            border: '1px solid #cbd5e1',
-            borderRadius: 6,
-            display: 'flex',
-            gap: 16,
-            alignItems: 'flex-start',
-          }}
+          className="embed-card embed-card-filters"
         >
           <div style={{ flex: 1, minWidth: 0 }}>
           <header
@@ -1000,12 +991,7 @@ export function EmbedView() {
         <p
           data-testid="embed-rmc-empty"
           data-rmc-status={rmcResult.status}
-          style={{
-            margin: '8px 0 0',
-            fontSize: '0.78rem',
-            color: '#64748b',
-            fontStyle: 'italic',
-          }}
+          className="embed-rmc-empty"
         >
           {rmcResult.status === 'no_evidence'
             ? `No significant regional missense constraint detected${geneSymbol ? ` for ${geneSymbol}` : ''} in gnomAD v2.`
@@ -1768,24 +1754,9 @@ function SelectedVariantCard({
   return (
     <section
       data-testid="embed-selected-variant"
-      style={{
-        marginTop: 10,
-        padding: '10px 12px',
-        background: '#f8fafc',
-        border: '1px solid #cbd5e1',
-        borderRadius: 6,
-        color: '#1e293b',
-      }}
+      className="embed-card"
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 6,
-        }}
-      >
+      <header className="embed-card-header">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
           <strong style={{ fontSize: '0.95rem' }}>{record.label}</strong>
           <code
@@ -1886,24 +1857,9 @@ function SelectedUserVariantCard({
   return (
     <section
       data-testid="embed-selected-user-variant"
-      style={{
-        marginTop: 10,
-        padding: '10px 12px',
-        background: '#faf5ff',
-        border: '1px solid #d8b4fe',
-        borderRadius: 6,
-        color: '#1e293b',
-      }}
+      className="embed-card embed-card-user-variant"
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 6,
-        }}
-      >
+      <header className="embed-card-header">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
           <strong style={{ fontSize: '0.95rem' }}>{variant.raw.trim() || variant.id}</strong>
           <code
