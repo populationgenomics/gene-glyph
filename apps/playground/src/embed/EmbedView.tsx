@@ -1057,7 +1057,6 @@ function DecipherLegend() {
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          color: 'var(--embed-muted)',
           fontStyle: 'italic',
         }}
       >
