@@ -1,6 +1,6 @@
 {
   "name": "@populationgenomics/gene-glyph",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Gene-level annotation viewer with multi-coordinate alignment, pluggable tracks, and camera-ready vector export.",
   "type": "module",
   "main": "./dist/index.js",
