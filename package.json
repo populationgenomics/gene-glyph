@@ -10,6 +10,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc --build",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace apps/playground",
