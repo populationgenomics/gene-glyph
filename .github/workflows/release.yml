@@ -29,6 +29,9 @@ jobs:
           workload_identity_provider: projects/244378007039/locations/global/workloadIdentityPools/github-actions/providers/github
           service_account: gene-glyph-publisher@aasgard-dev.iam.gserviceaccount.com
           token_format: access_token
+          # Only the token output is used. A credentials file would land in the workspace, and
+          # changesets commits the workspace into the release PR.
+          create_credentials_file: false
 
       # Writes an .npmrc mapping @populationgenomics to the registry, authenticated by NODE_AUTH_TOKEN.
       - uses: actions/setup-node@v7
