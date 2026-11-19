@@ -4,7 +4,7 @@ import type { GeneGlyphRef, ViewMode } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
 
 /**
- * Slice 30 — `segmentBandTrack` demos. Three scenarios drive the same
+ * Slice 30 — `segmentBandTrack` demos. Four scenarios drive the same
  * factory:
  *   1. **NMD escape** — boolean per exon. Categorical with two values.
  *   2. **Regional Missense Constraint** — four-way categorical along
