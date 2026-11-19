@@ -1,10 +1,10 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { fitText } from './pfam-track.js';
 import type {
-  CoordSystem,
   ExonBaseline,
   RangeProjection,
   RangeSegment,
+  ScreenPoint,
   Track,
   TrackHeightArgs,
   TrackHeightResult,
@@ -24,6 +24,8 @@ import type {
  * than a glyph per item.
  */
 export interface SegmentBandDatum<C extends string = string> {
+  /** Feature id reported to hover / click callbacks. Defaults to one
+   *  built from the span and category. */
   id?: string;
   start: number;
   end: number;
@@ -33,8 +35,9 @@ export interface SegmentBandDatum<C extends string = string> {
 
 /** A band datum in genomic coordinates. `[start, end]` are 1-based
  *  inclusive positions on `chr`, in genomic order (`start <= end`) on
- *  either strand. `chr` names the chromosome the way the transcript's
- *  `Exon.chr` does; a span on any other chromosome draws nothing. */
+ *  either strand. `chr` must equal the transcript's `Exon.chr` string
+ *  exactly; a span on any other chromosome (or under another name for
+ *  the same one) draws nothing and is listed as unplaced. */
 export interface GenomicSegmentBandDatum<C extends string = string> extends SegmentBandDatum<C> {
   chr: string;
 }
@@ -91,7 +94,7 @@ export interface CodingSegmentBandTrackConfig<
  *  A span draws over the coding exon bases it covers, one piece per
  *  exon, in every view mode. Its intronic parts, and any part outside
  *  the transcript's coding exons (UTR, flanking sequence), are not
- *  drawn; a span with no coding exon base draws nothing. */
+ *  drawn. */
 export interface GenomicSegmentBandTrackConfig<
   C extends string = string,
 > extends SegmentBandTrackOptions<C, GenomicSegmentBandDatum<C>> {
@@ -101,8 +104,13 @@ export interface GenomicSegmentBandTrackConfig<
 export type SegmentBandTrackConfig<C extends string = string> =
   CodingSegmentBandTrackConfig<C> | GenomicSegmentBandTrackConfig<C>;
 
-export interface SegmentBandTrackData<C extends string = string> {
-  segments: ReadonlyArray<SegmentBandDatum<C>>;
+/** Loaded band data, sorted by span start. Spans that draw nothing in
+ *  the current view are listed below the figure as unplaced chips. */
+export interface SegmentBandTrackData<
+  C extends string = string,
+  D extends SegmentBandDatum<C> = SegmentBandDatum<C>,
+> {
+  segments: ReadonlyArray<D>;
 }
 
 const DEFAULT_HEIGHT = 14;
@@ -110,90 +118,109 @@ const DEFAULT_MIN_LABEL_WIDTH = 28;
 const DEFAULT_LABEL_FONT = 10;
 const LABEL_PADDING_PX = 3;
 
-/** How one datum type sits on the track's coordinate axis. */
-interface BandAxis<D> {
-  /** Data with different keys never overlap (genomic: the chromosome). */
-  key(d: D): string;
+/** The parts of a band track that depend on its datum type. */
+interface BandBinding<C extends string, D extends SegmentBandDatum<C>> {
+  source: SegmentBandSource<C, D>;
+  onOverlapWarning: ((a: D, b: D) => void) | undefined;
+  /** Spans in different groups never overlap (genomic: the chromosome). */
+  overlapGroup(d: D): string;
+  /** Id used when the datum carries none. */
+  fallbackId(d: D): string;
   project(d: D, viewport: Viewport): RangeProjection;
   /** Span text for the default tooltip. */
-  span(d: D): string;
-}
-
-interface LoadedBands<D> {
-  segments: ReadonlyArray<D>;
+  spanText(d: D): string;
 }
 
 /** Build a {@link Track} that renders a non-overlapping series of
  *  categorical intervals as full-height colour bands. */
 export function segmentBandTrack<C extends string = string>(
+  config: GenomicSegmentBandTrackConfig<C>,
+): Track<SegmentBandTrackConfig<C>, SegmentBandTrackData<C, GenomicSegmentBandDatum<C>>>;
+export function segmentBandTrack<C extends string = string>(
+  config: SegmentBandTrackConfig<C>,
+): Track<SegmentBandTrackConfig<C>, SegmentBandTrackData<C>>;
+export function segmentBandTrack<C extends string = string>(
   config: SegmentBandTrackConfig<C>,
 ): Track<SegmentBandTrackConfig<C>, SegmentBandTrackData<C>> {
   if (config.coordSystem === 'genomic') {
-    return buildSegmentBandTrack(config, config, {
-      key: (d) => d.chr,
+    return buildSegmentBandTrack<C, GenomicSegmentBandDatum<C>>(config, {
+      source: config.source,
+      onOverlapWarning: config.onOverlapWarning,
+      overlapGroup: (d) => d.chr,
+      fallbackId: (d) => `${d.chr}:${d.start}-${d.end}-${d.category}`,
       project: (d, viewport) => viewport.projectGenomicRange(d.chr, d.start, d.end),
-      span: (d) => `${d.chr}:${d.start}–${d.end}`,
+      spanText: (d) => `${d.chr}:${d.start}–${d.end}`,
     });
   }
-  const project =
-    config.coordSystem === 'protein'
-      ? (d: SegmentBandDatum<C>, viewport: Viewport) => viewport.projectProteinRange(d.start, d.end)
-      : (d: SegmentBandDatum<C>, viewport: Viewport) => viewport.projectCdsRange(d.start, d.end);
-  return buildSegmentBandTrack(config, config, {
-    key: () => '',
-    project,
-    span: (d) => `${d.start}–${d.end}`,
+  const isProtein = config.coordSystem === 'protein';
+  return buildSegmentBandTrack<C, SegmentBandDatum<C>>(config, {
+    source: config.source,
+    onOverlapWarning: config.onOverlapWarning,
+    overlapGroup: () => '',
+    fallbackId: (d) => `${d.start}-${d.end}-${d.category}`,
+    project: (d, viewport) =>
+      isProtein
+        ? viewport.projectProteinRange(d.start, d.end)
+        : viewport.projectCdsRange(d.start, d.end),
+    spanText: (d) => `${d.start}–${d.end}`,
   });
 }
 
 function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
-  config: SegmentBandTrackOptions<C, D> & { coordSystem: CoordSystem },
-  original: SegmentBandTrackConfig<C>,
-  axis: BandAxis<D>,
-): Track<SegmentBandTrackConfig<C>, LoadedBands<D>> {
+  config: SegmentBandTrackConfig<C>,
+  binding: BandBinding<C, D>,
+): Track<SegmentBandTrackConfig<C>, SegmentBandTrackData<C, D>> {
   const id = config.id ?? 'segment-band-track';
   const trackHeight = config.heightPx ?? DEFAULT_HEIGHT;
   const palette = config.palette;
-  const coordSystem = config.coordSystem;
   const showLabels = config.showLabels ?? false;
   const minLabelWidth = config.minLabelWidthPx ?? DEFAULT_MIN_LABEL_WIDTH;
   const labelFont = config.labelFontSize ?? DEFAULT_LABEL_FONT;
-  const onOverlapWarning = config.onOverlapWarning;
+  const { onOverlapWarning } = binding;
+
+  const featureIdOf = (d: D): string => d.id ?? binding.fallbackId(d);
+  const findSegment = (data: SegmentBandTrackData<C, D>, featureId: string): D | null =>
+    data.segments.find((s) => featureIdOf(s) === featureId) ?? null;
+  const labelOf = (d: D): string => `${d.label ?? d.category} (${binding.spanText(d)})`;
 
   return {
     id,
-    coordSystem,
+    coordSystem: config.coordSystem,
     heightPolicy: 'fixed',
     gapAbove: config.gapAbove,
 
-    async load({ signal }: TrackLoadArgs): Promise<LoadedBands<D>> {
-      const raw =
-        typeof config.source === 'function' ? await config.source({ signal }) : config.source;
+    async load({ signal }: TrackLoadArgs): Promise<SegmentBandTrackData<C, D>> {
+      const { source } = binding;
+      const raw = typeof source === 'function' ? await source({ signal }) : source;
       // Sort + overlap-check once at load time so render() can assume a
       // clean input. Overlaps are a host data error: report via the
       // callback and keep rendering — every segment still paints, the
       // viewer just no longer guarantees a one-row stack.
-      const sorted = [...raw].sort((a, b) => a.start - b.start);
+      const sorted = [...raw].sort((a, b) => orderedStart(a) - orderedStart(b));
       if (onOverlapWarning) {
-        const prevByKey = new Map<string, D>();
+        // Per group, the span reaching furthest so far: a short span
+        // nested in a long one must not hide a later overlap with it.
+        const furthestByGroup = new Map<string, D>();
         for (const curr of sorted) {
-          const key = axis.key(curr);
-          const prev = prevByKey.get(key);
-          if (prev && curr.start <= prev.end) {
-            onOverlapWarning(prev, curr);
+          const group = binding.overlapGroup(curr);
+          const furthest = furthestByGroup.get(group);
+          if (furthest && orderedStart(curr) <= orderedEnd(furthest)) {
+            onOverlapWarning(furthest, curr);
           }
-          prevByKey.set(key, curr);
+          if (!furthest || orderedEnd(curr) > orderedEnd(furthest)) {
+            furthestByGroup.set(group, curr);
+          }
         }
       }
       return { segments: sorted };
     },
 
-    height(_args: TrackHeightArgs<LoadedBands<D>>): TrackHeightResult {
+    height(_args: TrackHeightArgs<SegmentBandTrackData<C, D>>): TrackHeightResult {
       return { px: trackHeight, didTruncate: false };
     },
 
-    render(args: TrackRenderArgs<LoadedBands<D>>): ReactNode {
-      const { data, rect, viewport, painter } = args;
+    render(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode {
+      const { data, rect, viewport, painter, onFeatureHover, onFeatureClick } = args;
       if (data.segments.length === 0) return null;
 
       const baseline = viewport.baselineGeometry();
@@ -208,9 +235,10 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       for (const seg of data.segments) {
         const fill = palette[seg.category];
         if (!fill) continue;
-        const projection = axis.project(seg, viewport);
+        const projection = binding.project(seg, viewport);
         if (projection.segments.length === 0) continue;
-        const featureId = seg.id ?? `${seg.start}-${seg.end}-${seg.category}`;
+        const featureId = featureIdOf(seg);
+        const click = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
         for (const piece of projection.segments) {
           const exon = exonByIdx.get(piece.exonIdx);
           if (!exon) continue;
@@ -219,19 +247,30 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
           pushTo(
             rectsByExon,
             piece.exonIdx,
-            painter.drawRect({
-              key: `band-${featureId}-${piece.exonIdx}`,
-              x: localX,
-              y: rect.yTop,
-              width,
-              height: rectH,
-              fill,
-              className: 'vv-segment-band-rect',
-            }),
+            <g
+              key={`band-${featureId}-${piece.exonIdx}`}
+              className="vv-segment-band-feature"
+              data-vv-feature-id={featureId}
+              onMouseEnter={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
+              onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+              onClick={click}
+              role={click ? 'button' : undefined}
+              tabIndex={click ? 0 : undefined}
+              aria-label={labelOf(seg)}
+            >
+              {painter.drawRect({
+                x: localX,
+                y: rect.yTop,
+                width,
+                height: rectH,
+                fill,
+                className: 'vv-segment-band-rect',
+              })}
+            </g>,
           );
         }
         if (showLabels && seg.label) {
-          const labelPiece = pickLabelPiece(projection.segments);
+          const labelPiece = widestPiece(projection.segments);
           if (labelPiece) {
             const labelExon = exonByIdx.get(labelPiece.exonIdx);
             if (labelExon) {
@@ -301,24 +340,75 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       );
     },
 
-    resolveFeature(data, featureId) {
-      return (
-        data.segments.find((s) => (s.id ?? `${s.start}-${s.end}-${s.category}`) === featureId) ??
-        null
+    renderBelow(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode | null {
+      const { data, viewport, interaction, onFeatureHover, onFeatureClick } = args;
+      const unplaced = data.segments.filter(
+        (s) => palette[s.category] && binding.project(s, viewport).segments.length === 0,
       );
+      if (unplaced.length === 0) return null;
+      return (
+        <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
+          <span className="vv-unplaced-label">Unplaced ({unplaced.length})</span>
+          <ul className="vv-unplaced-list">
+            {unplaced.map((s) => {
+              const featureId = featureIdOf(s);
+              const cls = [
+                'vv-unplaced-chip',
+                interaction.hoveredFeatureId === featureId && 'is-hovered',
+                interaction.selectedFeatureIds.has(featureId) && 'is-selected',
+              ]
+                .filter(Boolean)
+                .join(' ');
+              const style = {
+                ['--vv-variant-color' as keyof CSSProperties]: palette[s.category],
+              } as CSSProperties;
+              const label = labelOf(s);
+              return (
+                <li
+                  key={featureId}
+                  className={cls}
+                  data-vv-feature-id={featureId}
+                  style={style}
+                  onMouseEnter={() => onFeatureHover?.(featureId)}
+                  onMouseLeave={() => onFeatureHover?.(null)}
+                  onClick={() => onFeatureClick?.(featureId)}
+                  title={label}
+                >
+                  <span className="vv-unplaced-dot" aria-hidden />
+                  <span className="vv-unplaced-text">{label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    },
+
+    resolveAnchor(data, anchorId, viewport): ScreenPoint | null {
+      const seg = findSegment(data, anchorId);
+      if (!seg) return null;
+      const piece = widestPiece(binding.project(seg, viewport).segments);
+      if (!piece) return null;
+      const ruler = viewport.baselineXToRuler((piece.xStart + piece.xEnd) / 2);
+      const x = viewport.toScreen(
+        viewport.mode === 'protein'
+          ? { kind: 'protein', aa: ruler }
+          : { kind: 'cds', cPos: ruler, offset: 0 },
+      );
+      return x === null ? null : { x, y: 0 };
+    },
+
+    resolveFeature(data, featureId) {
+      return findSegment(data, featureId);
     },
 
     featureLabel(data, featureId) {
-      const seg = data.segments.find(
-        (s) => (s.id ?? `${s.start}-${s.end}-${s.category}`) === featureId,
-      );
-      if (!seg) return null;
-      const span = axis.span(seg);
-      return seg.label ? `${seg.label} (${span})` : `${seg.category} (${span})`;
+      const seg = findSegment(data, featureId);
+      return seg ? labelOf(seg) : null;
     },
 
     toJSON(): SegmentBandTrackConfig<C> {
-      const { onOverlapWarning: _callback, ...serialisable } = original;
+      const { onOverlapWarning: _callback, ...serialisable } = config;
       return {
         ...serialisable,
         id,
@@ -331,7 +421,17 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
   };
 }
 
-function pickLabelPiece(segments: RangeSegment[]): RangeSegment | null {
+/** Span bounds in ascending order; projection treats `start > end` as
+ *  the same span reversed, so sorting and overlap checks do too. */
+function orderedStart(d: SegmentBandDatum): number {
+  return Math.min(d.start, d.end);
+}
+
+function orderedEnd(d: SegmentBandDatum): number {
+  return Math.max(d.start, d.end);
+}
+
+function widestPiece(segments: readonly RangeSegment[]): RangeSegment | null {
   let best: RangeSegment | null = null;
   let bestWidth = -1;
   for (const piece of segments) {

@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createCoordinateMapper } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
-import type { InteractionState, Transcript } from '../types.js';
+import type { InteractionState, Track, Transcript } from '../types.js';
+import { GeneGlyph } from '../viewer.js';
 import { ViewportController } from '../viewport.js';
-import { segmentBandTrack, type SegmentBandDatum } from './segment-band-track.js';
+import {
+  segmentBandTrack,
+  type SegmentBandDatum,
+  type SegmentBandTrackConfig,
+} from './segment-band-track.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -313,6 +318,22 @@ describe('segmentBandTrack — genomic coordinates', () => {
   });
 
   it.each([
+    { name: "5' UTR", start: 950, end: 990 },
+    { name: "3' UTR", start: 3110, end: 3150 },
+  ])('draws nothing for a span strictly inside the $name', async ({ start, end }) => {
+    // UTR caps are drawn but carry no genomic positions: 5'UTR genomically
+    // below exon 1's CDS start, 3'UTR above exon 3's CDS end (plus strand).
+    const withUtr: Transcript = {
+      ...transcript,
+      exons: transcript.exons.map((e, i) =>
+        i === 0 ? { ...e, utr5Bp: 100 } : i === 2 ? { ...e, utr3Bp: 100 } : e,
+      ),
+    };
+    const rects = await renderBandRects(genomicBand('chr1', start, end), withUtr, 'transcript');
+    expect(rects).toEqual([]);
+  });
+
+  it.each([
     { name: 'entirely intronic', chr: 'chr1', start: 1200, end: 1800 },
     { name: 'upstream of the transcript', chr: 'chr1', start: 100, end: 900 },
     { name: 'on another chromosome', chr: 'chr2', start: 1050, end: 2049 },
@@ -379,5 +400,176 @@ describe('segmentBandTrack — genomic coordinates', () => {
       protein: null,
     });
     expect(t.featureLabel?.(loaded, 'fam-2')).toBe('Family 2 (chr1:1050–2049)');
+  });
+
+  it('keeps un-id’d spans with equal coordinates on different chromosomes apart', async () => {
+    const t = segmentBandTrack<RmcCategory>({
+      source: [
+        { chr: 'chr1', start: 1050, end: 2049, category: 'high', label: 'On chr1' },
+        { chr: 'chr17', start: 1050, end: 2049, category: 'high', label: 'On chr17' },
+      ],
+      coordSystem: 'genomic',
+      palette,
+    });
+    const loaded = await loadBands(t, transcript);
+    expect(t.featureLabel?.(loaded, 'chr17:1050-2049-high')).toBe('On chr17 (chr17:1050–2049)');
+  });
+});
+
+async function loadBands<D>(
+  track: Track<SegmentBandTrackConfig<RmcCategory>, D>,
+  tx: Transcript,
+): Promise<D> {
+  const mapper = createCoordinateMapper(tx);
+  return track.load({
+    viewport: new ViewportController({ mapper, width: 600, mode: 'transcript' }),
+    mapper,
+    signal: new AbortController().signal,
+    protein: null,
+  });
+}
+
+describe('segmentBandTrack — overlap detection', () => {
+  it('reports a span overlapping an earlier long span past a nested one', async () => {
+    const onOverlapWarning = vi.fn();
+    const t = segmentBandTrack<RmcCategory>({
+      source: [
+        { id: 'long', start: 100, end: 500, category: 'low' },
+        { id: 'nested-a', start: 150, end: 200, category: 'high' },
+        { id: 'nested-b', start: 300, end: 400, category: 'high' },
+      ],
+      coordSystem: 'cds',
+      palette,
+      onOverlapWarning,
+    });
+    await loadBands(t, transcript);
+    const pairs = onOverlapWarning.mock.calls.map(([a, b]) => [a.id, b.id]);
+    expect(pairs).toEqual([
+      ['long', 'nested-a'],
+      ['long', 'nested-b'],
+    ]);
+  });
+
+  it('orders and overlap-checks a reversed span by its lower bound', async () => {
+    const onOverlapWarning = vi.fn();
+    const t = segmentBandTrack<RmcCategory>({
+      source: [
+        { id: 'after', start: 60, end: 70, category: 'low' },
+        { id: 'reversed', start: 65, end: 10, category: 'high' },
+      ],
+      coordSystem: 'cds',
+      palette,
+      onOverlapWarning,
+    });
+    const loaded = await loadBands(t, transcript);
+    expect(loaded.segments.map((s) => s.id)).toEqual(['reversed', 'after']);
+    expect(onOverlapWarning).toHaveBeenCalledTimes(1);
+    expect(onOverlapWarning.mock.calls[0]![0]!.id).toBe('reversed');
+  });
+});
+
+describe('segmentBandTrack — protein mode at a split codon', () => {
+  // Codon 34 is CDS 100..102: base 100 in exon 1, bases 101..102 in exon 2.
+  // Protein mode draws aa 34 in exon 1 (cells: 600 px / 100 aa = 6 px).
+  it.each([
+    {
+      name: 'cds',
+      track: segmentBandTrack<RmcCategory>({
+        source: [{ start: 101, end: 102, category: 'high' }],
+        coordSystem: 'cds',
+        palette,
+      }),
+    },
+    { name: 'genomic', track: genomicBand('chr1', 2000, 2001) },
+  ])('draws a $name span over only the downstream bases at the codon’s cell', async ({ track }) => {
+    const rects = await renderBandRects(track, transcript, 'protein');
+    expect(rects).toEqual([{ exonIdx: 0, x: 198, width: 6 }]);
+  });
+});
+
+/** JSDOM has no SVG screen-CTM; the tooltip positions itself through it. */
+function stubScreenCtm(container: HTMLElement): void {
+  const svg = container.querySelector<SVGSVGElement>('svg.vv-figure')!;
+  const wrap = container.querySelector<HTMLDivElement>('.vv-figure-wrap')!;
+  wrap.getBoundingClientRect = () =>
+    ({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 60, width: 600, height: 60 }) as DOMRect;
+  const identity = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+  svg.createSVGPoint = () =>
+    ({
+      x: 0,
+      y: 0,
+      matrixTransform(this: { x: number; y: number }) {
+        return { x: this.x, y: this.y };
+      },
+    }) as unknown as SVGPoint;
+  svg.getScreenCTM = () => identity as unknown as DOMMatrix;
+}
+
+async function flushTrackLoads(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe('segmentBandTrack — in GeneGlyph', () => {
+  const bands = () =>
+    segmentBandTrack<RmcCategory>({
+      id: 'regions',
+      source: [
+        { id: 'fam-2', chr: 'chr1', start: 1050, end: 2049, category: 'high', label: 'Family 2' },
+      ],
+      coordSystem: 'genomic',
+      palette,
+    });
+
+  it('shows the default tooltip when a band is hovered', async () => {
+    const { container } = render(
+      <GeneGlyph transcript={transcript} mode="transcript" tracks={[bands()]} />,
+    );
+    await flushTrackLoads();
+    stubScreenCtm(container);
+    const band = container.querySelector('[data-vv-feature-id="fam-2"]')!;
+    fireEvent.mouseEnter(band);
+    await waitFor(() => {
+      expect(container.querySelector('.vv-tooltip')?.textContent).toBe('Family 2 (chr1:1050–2049)');
+    });
+  });
+
+  it('reports a band click through onFeatureClick with the band’s id', async () => {
+    const onFeatureClick = vi.fn();
+    const { container } = render(
+      <GeneGlyph
+        transcript={transcript}
+        mode="transcript"
+        tracks={[bands()]}
+        onFeatureClick={onFeatureClick}
+      />,
+    );
+    await flushTrackLoads();
+    fireEvent.click(container.querySelector('[data-vv-feature-id="fam-2"]')!);
+    expect(onFeatureClick).toHaveBeenCalledWith('fam-2', 'regions');
+  });
+
+  it('lists a span with no drawable base as unplaced, and not a partly drawable one', async () => {
+    const withUtr: Transcript = {
+      ...transcript,
+      exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 100 } : e)),
+    };
+    const track = segmentBandTrack<RmcCategory>({
+      id: 'regions',
+      source: [
+        { id: 'utr-only', chr: 'chr1', start: 950, end: 990, category: 'low', label: 'UTR del' },
+        { id: 'partial', chr: 'chr1', start: 950, end: 1019, category: 'high' },
+      ],
+      coordSystem: 'genomic',
+      palette,
+    });
+    render(<GeneGlyph transcript={withUtr} mode="transcript" tracks={[track]} />);
+    await flushTrackLoads();
+    const unplaced = screen.getByTestId('regions-unplaced');
+    expect(unplaced.querySelector('.vv-unplaced-label')?.textContent).toBe('Unplaced (1)');
+    const chips = [...unplaced.querySelectorAll('[data-vv-feature-id]')];
+    expect(chips.map((c) => c.getAttribute('data-vv-feature-id'))).toEqual(['utr-only']);
   });
 });
