@@ -79,8 +79,11 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     if (!box) throw new Error('figure not visible');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(120, 0);
+    // mouse.wheel resolves without waiting for the page to handle the event.
+    await expect
+      .poll(async () => (await readRange(page))[0], { timeout: 2_000 })
+      .toBeGreaterThan(before[0]);
     const after = await readRange(page);
-    expect(after[0]).toBeGreaterThan(before[0]);
     expect(after[1]).toBeGreaterThan(before[1]);
     expect(await lastReason(page)).toBe('wheel');
   });
