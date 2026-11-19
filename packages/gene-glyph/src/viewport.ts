@@ -1248,10 +1248,11 @@ export class ViewportController implements Viewport {
       exonHits.push({ idx: i, cdsLo, cdsHi });
     }
 
+    segments.push(
+      ...this.exonHitsToSegments(exonHits.map((h) => ({ idx: h.idx, lo: h.cdsLo, hi: h.cdsHi }))),
+    );
     for (let k = 0; k < exonHits.length; k++) {
       const hit = exonHits[k]!;
-      const seg = this.cdsRangeToBaselineSegment(hit.cdsLo, hit.cdsHi, hit.idx);
-      if (seg) segments.push(seg);
       if (k > 0) {
         const prev = exonHits[k - 1]!;
         droppedIntronicCount += 1;
@@ -1300,13 +1301,10 @@ export class ViewportController implements Viewport {
     // consecutive exon pair the range touches is separated on screen by an
     // intron decoration. Reporting one intronic drop per crossed gap mirrors
     // projectGenomicRange so tracks can aggregate hidden-feature counts
-    // uniformly regardless of coord system. (Protein-mode tiling across
-    // exon boundaries is handled inside `cdsRangeToBaselineSegment` via
-    // the per-exon clamp — no special-case here.)
+    // uniformly regardless of coord system.
+    segments.push(...this.exonHitsToSegments(hits));
     for (let k = 0; k < hits.length; k++) {
       const h = hits[k]!;
-      const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
-      if (seg) segments.push(seg);
       if (k > 0) {
         const prev = hits[k - 1]!;
         droppedIntronicCount += 1;
@@ -1326,6 +1324,56 @@ export class ViewportController implements Viewport {
     };
   }
 
+  /** Baseline segments for per-exon CDS hits (`[lo, hi]` inside exon
+   *  `idx`), ordered 5'→3'. */
+  private exonHitsToSegments(
+    hits: ReadonlyArray<{ idx: number; lo: number; hi: number }>,
+  ): RangeSegment[] {
+    if (this._mode === 'protein') return this.aaHitsToSegments(hits);
+    const segments: RangeSegment[] = [];
+    for (const h of hits) {
+      const seg = this.cdsRangeToBaselineSegment(h.lo, h.hi, h.idx);
+      if (seg) segments.push(seg);
+    }
+    return segments;
+  }
+
+  /** Protein mode: the aa cells a hit's bases encode can belong to a
+   *  different exon than the bases do — a codon straddling a junction
+   *  is drawn in the upstream exon (see `computeProteinBaseline`). Each
+   *  hit's aa range is therefore clipped against the cells of its own
+   *  exon and both neighbours, and the pieces are merged per exon. */
+  private aaHitsToSegments(
+    hits: ReadonlyArray<{ idx: number; lo: number; hi: number }>,
+  ): RangeSegment[] {
+    const exonRects = this.baselineGeometry().exons;
+    const byExon = new Map<number, RangeSegment>();
+    for (const h of hits) {
+      const aaLo = this.mapper.cdsToProtein(h.lo);
+      const aaHi = this.mapper.cdsToProtein(h.hi);
+      if (aaLo === null || aaHi === null) continue;
+      const rangeStart = this.cdsToBaselineX(aaLo - 0.5);
+      const rangeEnd = this.cdsToBaselineX(aaHi + 0.5);
+      const last = Math.min(exonRects.length - 1, h.idx + 1);
+      for (let i = Math.max(0, h.idx - 1); i <= last; i++) {
+        const eb = exonRects[i]!;
+        const xStart = Math.max(rangeStart, eb.xStart);
+        const xEnd = Math.min(rangeEnd, eb.xEnd);
+        // Tolerance: a range ending on a junction must not leave a
+        // float-noise sliver in the next exon.
+        if (xEnd - xStart <= CELL_EPSILON_PX) continue;
+        const prev = byExon.get(eb.exonIdx);
+        byExon.set(eb.exonIdx, {
+          xStart: prev ? Math.min(prev.xStart, xStart) : xStart,
+          xEnd: prev ? Math.max(prev.xEnd, xEnd) : xEnd,
+          exonIdx: eb.exonIdx,
+        });
+      }
+    }
+    return [...byExon.values()].sort((a, b) => a.exonIdx - b.exonIdx);
+  }
+
+  /** CDS modes: one hit's baseline segment inside its own exon. */
   private cdsRangeToBaselineSegment(
     cdsLo: number,
     cdsHi: number,
@@ -1335,8 +1383,7 @@ export class ViewportController implements Viewport {
     // LEFT cell edge to bp cdsHi's RIGHT cell edge. Using `cPos - 0.5`
     // / `cPos + 0.5` as the ruler positions lets the segment walk's
     // linear interpolation land on cell edges (each exon segment's
-    // ruler spans [cdsStart - 0.5, cdsEnd + 0.5]). In protein mode the
-    // ruler is aa, so we convert bp → aa first and bracket aa cells.
+    // ruler spans [cdsStart - 0.5, cdsEnd + 0.5]).
     //
     // At exon boundaries, the upstream exon's rulerEnd and the
     // downstream exon's rulerStart share the same ruler value, and the
@@ -1348,25 +1395,8 @@ export class ViewportController implements Viewport {
     const eb = this.baselineGeometry().exons[exonIdx];
     const exon = this.mapper.transcript.exons[exonIdx];
     if (!eb || !exon) return null;
-    let xStart: number;
-    let xEnd: number;
-    if (this._mode === 'protein') {
-      const aaLo = this.mapper.cdsToProtein(cdsLo);
-      const aaHi = this.mapper.cdsToProtein(cdsHi);
-      if (aaLo === null || aaHi === null) return null;
-      xStart = this.cdsToBaselineX(aaLo - 0.5);
-      xEnd = this.cdsToBaselineX(aaHi + 0.5);
-      // A codon-spanning aa cell is owned by upstream per the snap; the
-      // downstream exon's range projection clips to its own baseline rect
-      // so the upstream-owned half of a boundary aa doesn't bleed into
-      // the downstream segment.
-      xStart = Math.max(xStart, eb.xStart);
-      xEnd = Math.min(xEnd, eb.xEnd);
-      if (xEnd <= xStart) return null;
-    } else {
-      xStart = cdsLo === exon.cdsStart ? eb.xStart : this.cdsToBaselineX(cdsLo - 0.5);
-      xEnd = cdsHi === exon.cdsEnd ? eb.xEnd : this.cdsToBaselineX(cdsHi + 0.5);
-    }
+    const xStart = cdsLo === exon.cdsStart ? eb.xStart : this.cdsToBaselineX(cdsLo - 0.5);
+    const xEnd = cdsHi === exon.cdsEnd ? eb.xEnd : this.cdsToBaselineX(cdsHi + 0.5);
     return { xStart, xEnd, exonIdx };
   }
 
@@ -1429,6 +1459,8 @@ export class ViewportController implements Viewport {
     }
   }
 }
+
+const CELL_EPSILON_PX = 1e-6;
 
 function clampOrdered(a: number, b: number): [number, number] {
   return a <= b ? [a, b] : [b, a];

@@ -4,7 +4,7 @@ import type { GeneGlyphRef, ViewMode } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
 
 /**
- * Slice 30 — `segmentBandTrack` demos. Three scenarios drive the same
+ * Slice 30 — `segmentBandTrack` demos. Four scenarios drive the same
  * factory:
  *   1. **NMD escape** — boolean per exon. Categorical with two values.
  *   2. **Regional Missense Constraint** — four-way categorical along
@@ -12,13 +12,33 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
  *      overlaps the TP53 DNA-binding domain.
  *   3. **Secondary structure** — three-way (helix / sheet / loop) run-
  *      length encoding sized to the protein.
+ *   4. **Genomic region** — a deletion given in genomic coordinates
+ *      whose ends fall in introns; it draws over the exons it covers.
  *
- * All three share one factory + one render path; only the palette and
+ * All four share one factory + one render path; only the palette and
  * source data differ.
  */
 type NmdCategory = 'escape' | 'sensitive';
 type RmcCategory = 'intol-1' | 'intol-2' | 'intol-3' | 'intol-4' | 'intol-5' | 'not-significant';
 type SsCategory = 'helix' | 'sheet' | 'loop';
+type RegionCategory = 'deleted';
+
+const REGION_PALETTE: Record<RegionCategory, string> = {
+  deleted: '#7c3aed',
+};
+
+// Synthetic deletion of TP53 exons 5–7: both ends sit in the flanking
+// introns (GRCh38, chr17, genomic order on the minus-strand gene).
+const REGION_DATA = [
+  {
+    id: 'del-ex5-7',
+    chr: 'chr17',
+    start: 7673100,
+    end: 7674000,
+    category: 'deleted' as const,
+    label: 'Exons 5–7 deleted',
+  },
+];
 
 const NMD_PALETTE: Record<NmdCategory, string> = {
   escape: '#facc15',
@@ -95,9 +115,9 @@ export function SegmentBandDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-segment-band">
       <h2 id="scenario-segment-band">Segment band track — TP53</h2>
       <p className="scenario-blurb">
-        One factory, three palettes. The NMD-escape strip uses CDS coords; the Regional Missense
-        Constraint and secondary-structure strips sit on the protein axis. All three stay aligned
-        under mode changes, pan, and zoom.
+        One factory, four palettes. The NMD-escape strip uses CDS coords; the Regional Missense
+        Constraint and secondary-structure strips sit on the protein axis; the deletion strip is
+        given in genomic coords. All four stay aligned under mode changes, pan, and zoom.
       </p>
       <div
         role="group"
@@ -160,6 +180,16 @@ export function SegmentBandDemoScenario() {
             palette: SS_PALETTE,
             gapAbove: 4,
             heightPx: 10,
+          }),
+          segmentBandTrack({
+            id: 'genomic-region',
+            source: REGION_DATA,
+            coordSystem: 'genomic',
+            palette: REGION_PALETTE,
+            showLabels: true,
+            minLabelWidthPx: 36,
+            gapAbove: 4,
+            heightPx: 14,
           }),
         ]}
         trackHeightBudget={260}

@@ -212,7 +212,11 @@ export type { GlyphShape, SymbolEncoding, DecipherConsequenceBucket } from './sy
 export { segmentBandTrack } from './tracks/segment-band-track.js';
 export type {
   SegmentBandTrackConfig,
+  SegmentBandTrackOptions,
+  CodingSegmentBandTrackConfig,
+  GenomicSegmentBandTrackConfig,
   SegmentBandTrackData,
   SegmentBandSource,
   SegmentBandDatum,
+  GenomicSegmentBandDatum,
 } from './tracks/segment-band-track.js';

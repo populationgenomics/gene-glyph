@@ -145,6 +145,16 @@ describe('ViewportController — range projection', () => {
     });
   });
 
+  it('projectCdsRange in protein mode draws downstream bases of a split codon at its upstream cell', () => {
+    // Codon 34 is c.100..102: c.100 in exon 1, c.101..102 in exon 2. The
+    // protein baseline gives aa 34's cell (6 px at 720 px / 120 aa) to exon 1.
+    const vp = fitGene('protein');
+    expect(vp.projectCdsRange(101, 102).segments).toEqual([{ exonIdx: 0, xStart: 198, xEnd: 204 }]);
+    expect(vp.projectGenomicRange('chr1', 2000, 2001).segments).toEqual([
+      { exonIdx: 0, xStart: 198, xEnd: 204 },
+    ]);
+  });
+
   it('projectGenomicRange returns no segments for a range fully outside any exon', () => {
     const vp = fitGene('transcript');
     const proj = vp.projectGenomicRange('chr1', 1200, 1800);
