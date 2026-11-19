@@ -39,8 +39,7 @@ export interface IntronicFlankBases {
  *  ribbons so the visible sequence reads continuously across the
  *  splice junctions. */
 export type IntronicFlankSource =
-  | IntronicFlankBases[]
-  | DataSource<{ transcriptId: string }, IntronicFlankBases[]>;
+  IntronicFlankBases[] | DataSource<{ transcriptId: string }, IntronicFlankBases[]>;
 
 export interface NucleotideTrackConfig {
   id?: string;

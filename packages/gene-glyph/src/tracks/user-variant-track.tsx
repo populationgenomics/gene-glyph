@@ -27,8 +27,7 @@ export interface UserVariantRecord {
 }
 
 export type UserVariantSource =
-  | UserVariantRecord[]
-  | DataSource<ViewportQuery, UserVariantRecord[]>;
+  UserVariantRecord[] | DataSource<ViewportQuery, UserVariantRecord[]>;
 
 export interface UserVariantTrackConfig {
   id?: string;
