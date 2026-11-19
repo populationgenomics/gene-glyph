@@ -28,3 +28,6 @@ npm-debug.log*
 
 # Local Jira ticket drafts
 .jira-drafts/
+
+# google-github-actions/auth credentials
+gha-creds-*.json
