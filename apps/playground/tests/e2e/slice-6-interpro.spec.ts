@@ -27,7 +27,9 @@ test.describe('Slice 6 — InterPro + groups + LeftGutter (RD-1066)', () => {
     expect(lineCount).toBeGreaterThan(2);
   });
 
-  test('multi-level gutter shows the group label plus per-sub-track entry-type labels', async ({ page }) => {
+  test('multi-level gutter shows the group label plus per-sub-track entry-type labels', async ({
+    page,
+  }) => {
     await page.goto('/');
     const scenario = page.locator('section[aria-labelledby="scenario-interpro"]');
     const gutter = scenario.locator('[data-testid="gene-glyph-left-gutter"]');

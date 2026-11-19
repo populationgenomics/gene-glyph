@@ -6,10 +6,7 @@ import {
   pfamTrack,
   variantTrack,
 } from '@populationgenomics/gene-glyph';
-import type {
-  ExportArgs,
-  GeneGlyphRef,
-} from '@populationgenomics/gene-glyph';
+import type { ExportArgs, GeneGlyphRef } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.js';
 
 /**
@@ -79,11 +76,10 @@ export function ExportDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-export">
       <h2 id="scenario-export">Camera-ready export — TP53</h2>
       <p className="scenario-blurb">
-        <code>exportSVG()</code> serialises the figure to a self-contained
-        string; <code>exportPNG()</code> rasterises that same SVG via canvas
-        at the chosen pixel width. The print theme swaps in concrete hex
-        colours, a white background, and heavier strokes so the figure stays
-        legible on paper.
+        <code>exportSVG()</code> serialises the figure to a self-contained string;{' '}
+        <code>exportPNG()</code> rasterises that same SVG via canvas at the chosen pixel width. The
+        print theme swaps in concrete hex colours, a white background, and heavier strokes so the
+        figure stays legible on paper.
       </p>
       <div
         style={{
@@ -121,25 +117,13 @@ export function ExportDemoScenario() {
           />{' '}
           px
         </label>
-        <button
-          type="button"
-          data-testid="export-download-svg"
-          onClick={handleSvg}
-        >
+        <button type="button" data-testid="export-download-svg" onClick={handleSvg}>
           Download SVG
         </button>
-        <button
-          type="button"
-          data-testid="export-download-png"
-          onClick={handlePng}
-        >
+        <button type="button" data-testid="export-download-png" onClick={handlePng}>
           Download PNG
         </button>
-        <button
-          type="button"
-          data-testid="export-preview-svg"
-          onClick={handleSvgPreview}
-        >
+        <button type="button" data-testid="export-preview-svg" onClick={handleSvgPreview}>
           Preview SVG (inline)
         </button>
         {lastSvgLength !== null && (

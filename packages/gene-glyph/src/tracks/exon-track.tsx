@@ -93,7 +93,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       const flankFill = painter.color('vv-color-exon-fill', '#94a3b8');
       const flankStroke = painter.color('vv-color-exon-stroke', '#475569');
       const flankH = Math.max(2, Math.floor(exonH / 2));
-      const flankY = (exonY + exonH / 2) - flankH / 2;
+      const flankY = exonY + exonH / 2 - flankH / 2;
       // Protein mode renders a SINGLE fill+border rect across the whole
       // protein strip — the per-exon ribbons are skipped entirely (see the
       // `proteinOutline` block below). The protein readout has no inter-
@@ -105,8 +105,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       if (viewport.mode !== 'protein') {
         for (const eb of geom.exons) {
           const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
-          const acceptorWidth =
-            flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
+          const acceptorWidth = flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
           exonRects.push(
             painter.placeInExonGroup(
               eb.exonIdx,
@@ -211,14 +210,9 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         // inter-exon `<g>` which is positioned on the bulk only, so we
         // size against the bulk's width (gap.width minus per-side flank
         // widths) rather than the full intron baseline.
-        const intronDonorWidth =
-          flankByExonAndSide.get(`${gap.exonIdxA + 1}:acceptor`) ?? 0;
-        const intronAcceptorWidth =
-          flankByExonAndSide.get(`${gap.exonIdxA}:donor`) ?? 0;
-        const bulkWidth = Math.max(
-          0,
-          gap.width - intronDonorWidth - intronAcceptorWidth,
-        );
+        const intronDonorWidth = flankByExonAndSide.get(`${gap.exonIdxA + 1}:acceptor`) ?? 0;
+        const intronAcceptorWidth = flankByExonAndSide.get(`${gap.exonIdxA}:donor`) ?? 0;
+        const bulkWidth = Math.max(0, gap.width - intronDonorWidth - intronAcceptorWidth);
         // Polyline spans the FULL bulk width, meeting the flank rects
         // (or, in modes without flanks, the exon ribbons) cleanly. The
         // legacy `overhangPx` inset existed when the inter-exon <g>
@@ -430,7 +424,11 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       const match = /^exon:(\d+)$/.exec(anchorId);
       if (!match) return null;
       const idx = Number(match[1]);
-      const exon = viewport.resolveAnchor({ kind: 'intron-boundary', exonIdx: idx, side: 'acceptor' });
+      const exon = viewport.resolveAnchor({
+        kind: 'intron-boundary',
+        exonIdx: idx,
+        side: 'acceptor',
+      });
       return exon;
     },
 

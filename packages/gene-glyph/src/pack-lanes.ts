@@ -30,9 +30,7 @@ export interface PackResult<T> {
 export function packLanes<T>(inputs: LaneInput<T>[], gap = 0): PackResult<T> {
   // Sort by xStart so the sweep can place items greedily into the first
   // lane whose previous end (plus gap) clears the new start.
-  const sorted = inputs
-    .slice()
-    .sort((a, b) => a.xStart - b.xStart || a.xEnd - b.xEnd);
+  const sorted = inputs.slice().sort((a, b) => a.xStart - b.xStart || a.xEnd - b.xEnd);
   const laneEnds: number[] = [];
   const items: PackedItem<T>[] = [];
   for (const it of sorted) {

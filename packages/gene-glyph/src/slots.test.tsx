@@ -81,7 +81,9 @@ describe('GeneGlyph slot system', () => {
     const root = container.querySelector<HTMLElement>('[data-testid="gene-glyph"]')!;
     const figureRow = root.querySelector('.vv-figure-row')!;
     const footer = root.querySelector('[data-testid="gene-glyph-footer-slot"]')!;
-    expect(figureRow.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      figureRow.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('calls the RightGutter render-prop with the same items as LeftGutter and reserves the requested width', async () => {
@@ -101,7 +103,9 @@ describe('GeneGlyph slot system', () => {
       </GeneGlyph>,
     );
     await flushLoads();
-    const right = container.querySelector<HTMLDivElement>('[data-testid="gene-glyph-right-gutter"]');
+    const right = container.querySelector<HTMLDivElement>(
+      '[data-testid="gene-glyph-right-gutter"]',
+    );
     expect(right).not.toBeNull();
     expect(right!.style.width).toBe('48px');
     const ids = rightSeen.map((s) => `${s.kind}:${s.id}`);
@@ -112,17 +116,9 @@ describe('GeneGlyph slot system', () => {
 
   it('renders both gutters as flex siblings of the figure SVG', async () => {
     const { container } = render(
-      <GeneGlyph
-        transcript={transcript}
-        protein={protein}
-        tracks={[exonTrack({})]}
-      >
-        <GeneGlyph.LeftGutter width={32}>
-          {() => <span>L</span>}
-        </GeneGlyph.LeftGutter>
-        <GeneGlyph.RightGutter width={24}>
-          {() => <span>R</span>}
-        </GeneGlyph.RightGutter>
+      <GeneGlyph transcript={transcript} protein={protein} tracks={[exonTrack({})]}>
+        <GeneGlyph.LeftGutter width={32}>{() => <span>L</span>}</GeneGlyph.LeftGutter>
+        <GeneGlyph.RightGutter width={24}>{() => <span>R</span>}</GeneGlyph.RightGutter>
       </GeneGlyph>,
     );
     await flushLoads();

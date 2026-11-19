@@ -111,29 +111,19 @@ describe('GeneGlyph', () => {
     it('fires onModeChange after every committed mode change', async () => {
       const onModeChange = vi.fn();
       const { rerender } = render(
-        <GeneGlyph
-          transcript={transcript}
-          mode="genome"
-          onModeChange={onModeChange}
-        />,
+        <GeneGlyph transcript={transcript} mode="genome" onModeChange={onModeChange} />,
       );
       await flushTrackLoads();
       await act(async () => {
         rerender(
-          <GeneGlyph
-            transcript={transcript}
-            mode="transcript"
-            onModeChange={onModeChange}
-          />,
+          <GeneGlyph transcript={transcript} mode="transcript" onModeChange={onModeChange} />,
         );
       });
       expect(onModeChange).toHaveBeenCalledWith('transcript');
     });
 
     it('uncontrolled mode falls back to defaultMode and stays stable across rerenders', async () => {
-      const { container } = render(
-        <GeneGlyph transcript={transcript} defaultMode="transcript" />,
-      );
+      const { container } = render(<GeneGlyph transcript={transcript} defaultMode="transcript" />);
       await flushTrackLoads();
       const root = container.querySelector('[data-testid="gene-glyph"]')!;
       expect(root.getAttribute('data-vv-mode')).toBe('transcript');
@@ -476,7 +466,9 @@ describe('GeneGlyph', () => {
           onTrackStateChange={onTrackStateChange}
         />,
       );
-      await act(async () => { await Promise.resolve(); });
+      await act(async () => {
+        await Promise.resolve();
+      });
       expect(seen.some(([id, s]) => id === 'variants' && s === 'loading')).toBe(true);
       expect(seen.some(([id, s]) => id === 'variants' && s === 'ready')).toBe(false);
       await act(async () => {
@@ -499,7 +491,9 @@ describe('GeneGlyph', () => {
           tracks={[exonTrack({}), variantTrack({ id: 'variants', source })]}
         />,
       );
-      await act(async () => { await Promise.resolve(); });
+      await act(async () => {
+        await Promise.resolve();
+      });
       const shimmer = container.querySelector('[data-testid="gene-glyph-shimmer-variants"]');
       expect(shimmer).not.toBeNull();
     });
@@ -516,7 +510,10 @@ describe('GeneGlyph', () => {
             loadDebounceMs={120}
           />,
         );
-        await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
         const root = container.querySelector('[data-testid="gene-glyph"]')!;
         expect(root.hasAttribute('data-vv-stale')).toBe(false);
         await act(async () => {

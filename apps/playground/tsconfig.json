@@ -7,7 +7,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "references": [
-    { "path": "../../packages/gene-glyph" }
-  ]
+  "references": [{ "path": "../../packages/gene-glyph" }]
 }

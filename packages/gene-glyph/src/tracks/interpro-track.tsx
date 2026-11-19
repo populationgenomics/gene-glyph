@@ -113,7 +113,12 @@ function placeAndPack(
   viewport: Viewport,
   laneGapPx: number,
 ): { placements: PlacedDomain[]; laneCount: number } {
-  const inputs: LaneInput<{ domain: ProteinDomain; segments: RangeSegment[]; xStart: number; xEnd: number }>[] = [];
+  const inputs: LaneInput<{
+    domain: ProteinDomain;
+    segments: RangeSegment[];
+    xStart: number;
+    xEnd: number;
+  }>[] = [];
   for (const d of domains) {
     const bounds = projectProteinRangeBounds(viewport, d.aaStart, d.aaEnd);
     if (!bounds) continue;
@@ -124,14 +129,23 @@ function placeAndPack(
     });
   }
   const packed = packLanes(inputs, laneGapPx);
-  const placements: PlacedDomain[] = packed.items.map((p: PackedItem<{ domain: ProteinDomain; segments: RangeSegment[]; xStart: number; xEnd: number }>) => ({
-    domain: p.item.domain,
-    segments: p.item.segments,
-    xStart: p.item.xStart,
-    xEnd: p.item.xEnd,
-    xMid: (p.item.xStart + p.item.xEnd) / 2,
-    lane: p.lane,
-  }));
+  const placements: PlacedDomain[] = packed.items.map(
+    (
+      p: PackedItem<{
+        domain: ProteinDomain;
+        segments: RangeSegment[];
+        xStart: number;
+        xEnd: number;
+      }>,
+    ) => ({
+      domain: p.item.domain,
+      segments: p.item.segments,
+      xStart: p.item.xStart,
+      xEnd: p.item.xEnd,
+      xMid: (p.item.xStart + p.item.xEnd) / 2,
+      lane: p.lane,
+    }),
+  );
   return { placements, laneCount: packed.laneCount };
 }
 
@@ -149,7 +163,18 @@ interface SubTrackOptions {
 }
 
 function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackData> {
-  const { id, label, entryType, style, filter, laneHeight, rectHalf, labelFont, labelOffset, laneGapPx } = opts;
+  const {
+    id,
+    label,
+    entryType,
+    style,
+    filter,
+    laneHeight,
+    rectHalf,
+    labelFont,
+    labelOffset,
+    laneGapPx,
+  } = opts;
 
   return {
     id,
@@ -178,11 +203,10 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
       for (const eb of baseline.exons) exonByIdx.set(eb.exonIdx, eb);
       // Per-intron flank widths for the splice-site preservation bridge —
       // see the comment in `pfam-track.tsx`.
-      const flanksByIntron = baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
+      const flanksByIntron =
+        baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
 
-      const sorted = data.placements
-        .slice()
-        .sort((a, b) => a.lane - b.lane || a.xMid - b.xMid);
+      const sorted = data.placements.slice().sort((a, b) => a.lane - b.lane || a.xMid - b.xMid);
 
       // One per-exon wrapper per track shared across overlapping domains
       // (multiple IPR entries commonly land in the same exon). See pfam-track
@@ -223,8 +247,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
           //               right edge for the last domain).
           let labelMaxW: number;
           if (style === 'minimal') {
-            const nextStart =
-              i + 1 < items.length ? items[i + 1]!.xStart : trackRight;
+            const nextStart = i + 1 < items.length ? items[i + 1]!.xStart : trackRight;
             labelMaxW = Math.max(0, nextStart - p.xStart - 4);
           } else {
             const prevMid = i > 0 ? items[i - 1]!.xMid : trackLeft - (p.xMid - trackLeft);
@@ -259,18 +282,13 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
           painter.placeInInterExon(
             exonIdxA,
             exonIdxB,
-            <Fragment key={`ipr-linkers-${exonIdxA}-${exonIdxB}`}>
-              {nodes}
-            </Fragment>,
+            <Fragment key={`ipr-linkers-${exonIdxA}-${exonIdxB}`}>{nodes}</Fragment>,
           ),
         );
       }
 
       const exonGroups: ReactNode[] = [];
-      const exonIdxs = new Set<number>([
-        ...rectsByExon.keys(),
-        ...labelsByExon.keys(),
-      ]);
+      const exonIdxs = new Set<number>([...rectsByExon.keys(), ...labelsByExon.keys()]);
       for (const idx of exonIdxs) {
         const rects = rectsByExon.get(idx) ?? [];
         const labels = labelsByExon.get(idx) ?? [];
@@ -340,10 +358,7 @@ interface EmitArgs {
   painter: Painter;
   rectsByExon: Map<number, ReactNode[]>;
   labelsByExon: Map<number, ReactNode[]>;
-  linkersByGap: Map<
-    string,
-    { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
-  >;
+  linkersByGap: Map<string, { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }>;
 }
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -401,9 +416,7 @@ function emitDomain(args: EmitArgs): void {
   // Label segment + anchor:
   //   'rect'    — segment nearest the domain's midpoint, label centred above.
   //   'minimal' — first segment, label left-aligned to the domain's start.
-  const labelSeg = style === 'minimal'
-    ? placed.segments[0] ?? null
-    : pickLabelSegment(placed);
+  const labelSeg = style === 'minimal' ? (placed.segments[0] ?? null) : pickLabelSegment(placed);
   const labelExon = labelSeg ? exonByIdx.get(labelSeg.exonIdx) : undefined;
 
   if (style === 'minimal') {
@@ -529,10 +542,7 @@ function emitDomain(args: EmitArgs): void {
         );
       }
 
-      const bulkWidth = Math.max(
-        0,
-        (b.xStart - a.xEnd) - flanks.donor - flanks.acceptor,
-      );
+      const bulkWidth = Math.max(0, b.xStart - a.xEnd - flanks.donor - flanks.acceptor);
       if (bulkWidth > 0) {
         const gapKey = `${a.exonIdx}:${b.exonIdx}`;
         let bucket = linkersByGap.get(gapKey);
@@ -583,9 +593,10 @@ function emitDomain(args: EmitArgs): void {
     //   'rect'    — centred above the rect (anchor at xMid, text-anchor: middle).
     //   'minimal' — left-aligned to the domain's leftmost segment
     //               (anchor at first-segment.xStart, text-anchor: start).
-    const anchorX = style === 'minimal'
-      ? (placed.segments[0]?.xStart ?? placed.xMid) - labelExon.xStart
-      : placed.xMid - labelExon.xStart;
+    const anchorX =
+      style === 'minimal'
+        ? (placed.segments[0]?.xStart ?? placed.xMid) - labelExon.xStart
+        : placed.xMid - labelExon.xStart;
     const textAnchor: 'start' | 'middle' = style === 'minimal' ? 'start' : 'middle';
     // 'minimal' labels hang *below* the line so the line itself is the
     // primary visual anchor; 'rect' labels sit above the rect to keep the
@@ -650,9 +661,7 @@ function pickLabelSegment(placed: PlacedDomain): RangeSegment | null {
  *  The refined return type preserves that invariant for callers that
  *  read `group.tracks[i].load(...)` directly without going through
  *  {@link isTrackGroup}. */
-export function interProTrack(
-  config: InterProTrackConfig = {},
-): TrackGroup & { tracks: Track[] } {
+export function interProTrack(config: InterProTrackConfig = {}): TrackGroup & { tracks: Track[] } {
   const baseId = config.id ?? 'interpro';
   const groups = config.groups ?? DEFAULT_GROUPS;
   const style: InterProRenderStyle = config.style ?? 'minimal';

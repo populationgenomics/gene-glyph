@@ -12,15 +12,13 @@ Slices 1–20 deliver the cutover-ready package. Slices 21–27 deliver the post
 
 Set up the repository and CI so subsequent slices have a place to land.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 2 — Core abstractions (no rendering)
 
 The internal scaffolding everything else builds on. No visible UI yet.
 
-**Shipped.**
----
+## **Shipped.**
 
 ## Phase 2: Parity render path
 
@@ -28,50 +26,43 @@ The internal scaffolding everything else builds on. No visible UI yet.
 
 The first slice that renders something users would recognise.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 4 — Variant track + interaction
 
 Variants render and respond to host-driven hover/selection/click.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 5 — Pfam track + protein-range fragmentation
 
 First track to exercise the range-projection-returns-segments machinery.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 6 — InterPro track + groups + LeftGutter
 
 Track groups and gutter slots come online together because they're co-dependent for IPR rendering.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 7 — Slot system completion
 
 Header, Footer, and RightGutter; locks in the compound-component API.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 8 — Imperative ref API + basic fitTo
 
 Hosts can drive viewport state programmatically without managing every prop.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 9 — Pan + zoom interaction handlers
 
 Wire up the default interaction bindings; viewer becomes interactive.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 10 — Smooth pan internals (stable geometry + viewport-only transforms)
 
@@ -83,22 +74,19 @@ Make pan / zoom / mode transitions actually glide. Slice 9 surfaced two related 
 
 Both symptoms go away if geometry stops being viewport-dependent and clipping moves to the rendering layer.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 11 — Playwright browser tests (backfill + going-forward)
 
 JSDOM-only coverage misses the visual coordination the design relies on — CSS transitions, layout reflow under width changes, pinch gestures, intron-vs-exon animation alignment. Stand up Playwright so we can exercise the rendered playground, then backfill tests for every slice already on `main`.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 12 — CSS-driven hover lift + selection feedback
 
 Polish on per-feature micro-interactions; locks in the discipline of "all motion via `transform` on wrappers." (Previously Slice 10; now follows Slice 10 — smooth pan internals — and Slice 11 — Playwright backfill.)
 
-**Shipped.**
----
+## **Shipped.**
 
 ## Phase 3: Cutover
 
@@ -106,8 +94,7 @@ Polish on per-feature micro-interactions; locks in the discipline of "all motion
 
 Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
-**Shipped.**
----
+## **Shipped.**
 
 ## Phase 4: Post-cutover features
 
@@ -115,50 +102,43 @@ Replace `GeneSchematic.tsx` in lit-manager with `<GeneGlyph>`.
 
 The first feature the rewrite was for. Modes are viewport projections, not separate render paths.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 15 — Hidden-feature indicators — **shipped**
 
 Tracks that care surface counts of features dropped by current viewport.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 16 — Brush selection — **shipped**
 
 Users can drag-select a range; tracks reflect the selection.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 17 — Overlay layer — **shipped**
 
 Tooltips, "you are here" markers, transient UI floating above tracks.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 18 — DataSource adapter pattern + async track loading — **shipped**
 
 The infrastructure for pluggable backends.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 19 — Camera-ready export (SVG + PNG) — **shipped**
 
 The "camera-ready vector graphics" goal lands.
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 20 — Convenience chrome exports — **shipped**
 
 Pre-built chrome components for hosts that don't want to write their own.
 
-**Shipped.**
----
+## **Shipped.**
 
 ## Phase 5: New data tracks
 
@@ -166,12 +146,12 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ### Slice 21 — ClinVar track — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 22 — gnomAD track
 
 **In scope:**
+
 - `gnomADTrack({source, populations})` factory
 - gnomAD GraphQL adapter
 - Frequency rendering: dot height encodes MAF; colour by population
@@ -179,6 +159,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 - Playground scenario with real gnomAD data
 
 **Definition of done:**
+
 - gnomAD variants display with population-aware encoding
 - Mode transitions handle intronic gnomAD entries correctly
 - Adapter respects gnomAD's rate limits and caches by query range
@@ -188,6 +169,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 ### Slice 23 — AlphaMissense track
 
 **In scope:**
+
 - `alphaMissenseTrack({source})` factory
 - AlphaMissense per-position score adapter (bulk-fetch by transcript)
 - Heatmap rendering across protein aa positions (one row, colour-mapped by score)
@@ -195,6 +177,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 - Playground scenario shows AM heatmap aligned with protein domains
 
 **Definition of done:**
+
 - AM heatmap renders aligned to protein axis
 - Hover shows score; click selects position
 - Heatmap is correctly aligned in CDS-with-introns mode (mapped through CDS)
@@ -204,6 +187,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 ### Slice 24 — MAVE track
 
 **In scope:**
+
 - `maveTrack({source})` factory
 - MAVE database adapter (or local-file mode for unpublished datasets)
 - Multi-row heatmap: aa positions × substitution amino acid; colour by score
@@ -211,6 +195,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 - Playground scenario with a published MAVE dataset
 
 **Definition of done:**
+
 - MAVE heatmap renders with correct aa alignment
 - Hover shows position + substitution + score
 - Track collapsible to single-row summary
@@ -220,6 +205,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 ### Slice 25 — User annotation track
 
 **In scope:**
+
 - `userAnnotationTrack({store})` factory
 - `store` is a host-provided interface: `{list(range), create(annotation), update(id, patch), delete(id), subscribe(callback)}`
 - Annotation marks render as labelled bars at user-defined positions
@@ -228,6 +214,7 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 - Playground scenario with localStorage-backed store
 
 **Definition of done:**
+
 - Users can create, edit, delete annotations
 - Annotations persist (localStorage in playground; real backend in lit-manager)
 - Optimistic UI feels responsive
@@ -236,23 +223,19 @@ These are independent of each other and can be grabbed in parallel after Slice 1
 
 ### Slice 26 — Mini-map as standalone component + Overview track — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 27 — Stacked variant view (Decipher-style) — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 28 — Coordinate ruler track — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 29 — Nucleotide + AA sequence tracks (zoom-gated) — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 30 — Segment band track (categorical / boolean colour bands) — **shipped**
 
@@ -264,8 +247,7 @@ RMC (Slice 40) consumes this as its rendering surface.
 
 ### Slice 31 — Numeric profile track (per-position histogram / heatmap) — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slice 32 — Compact variant-tick track (single-row lollipop / sparse marker)
 
@@ -279,8 +261,9 @@ smaller per-mark footprint so several variant categories can stack as
 adjacent thin rows above the gene body.
 
 **In scope:**
+
 - `tickVariantTrack({ source, coordSystem, encoding, heightPx?,
-  thicknessPx? })` factory — distinct from `variantTrack` because
+thicknessPx? })` factory — distinct from `variantTrack` because
   enough of the rendering and packing logic diverges that a flag on
   the existing factory would multiply complexity rather than reduce
   it (no stacked-into-rows packing — single row by construction —
@@ -290,7 +273,7 @@ adjacent thin rows above the gene body.
   Variants land as single thin rects (height = `heightPx`, width =
   `thicknessPx`) anchored to the variant's position
 - Optional lane sub-row mode: when `encoding.lane()` returns a key,
-  variants in different lanes get separate horizontal *slots* within
+  variants in different lanes get separate horizontal _slots_ within
   the same row (offset by `lanePxOffset`) so e.g. heterozygous vs
   homozygous don't pile on the same x-column. Default: no lane
   separation (truly single-row)
@@ -302,6 +285,7 @@ adjacent thin rows above the gene body.
   fed from the existing TP53 variant fixture filtered by category
 
 **Definition of done:**
+
 - A single-figure scenario shows four `tickVariantTrack` rows above
   the gene body without exceeding the existing playground
   trackHeightBudget
@@ -317,8 +301,7 @@ adjacent thin rows above the gene body.
 
 ### Slice 33 — Remove the animation system (event-driven redraws only) — **shipped**
 
-**Shipped.**
----
+## **Shipped.**
 
 ### Slices 34–37 — User-supplied variants track (tracer-bullet stack) — **shipped**
 
@@ -364,19 +347,23 @@ gnomAD's `gnomad_v2_regional_missense_constraint` field.
 ## Cross-cutting work (not slice-specific)
 
 ### Documentation
+
 - `README.md` with install + minimal example + link to playground
 - API reference auto-generated from TypeScript declarations
 - Migration guide for lit-manager (referenced from Slice 13)
 - CONTRIBUTING.md covering yalc workflow, animation discipline, painter abstraction rules
 
 ### CI / quality gates
+
 - All slices keep CI green
 - Visual regression snapshots updated as part of each slice's PR
 - Bundle-size budget enforced post-Slice 13 (target: <50KB gzipped for the core lib)
 
 ### Versioning milestones
+
 The 0.x milestones were never tagged — development ran straight through to
 the lit-manager cutover (Slice 13) and beyond.
+
 - `1.0.0` — current. Slices 1–40 shipped: full parity render path, the
   lit-manager cutover, post-cutover feature work (mode transitions, brush
   selection, overlay layer, DataSource adapter, exports, ClinVar/RMC/

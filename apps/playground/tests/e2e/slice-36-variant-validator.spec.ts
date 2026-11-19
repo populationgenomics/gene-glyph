@@ -72,9 +72,7 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
         body: JSON.stringify(vvResponse('17', 7674215, 'G', 'A')),
       });
     });
-    await page.goto(
-      '/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,c.524G%3EA',
-    );
+    await page.goto('/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,c.524G%3EA');
     const marks = page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark');
     await expect(marks).toHaveCount(2);
     const ids = await marks.evaluateAll((nodes) =>
@@ -92,13 +90,11 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
     await page.route(/rest\.variantvalidator\.org/, async (route: Route) => {
       await route.fulfill({ status: 500, contentType: 'text/plain', body: 'down' });
     });
-    await page.goto(
-      '/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,c.524G%3EA',
-    );
+    await page.goto('/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,c.524G%3EA');
     // Canonical entry renders.
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(1);
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      1,
+    );
     // The HGVS surfaces as an error.
     const footer = page.getByTestId('embed-user-variant-footer');
     await expect(footer).toBeVisible();
@@ -119,9 +115,9 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
       });
     });
     await page.goto('/embed.html?transcript=ENST_TEST&variants=c.524G%3EA');
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(1);
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      1,
+    );
     // React.StrictMode would otherwise double-mount the effect and
     // fire two VV calls; the resolver's in-flight dedup collapses
     // those into one network round-trip.
@@ -141,12 +137,10 @@ test.describe('Slice 36 — VariantValidator HGVS resolution', () => {
         body: JSON.stringify(vvResponse('17', 7674215, 'G', 'A')),
       });
     });
-    await page.goto(
-      '/embed.html?transcript=ENST_TEST&variants=17-7674210-C-T,c.524G%3EA',
+    await page.goto('/embed.html?transcript=ENST_TEST&variants=17-7674210-C-T,c.524G%3EA');
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      2,
     );
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(2);
     // Only the HGVS goes through VV.
     expect(vvUrls.length).toBe(1);
     // Includes the version suffix fetched from Ensembl REST.

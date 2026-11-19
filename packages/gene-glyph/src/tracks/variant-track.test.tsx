@@ -34,7 +34,12 @@ const variants: ViewerVariant[] = [
   { id: 'v1', label: 'V1', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
   { id: 'v2', label: 'V2', coord: { kind: 'cds', cPos: 150, offset: 0 }, category: 'nonsense' },
   { id: 'v3-prot', label: 'V3', coord: { kind: 'protein', aa: 90 }, category: 'missense' },
-  { id: 'v4-intronic', label: 'V4', coord: { kind: 'cds', cPos: 100, offset: 5 }, category: 'splice' },
+  {
+    id: 'v4-intronic',
+    label: 'V4',
+    coord: { kind: 'cds', cPos: 100, offset: 5 },
+    category: 'splice',
+  },
   { id: 'v5-oob', label: 'V5', coord: { kind: 'cds', cPos: 9999, offset: 0 }, category: 'utr' },
 ];
 
@@ -147,9 +152,7 @@ describe('variantTrack', () => {
     });
     // The fixture variants include `v4-intronic` (cPos 100, offset 5) in
     // intron 0→1; no other intronic variants are defined.
-    expect(buckets).toEqual([
-      { exonIdxA: 0, exonIdxB: 1, count: 1, featureIds: ['v4-intronic'] },
-    ]);
+    expect(buckets).toEqual([{ exonIdxA: 0, exonIdxB: 1, count: 1, featureIds: ['v4-intronic'] }]);
   });
 });
 
@@ -157,7 +160,12 @@ describe('variantTrack', () => {
   it('loads from a static array', async () => {
     const t = variantTrack({ source: variants });
     const { mapper, viewport } = setup();
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(data.variants).toHaveLength(variants.length);
   });
 
@@ -170,7 +178,12 @@ describe('variantTrack', () => {
     };
     const t = variantTrack({ source });
     const { mapper, viewport } = setup();
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(queryFn).toHaveBeenCalledWith(
       { mode: 'genome', range: viewport.range },
       expect.anything(),
@@ -244,8 +257,12 @@ describe('variantTrack', () => {
       </svg>
     );
     const { container } = render(<Probe />);
-    expect(container.querySelector('[data-vv-feature-id="v1"]')?.classList.contains('is-hovered')).toBe(true);
-    expect(container.querySelector('[data-vv-feature-id="v2"]')?.classList.contains('is-selected')).toBe(true);
+    expect(
+      container.querySelector('[data-vv-feature-id="v1"]')?.classList.contains('is-hovered'),
+    ).toBe(true);
+    expect(
+      container.querySelector('[data-vv-feature-id="v2"]')?.classList.contains('is-selected'),
+    ).toBe(true);
   });
 
   it('stacked render emits one .vv-variant-stacked per placed variant inside an exon group', async () => {

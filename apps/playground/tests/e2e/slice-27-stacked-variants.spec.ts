@@ -24,9 +24,7 @@ test.describe('Slice 27 — stacked variant view', () => {
 
   test('stacked render assigns multiple rows at hotspot positions', async ({ page }) => {
     const s = await scenario(page);
-    const trackEl = s.locator(
-      '[data-testid="stacked-side-stacked"] .vv-variant-track-stacked',
-    );
+    const trackEl = s.locator('[data-testid="stacked-side-stacked"] .vv-variant-track-stacked');
     await expect(trackEl).toBeAttached();
     const rows = Number(await trackEl.getAttribute('data-vv-stack-rows'));
     // The hotspot piles around codon 248 (20 variants in one column) force

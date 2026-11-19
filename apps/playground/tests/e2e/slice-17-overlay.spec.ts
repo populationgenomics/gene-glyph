@@ -42,7 +42,9 @@ test.describe('Slice 17 — overlay tooltips', () => {
     await expect(tip).toHaveCount(0);
   });
 
-  test('built-in tooltip falls back to Track.featureLabel when host omits renderTooltip', async ({ page }) => {
+  test('built-in tooltip falls back to Track.featureLabel when host omits renderTooltip', async ({
+    page,
+  }) => {
     const s = await scenario(page);
     await s.locator('[data-testid="tooltip-custom-toggle"]').uncheck();
     const variant = await firstVariant(s);

@@ -100,9 +100,7 @@ export function segmentBandTrack<C extends string = string>(
 
     async load({ signal }: TrackLoadArgs): Promise<SegmentBandTrackData<C>> {
       const raw =
-        typeof config.source === 'function'
-          ? await config.source({ signal })
-          : config.source;
+        typeof config.source === 'function' ? await config.source({ signal }) : config.source;
       // Sort + overlap-check once at load time so render() can assume a
       // clean input. Overlaps are a host data error: report via the
       // callback and keep rendering — every segment still paints, the
@@ -210,10 +208,7 @@ export function segmentBandTrack<C extends string = string>(
         }
       }
 
-      const exonIdxs = new Set<number>([
-        ...rectsByExon.keys(),
-        ...labelsByExon.keys(),
-      ]);
+      const exonIdxs = new Set<number>([...rectsByExon.keys(), ...labelsByExon.keys()]);
       const groups: ReactNode[] = [];
       for (const exonIdx of exonIdxs) {
         const rects = rectsByExon.get(exonIdx) ?? [];
@@ -238,9 +233,8 @@ export function segmentBandTrack<C extends string = string>(
 
     resolveFeature(data, featureId) {
       return (
-        data.segments.find(
-          (s) => (s.id ?? `${s.start}-${s.end}-${s.category}`) === featureId,
-        ) ?? null
+        data.segments.find((s) => (s.id ?? `${s.start}-${s.end}-${s.category}`) === featureId) ??
+        null
       );
     },
 

@@ -16,7 +16,9 @@ describe('createSvgPainter', () => {
 
   it('drawRect renders a <rect> with the supplied attributes', () => {
     const p = createSvgPainter();
-    const { container } = renderInSvg(p.drawRect({ x: 1, y: 2, width: 10, height: 4, fill: '#abc' }));
+    const { container } = renderInSvg(
+      p.drawRect({ x: 1, y: 2, width: 10, height: 4, fill: '#abc' }),
+    );
     const rect = container.querySelector('rect');
     expect(rect).not.toBeNull();
     expect(rect!.getAttribute('x')).toBe('1');
@@ -26,7 +28,9 @@ describe('createSvgPainter', () => {
 
   it('placeInExonGroup wraps content in a vv-exon-group with the right transform', () => {
     const p = createSvgPainter();
-    const { container } = renderInSvg(p.placeInExonGroup(2, p.drawRect({ x: 0, y: 0, width: 5, height: 5 })));
+    const { container } = renderInSvg(
+      p.placeInExonGroup(2, p.drawRect({ x: 0, y: 0, width: 5, height: 5 })),
+    );
     const group = container.querySelector('g.vv-exon-group');
     expect(group).not.toBeNull();
     expect(group!.getAttribute('data-vv-exon-idx')).toBe('2');
@@ -36,7 +40,9 @@ describe('createSvgPainter', () => {
 
   it('placeInInterExon wraps content in vv-intron-decoration with opacity and translate tied to CSS variables', () => {
     const p = createSvgPainter();
-    const { container } = renderInSvg(p.placeInInterExon(2, 3, p.drawLine({ x1: 0, y1: 0, x2: 5, y2: 0 })));
+    const { container } = renderInSvg(
+      p.placeInInterExon(2, 3, p.drawLine({ x1: 0, y1: 0, x2: 5, y2: 0 })),
+    );
     const group = container.querySelector('g.vv-intron-decoration');
     expect(group).not.toBeNull();
     const style = (group as HTMLElement).style;
@@ -49,7 +55,9 @@ describe('createSvgPainter', () => {
 
   it('color() returns a CSS var() expression with fallback', () => {
     const p = createSvgPainter();
-    expect(p.color('vv-color-text-primary', '#1f2937')).toBe('var(--vv-color-text-primary, #1f2937)');
+    expect(p.color('vv-color-text-primary', '#1f2937')).toBe(
+      'var(--vv-color-text-primary, #1f2937)',
+    );
     expect(p.color('--vv-color-bg-surface')).toBe('var(--vv-color-bg-surface)');
   });
 

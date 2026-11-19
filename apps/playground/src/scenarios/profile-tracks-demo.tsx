@@ -33,10 +33,9 @@ export function ProfileTracksScenario() {
     <section className="scenario" aria-labelledby="scenario-profile">
       <h2 id="scenario-profile">Conservation + missense density — TP53</h2>
       <p className="scenario-blurb">
-        Two profile tracks driven by the same <code>profileTrack</code>{' '}
-        factory. The heatmap is per-aa conservation; the histogram is
-        per-aa missense variant density. Both aggregate by display
-        pixel so the silhouette stays faithful at every zoom level.
+        Two profile tracks driven by the same <code>profileTrack</code> factory. The heatmap is
+        per-aa conservation; the histogram is per-aa missense variant density. Both aggregate by
+        display pixel so the silhouette stays faithful at every zoom level.
       </p>
       <div
         role="group"

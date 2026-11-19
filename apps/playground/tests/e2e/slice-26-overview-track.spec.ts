@@ -6,21 +6,23 @@ async function scenario(page: Page): Promise<Locator> {
 }
 
 test.describe('Slice 26 — overview track + minimap', () => {
-  test('overviewTrack renders the upstream exon track minimap and a window rectangle', async ({ page }) => {
+  test('overviewTrack renders the upstream exon track minimap and a window rectangle', async ({
+    page,
+  }) => {
     const s = await scenario(page);
     // The overview lives in the in-figure track stack and composes
     // `renderMinimap` outputs from upstream tracks. The exon track
     // contributes one minimap row with one rect per exon.
     const overviewFigure = s.locator('svg.vv-figure').first();
-    await expect(
-      overviewFigure.locator('.vv-overview-row .vv-exon-minimap-exon'),
-    ).toHaveCount(10);
+    await expect(overviewFigure.locator('.vv-overview-row .vv-exon-minimap-exon')).toHaveCount(10);
     await expect(
       overviewFigure.locator('[data-testid="gene-glyph-overview-window"]'),
     ).toBeVisible();
   });
 
-  test('exporting the in-figure overview keeps the window rectangle in the SVG markup', async ({ page }) => {
+  test('exporting the in-figure overview keeps the window rectangle in the SVG markup', async ({
+    page,
+  }) => {
     // The whole point of an in-figure overview vs a chrome minimap: the
     // serialised SVG carries the navigation context.
     const s = await scenario(page);
@@ -88,7 +90,9 @@ test.describe('Slice 26 — overview track + minimap', () => {
     expect(widthAfter).toBeLessThan(widthBefore - 20);
   });
 
-  test('window rectangle uses the mini-viewport baseline mapping, not the figure CSS transforms', async ({ page }) => {
+  test('window rectangle uses the mini-viewport baseline mapping, not the figure CSS transforms', async ({
+    page,
+  }) => {
     // The overview's mini-viewport is pinned to fit-gene at the figure
     // width; cdsToBaselineX(viewerRange[0..1]) in that frame is purely
     // logical CDS-to-display math, decoupled from the figure's

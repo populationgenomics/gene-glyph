@@ -52,18 +52,13 @@ export function ClinVarDemoScenario() {
   // offline scenario so the docs example shows the detail render by
   // default; clicking the chevron swaps in the density heat-strip
   // summary.
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
   // Stable predicate reference so the gene-glyph filter memo doesn't churn
   // on every render — the function identity changes only when `excluded`
   // does, which is the signal we want the viewer to react to.
-  const filter = useCallback(
-    (r: ClinVarRecord) => !excluded.has(r.significance),
-    [excluded],
-  );
+  const filter = useCallback((r: ClinVarRecord) => !excluded.has(r.significance), [excluded]);
 
   const tracks = useMemo<TrackOrGroup[]>(
     () => [
@@ -103,9 +98,7 @@ export function ClinVarDemoScenario() {
         <div style={{ opacity: 0.75, fontSize: '0.72rem' }}>
           {r.reviewStatus ?? humanSig(r.significance)}
         </div>
-        {r.condition && (
-          <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.condition}</div>
-        )}
+        {r.condition && <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.condition}</div>}
       </div>
     );
   };
@@ -114,12 +107,11 @@ export function ClinVarDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-clinvar">
       <h2 id="scenario-clinvar">ClinVar — density clustering and cluster popover</h2>
       <p className="scenario-blurb">
-        Click a diamond to expand the cluster into its member variants. Zoom in
-        (<code>=</code>) on the DNA-binding domain and the clusters dissolve as
-        the per-pixel spacing grows past the cluster threshold. Marks colour by
-        the strongest clinical significance present. Toggle the significance
-        chips to narrow the visible record set — the track re-clusters against
-        the survivors via the host-supplied <code>filter</code> predicate.
+        Click a diamond to expand the cluster into its member variants. Zoom in (<code>=</code>) on
+        the DNA-binding domain and the clusters dissolve as the per-pixel spacing grows past the
+        cluster threshold. Marks colour by the strongest clinical significance present. Toggle the
+        significance chips to narrow the visible record set — the track re-clusters against the
+        survivors via the host-supplied <code>filter</code> predicate.
       </p>
       <div
         style={{

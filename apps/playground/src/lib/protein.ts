@@ -89,19 +89,17 @@ export async function fetchProteinAnnotations(
         });
       }
     }
-    const domains: ProteinDomain[] = Array.from(byInterPro.entries()).map(
-      ([ipr, span]) => ({
-        aaStart: span.aaStart,
-        aaEnd: span.aaEnd,
-        source: 'InterPro',
-        sourceId: ipr,
-        // Use the human-readable description as the visible label rather
-        // than the IPR accession.
-        shortName: span.description || ipr,
-        description: span.description,
-        entryType: classifyEntryType(span.sources, span.description),
-      }),
-    );
+    const domains: ProteinDomain[] = Array.from(byInterPro.entries()).map(([ipr, span]) => ({
+      aaStart: span.aaStart,
+      aaEnd: span.aaEnd,
+      source: 'InterPro',
+      sourceId: ipr,
+      // Use the human-readable description as the visible label rather
+      // than the IPR accession.
+      shortName: span.description || ipr,
+      description: span.description,
+      entryType: classifyEntryType(span.sources, span.description),
+    }));
 
     return {
       uniprotAcc: '',
@@ -126,12 +124,8 @@ export async function fetchProteinAnnotations(
  *  (domain > family > HSF) — a region with both Pfam and SuperFamily hits
  *  is almost always classified as a domain by InterPro.
  */
-function classifyEntryType(
-  sources: Set<string>,
-  description: string,
-): ProteinDomainEntryType {
-  const has = (...names: string[]) =>
-    names.some((n) => sources.has(n));
+function classifyEntryType(sources: Set<string>, description: string): ProteinDomainEntryType {
+  const has = (...names: string[]) => names.some((n) => sources.has(n));
   if (has('Pfam', 'Smart', 'SMART', 'CDD', 'Prosite_profiles')) return 'domain';
   if (has('PANTHER', 'PIRSF', 'TIGRfam', 'HAMAP')) return 'family';
   if (has('Gene3D', 'SuperFamily', 'Superfamily')) return 'homologous_superfamily';

@@ -64,7 +64,10 @@ function stubTrack(cfg: StubTrackConfig): Track<StubTrackConfig, null> {
 describe('LayoutEngine — height negotiation', () => {
   it('stacks tracks top-to-bottom and computes rects from accumulated y', () => {
     const viewport = makeViewport();
-    const tracks = [stubTrack({ id: 'a', naturalHeight: 30 }), stubTrack({ id: 'b', naturalHeight: 50 })];
+    const tracks = [
+      stubTrack({ id: 'a', naturalHeight: 30 }),
+      stubTrack({ id: 'b', naturalHeight: 50 }),
+    ];
     const result = layoutTracks({
       tracks,
       viewport,
@@ -216,7 +219,10 @@ describe('LayoutEngine — height negotiation', () => {
     const childItem = parentItem.children!.find((c) => c.id === 'child')!;
     expect(childItem.kind).toBe('group');
     expect(childItem.children?.map((c) => c.id)).toEqual(['child-summary']);
-    expect(result.trackRects.get('child-summary')!.yBottom - result.trackRects.get('child-summary')!.yTop).toBe(14);
+    expect(
+      result.trackRects.get('child-summary')!.yBottom -
+        result.trackRects.get('child-summary')!.yTop,
+    ).toBe(14);
     expect(result.trackRects.has('child-detail')).toBe(false);
   });
 
@@ -354,7 +360,11 @@ describe('LayoutEngine — height negotiation', () => {
       },
     };
     layoutTracks({
-      tracks: [stubTrack({ id: 'a', naturalHeight: 30 }), probe, stubTrack({ id: 'b', naturalHeight: 40 })],
+      tracks: [
+        stubTrack({ id: 'a', naturalHeight: 30 }),
+        probe,
+        stubTrack({ id: 'b', naturalHeight: 40 }),
+      ],
       viewport,
       data: new Map(),
       totalHeightBudget: 200,

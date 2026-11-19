@@ -2,12 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { createCoordinateMapper } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
-import type {
-  InteractionState,
-  ProteinAnnotations,
-  ProteinDomain,
-  Transcript,
-} from '../types.js';
+import type { InteractionState, ProteinAnnotations, ProteinDomain, Transcript } from '../types.js';
 import { ViewportController } from '../viewport.js';
 import { interProTrack, type InterProSubTrackData } from './interpro-track.js';
 
@@ -99,8 +94,18 @@ describe('interProTrack', () => {
     const group = interProTrack({ groups: ['family', 'domain'] });
     const family = group.tracks[0]!;
     const domain = group.tracks[1]!;
-    const familyData = (await family.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
-    const domainData = (await domain.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const familyData = (await family.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
+    const domainData = (await domain.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
     expect(familyData.domains.map((d) => d.shortName).sort()).toEqual(['F1', 'F2']);
     expect(domainData.domains.map((d) => d.shortName)).toEqual(['D1']);
   });
@@ -109,7 +114,12 @@ describe('interProTrack', () => {
     const { viewport, mapper } = setup();
     const group = interProTrack({ groups: ['family'] });
     const family = group.tracks[0]!;
-    const data = (await family.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const data = (await family.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
     expect(data.laneCount).toBe(2);
     const byId = new Map(data.placements.map((p) => [p.domain.sourceId, p.lane]));
     expect(byId.get('IPR0001')).not.toBe(byId.get('IPR0002'));
@@ -120,8 +130,18 @@ describe('interProTrack', () => {
     const group = interProTrack({ groups: ['family', 'repeat'], laneHeight: 20 });
     const family = group.tracks[0]!;
     const repeat = group.tracks[1]!;
-    const familyData = (await family.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
-    const repeatData = (await repeat.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const familyData = (await family.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
+    const repeatData = (await repeat.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
     expect(family.height({ data: familyData, viewport, hint: { maxPx: 500 } }).px).toBe(40);
     expect(repeat.height({ data: repeatData, viewport, hint: { maxPx: 500 } }).px).toBe(0);
   });
@@ -130,7 +150,12 @@ describe('interProTrack', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const group = interProTrack({ groups: ['domain'], style: 'rect' });
     const domainTrack = group.tracks[0]!;
-    const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const data = (await domainTrack.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
 
     function Probe() {
       return (
@@ -158,7 +183,12 @@ describe('interProTrack', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const group = interProTrack({ groups: ['domain'] });
     const domainTrack = group.tracks[0]!;
-    const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const data = (await domainTrack.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
 
     function Probe() {
       return (
@@ -194,7 +224,12 @@ describe('interProTrack', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const group = interProTrack({ groups: ['domain'] });
     const domainTrack = group.tracks[0]!;
-    const data = (await domainTrack.load({ viewport, mapper, signal: new AbortController().signal, protein })) as InterProSubTrackData;
+    const data = (await domainTrack.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein,
+    })) as InterProSubTrackData;
 
     function Probe() {
       return (

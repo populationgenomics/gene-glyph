@@ -19,10 +19,7 @@ const MIN_VISIBLE_FRACTION = 0.01;
  *  + W]` within that. This is tighter than the figure's own pan clamp
  *  (which allows ~5% padding overshoot); panning further past the gene
  *  ends needs the main-figure drag, not the minimap. */
-function clampDisplayOffsetForPan(
-  info: ViewportInfo,
-  requested: number,
-): number {
+function clampDisplayOffsetForPan(info: ViewportInfo, requested: number): number {
   const minOffset = 0;
   const maxOffset = info.totalDisplayWidth - info.viewportWidth;
   if (maxOffset <= minOffset) {
@@ -151,22 +148,21 @@ export function DefaultMinimap({
   );
 
   const onPointerDown = useCallback(
-    (kind: DragState['kind']) =>
-      (e: ReactPointerEvent<SVGRectElement>) => {
-        if (!info) return;
-        e.preventDefault();
-        const svg = svgRef.current;
-        svg?.setPointerCapture(e.pointerId);
-        dragRef.current = {
-          kind,
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startDisplayOffset: info.displayOffset,
-          startTotalDisplay: info.totalDisplayWidth,
-          startZoomScale: info.zoomScale,
-          startBaselineWindow: [info.baselineWindow[0], info.baselineWindow[1]],
-        };
-      },
+    (kind: DragState['kind']) => (e: ReactPointerEvent<SVGRectElement>) => {
+      if (!info) return;
+      e.preventDefault();
+      const svg = svgRef.current;
+      svg?.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        kind,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startDisplayOffset: info.displayOffset,
+        startTotalDisplay: info.totalDisplayWidth,
+        startZoomScale: info.zoomScale,
+        startBaselineWindow: [info.baselineWindow[0], info.baselineWindow[1]],
+      };
+    },
     [info],
   );
 
@@ -212,10 +208,7 @@ export function DefaultMinimap({
       // the zoom changes the gesture causes — one cursor pixel always
       // maps to the same baseline-px shift for the dragged endpoint.
       const dxBase = drag.startZoomScale > 0 ? dxLayout / drag.startZoomScale : 0;
-      const minBaselineSpan = Math.max(
-        1,
-        info.baselineGeometry.totalWidth * MIN_VISIBLE_FRACTION,
-      );
+      const minBaselineSpan = Math.max(1, info.baselineGeometry.totalWidth * MIN_VISIBLE_FRACTION);
       if (drag.kind === 'resize-left') {
         const rightBase = drag.startBaselineWindow[1];
         const newLeftBase = drag.startBaselineWindow[0] + dxBase;
@@ -359,4 +352,3 @@ export function DefaultMinimap({
     </div>
   );
 }
-

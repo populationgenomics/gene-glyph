@@ -155,18 +155,20 @@ export class ViewportController implements Viewport {
    *  pair that makes that range fill the viewport `[0, width]`. Used by
    *  setRange / setMode / setWidth — the rare "set the view from a
    *  biological range" path, NOT the pan path. */
-  private solveZoomOffset(
-    range: readonly [number, number],
-  ): { zoomScale: number; displayOffset: number } {
+  private solveZoomOffset(range: readonly [number, number]): {
+    zoomScale: number;
+    displayOffset: number;
+  } {
     const bLo = this.rulerToBaselineXSeed(range[0] - 0.5);
     const bHi = this.rulerToBaselineXSeed(range[1] + 0.5);
     return this.solveZoomOffsetFromBaselineWindow([bLo, bHi]);
   }
 
   /** Same as {@link solveZoomOffset} but already in baseline-x. */
-  private solveZoomOffsetFromBaselineWindow(
-    window: readonly [number, number],
-  ): { zoomScale: number; displayOffset: number } {
+  private solveZoomOffsetFromBaselineWindow(window: readonly [number, number]): {
+    zoomScale: number;
+    displayOffset: number;
+  } {
     const [bLo, bHi] = window;
     const baseline = this.baselineGeometry();
     // Solve: viewport `width` = zoomScale × visibleFlexFigure + visibleFixedDisplay.
@@ -228,9 +230,7 @@ export class ViewportController implements Viewport {
     if (bHi > lastX) visibleFlex += bHi - Math.max(bLo, lastX);
 
     const zoomScale =
-      visibleFlex > 0
-        ? Math.max(1e-9, (this._width - visibleFixed) / visibleFlex)
-        : 1;
+      visibleFlex > 0 ? Math.max(1e-9, (this._width - visibleFixed) / visibleFlex) : 1;
     // Once we know the zoom, the static layout is fixed; find the display
     // offset that puts bLo at viewport-x 0.
     const tmpFrame = this.makeFrame(zoomScale, 0);
@@ -273,10 +273,7 @@ export class ViewportController implements Viewport {
   get range(): readonly [number, number] {
     if (this._rangeCache) return this._rangeCache;
     const [sLo, sHi] = this.baselineWindow();
-    this._rangeCache = [
-      this.baselineXToRuler(sLo) + 0.5,
-      this.baselineXToRuler(sHi) - 0.5,
-    ];
+    this._rangeCache = [this.baselineXToRuler(sLo) + 0.5, this.baselineXToRuler(sHi) - 0.5];
     return this._rangeCache;
   }
 
@@ -346,7 +343,12 @@ export class ViewportController implements Viewport {
   }
 
   /** Per-inter-exon-gap display-x extents at the current zoom. */
-  currentGapLayout(): ReadonlyArray<{ exonIdxA: number; exonIdxB: number; xStart: number; xEnd: number }> {
+  currentGapLayout(): ReadonlyArray<{
+    exonIdxA: number;
+    exonIdxB: number;
+    xStart: number;
+    xEnd: number;
+  }> {
     return this.baselineGeometry().gaps.map((g) => ({
       exonIdxA: g.exonIdxA,
       exonIdxB: g.exonIdxB,
@@ -430,8 +432,7 @@ export class ViewportController implements Viewport {
     if (zoomScale === this._zoomScale) return;
     const anchor = anchorDisplayX ?? this._width / 2;
     // Baseline-x under the anchor at the current zoom.
-    const baselineAtAnchor =
-      this.frame().currentToBaseline(anchor) ?? 0;
+    const baselineAtAnchor = this.frame().currentToBaseline(anchor) ?? 0;
     this._zoomScale = Math.max(1e-9, zoomScale);
     this._frame = null;
     // Choose offset so the same baselineAtAnchor lands back under
@@ -640,9 +641,8 @@ export class ViewportController implements Viewport {
     const exons = this.mapper.transcript.exons;
     const nGaps = Math.max(0, exons.length - 1);
     const gapBudget = this._width * GAP_BUDGET_FRACTION;
-    const naturalGapPx = nGaps > 0
-      ? Math.max(MIN_GAP_PX, Math.min(PREF_GAP_PX, gapBudget / nGaps))
-      : 0;
+    const naturalGapPx =
+      nGaps > 0 ? Math.max(MIN_GAP_PX, Math.min(PREF_GAP_PX, gapBudget / nGaps)) : 0;
 
     if (this._mode === 'protein') {
       return this.computeProteinBaseline(exons);
@@ -677,8 +677,7 @@ export class ViewportController implements Viewport {
     let linearBp = 0;
     for (const e of exons) {
       linearBp +=
-        (e.cdsEnd - e.cdsStart + 1) +
-        ((e.utr5Bp ?? 0) + (e.utr3Bp ?? 0)) * UTR_DISPLAY_SCALE;
+        e.cdsEnd - e.cdsStart + 1 + ((e.utr5Bp ?? 0) + (e.utr3Bp ?? 0)) * UTR_DISPLAY_SCALE;
     }
     let fixedBudgetPx = 0;
     let nLegacyGaps = 0; // introns with no flanks → legacy gap shape
@@ -842,16 +841,10 @@ export class ViewportController implements Viewport {
       let donorBp = 0;
       let acceptorBp = 0;
       for (const region of this._collapsedRegions) {
-        if (
-          region.start.cPos === upstream.cdsEnd &&
-          region.start.offset > 0
-        ) {
+        if (region.start.cPos === upstream.cdsEnd && region.start.offset > 0) {
           donorBp = Math.max(donorBp, region.start.offset - 1);
         }
-        if (
-          region.end.cPos === downstream.cdsStart &&
-          region.end.offset < 0
-        ) {
+        if (region.end.cPos === downstream.cdsStart && region.end.offset < 0) {
           acceptorBp = Math.max(acceptorBp, -region.end.offset - 1);
         }
       }
@@ -993,23 +986,18 @@ export class ViewportController implements Viewport {
     // inside the adjacent exon groups (rendered separately by
     // exon-track). Lookup flanks-by-intron so we can offset the
     // publication into the bulk.
-    const flanksByIntron = geom.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
+    const flanksByIntron =
+      geom.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
     for (const gap of geom.gaps) {
       const flanks = flanksByIntron.get(gap.exonIdxA) ?? { donor: 0, acceptor: 0 };
       const bulkBaselineStart = gap.xStart + flanks.donor;
-      const bulkBaselineWidth = Math.max(
-        0,
-        gap.width - flanks.donor - flanks.acceptor,
-      );
+      const bulkBaselineWidth = Math.max(0, gap.width - flanks.donor - flanks.acceptor);
       const gapCurrentX = frame.baselineToCurrent(bulkBaselineStart) ?? 0;
       s.setProperty(`--vv-intron-x-${gap.exonIdxA}`, `${gapCurrentX}px`);
       // intron scale-x = intronScale (not multiplied by zoom): the inter-exon
       // `<g>` carries the polyline at baseline gap width; in transcript or
       // protein modes intronScale = 0 collapses it to zero.
-      s.setProperty(
-        `--vv-intron-scale-x-${gap.exonIdxA}`,
-        this._intronScale.toString(),
-      );
+      s.setProperty(`--vv-intron-scale-x-${gap.exonIdxA}`, this._intronScale.toString());
       s.setProperty(`--vv-intron-w-${gap.exonIdxA}`, `${bulkBaselineWidth}px`);
     }
   }
@@ -1459,7 +1447,11 @@ function snapRightEdge(exonRects: ExonBaseline[], width: number): void {
   }
 }
 
-function exonicToCds(exon: { cdsStart: number; genomicStart: number; genomicEnd: number }, pos: number, strand: '+' | '-'): number {
+function exonicToCds(
+  exon: { cdsStart: number; genomicStart: number; genomicEnd: number },
+  pos: number,
+  strand: '+' | '-',
+): number {
   return strand === '+'
     ? exon.cdsStart + (pos - exon.genomicStart)
     : exon.cdsStart + (exon.genomicEnd - pos);

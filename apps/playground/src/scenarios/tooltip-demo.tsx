@@ -60,10 +60,9 @@ export function TooltipDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-tooltips">
       <h2 id="scenario-tooltips">Overlay tooltips — TP53</h2>
       <p className="scenario-blurb">
-        Hover a variant or domain to surface its tooltip. Toggle to compare the
-        viewer's built-in label tooltip with a host-supplied{' '}
-        <code>renderTooltip</code> that pulls richer detail from the resolved
-        feature.
+        Hover a variant or domain to surface its tooltip. Toggle to compare the viewer's built-in
+        label tooltip with a host-supplied <code>renderTooltip</code> that pulls richer detail from
+        the resolved feature.
       </p>
       <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: '0.85rem' }}>
         <input

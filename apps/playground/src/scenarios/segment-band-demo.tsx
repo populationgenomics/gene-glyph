@@ -1,10 +1,5 @@
 import { useRef, useState } from 'react';
-import {
-  GeneGlyph,
-  exonTrack,
-  scaleTrack,
-  segmentBandTrack,
-} from '@populationgenomics/gene-glyph';
+import { GeneGlyph, exonTrack, scaleTrack, segmentBandTrack } from '@populationgenomics/gene-glyph';
 import type { GeneGlyphRef, ViewMode } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
 
@@ -22,13 +17,7 @@ import { TP53_PROTEIN, TP53_TRANSCRIPT } from '../fixtures/tp53.js';
  * source data differ.
  */
 type NmdCategory = 'escape' | 'sensitive';
-type RmcCategory =
-  | 'intol-1'
-  | 'intol-2'
-  | 'intol-3'
-  | 'intol-4'
-  | 'intol-5'
-  | 'not-significant';
+type RmcCategory = 'intol-1' | 'intol-2' | 'intol-3' | 'intol-4' | 'intol-5' | 'not-significant';
 type SsCategory = 'helix' | 'sheet' | 'loop';
 
 const NMD_PALETTE: Record<NmdCategory, string> = {
@@ -106,10 +95,9 @@ export function SegmentBandDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-segment-band">
       <h2 id="scenario-segment-band">Segment band track — TP53</h2>
       <p className="scenario-blurb">
-        One factory, three palettes. The NMD-escape strip uses CDS coords;
-        the Regional Missense Constraint and secondary-structure strips
-        sit on the protein axis. All three stay aligned under mode
-        changes, pan, and zoom.
+        One factory, three palettes. The NMD-escape strip uses CDS coords; the Regional Missense
+        Constraint and secondary-structure strips sit on the protein axis. All three stay aligned
+        under mode changes, pan, and zoom.
       </p>
       <div
         role="group"

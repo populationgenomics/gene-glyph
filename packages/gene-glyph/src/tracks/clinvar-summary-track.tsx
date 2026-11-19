@@ -137,9 +137,7 @@ export function clinVarSummaryTrack(
         const out = new Float32Array(binCount);
         const get = (i: number) => (i < 0 || i >= binCount ? 0 : raw[i]!);
         for (let i = 0; i < binCount; i++) {
-          out[i] =
-            (get(i - 2) + 4 * get(i - 1) + 6 * get(i) + 4 * get(i + 1) + get(i + 2)) /
-            16;
+          out[i] = (get(i - 2) + 4 * get(i - 1) + 6 * get(i) + 4 * get(i + 1) + get(i + 2)) / 16;
         }
         return out;
       };
@@ -177,8 +175,7 @@ export function clinVarSummaryTrack(
         if (!spline) return null;
         const last = points[points.length - 1]!;
         const first = points[0]!;
-        const area =
-          spline + ` L ${last.x} ${baseline} L ${first.x} ${baseline} Z`;
+        const area = spline + ` L ${last.x} ${baseline} L ${first.x} ${baseline} Z`;
         return { area, line: spline };
       };
 
@@ -205,11 +202,12 @@ export function clinVarSummaryTrack(
         { raw: benRaw, smoothed: benS, sig: 'benign' },
       ];
       const activeBuckets = allBuckets.filter(({ raw }) => hasOwn(raw));
-      const directionalBuckets = activeBuckets.filter(({ sig }) =>
-        sig === 'pathogenic' ||
-        sig === 'likely_pathogenic' ||
-        sig === 'likely_benign' ||
-        sig === 'benign',
+      const directionalBuckets = activeBuckets.filter(
+        ({ sig }) =>
+          sig === 'pathogenic' ||
+          sig === 'likely_pathogenic' ||
+          sig === 'likely_benign' ||
+          sig === 'benign',
       );
 
       // Single-ribbon mode: render a lone directional bucket if present, or
@@ -218,10 +216,7 @@ export function clinVarSummaryTrack(
       let soloBucket: (typeof activeBuckets)[number] | null = null;
       if (directionalBuckets.length === 1) {
         soloBucket = directionalBuckets[0]!;
-      } else if (
-        directionalBuckets.length === 0 &&
-        activeBuckets.length === 1
-      ) {
+      } else if (directionalBuckets.length === 0 && activeBuckets.length === 1) {
         soloBucket = activeBuckets[0]!;
       }
 
@@ -421,9 +416,10 @@ function buildSmoothSpline(
     // 'above' = curve sits above the baseline (smaller y in SVG); prevent
     // control points dipping below it. 'below' = mirror: curve sits below,
     // prevent control points rising above it.
-    const clamp = clampSide === 'above'
-      ? (y: number) => Math.min(yBaseline, y)
-      : (y: number) => Math.max(yBaseline, y);
+    const clamp =
+      clampSide === 'above'
+        ? (y: number) => Math.min(yBaseline, y)
+        : (y: number) => Math.max(yBaseline, y);
     const clampCp1y = clamp(cp1y);
     const clampCp2y = clamp(cp2y);
 

@@ -12,10 +12,7 @@ import {
   placeClinVarRecords,
   type ClinVarRecord,
 } from './clinvar-track.js';
-import {
-  decipherClinVarSymbolEncoding,
-  defaultClinVarSymbolEncoding,
-} from '../symbol-encoding.js';
+import { decipherClinVarSymbolEncoding, defaultClinVarSymbolEncoding } from '../symbol-encoding.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -34,7 +31,13 @@ const records: ClinVarRecord[] = [
   { id: 'cv-2', label: 'c.12C>T', chr: 'chr1', pos: 1011, significance: 'uncertain_significance' },
   { id: 'cv-3', label: 'c.14A>G', chr: 'chr1', pos: 1013, significance: 'likely_benign' },
   { id: 'cv-4', label: 'c.150G>A', chr: 'chr1', pos: 2049, significance: 'benign' },
-  { id: 'cv-intronic', label: 'c.100+5T>C', chr: 'chr1', pos: 1104, significance: 'uncertain_significance' },
+  {
+    id: 'cv-intronic',
+    label: 'c.100+5T>C',
+    chr: 'chr1',
+    pos: 1104,
+    significance: 'uncertain_significance',
+  },
   { id: 'cv-oob', label: 'far away', chr: 'chr1', pos: 999999, significance: 'other' },
 ];
 
@@ -57,9 +60,7 @@ describe('placeClinVarRecords', () => {
     expect(placed.map((p) => p.record.id)).toEqual(
       expect.arrayContaining(['cv-1', 'cv-2', 'cv-3', 'cv-4']),
     );
-    expect(unplaced.map((r) => r.id)).toEqual(
-      expect.arrayContaining(['cv-intronic', 'cv-oob']),
-    );
+    expect(unplaced.map((r) => r.id)).toEqual(expect.arrayContaining(['cv-intronic', 'cv-oob']));
   });
 
   describe('multi-bp spans', () => {
@@ -77,7 +78,14 @@ describe('placeClinVarRecords', () => {
         // Exon 1: c.1–100 at genomic 2900–2999 (transcript-5')
         { number: 1, cdsStart: 1, cdsEnd: 100, genomicStart: 2900, genomicEnd: 2999, chr: 'chr1' },
         // Exon 2: c.101–200 at genomic 1900–1999
-        { number: 2, cdsStart: 101, cdsEnd: 200, genomicStart: 1900, genomicEnd: 1999, chr: 'chr1' },
+        {
+          number: 2,
+          cdsStart: 101,
+          cdsEnd: 200,
+          genomicStart: 1900,
+          genomicEnd: 1999,
+          chr: 'chr1',
+        },
         // Exon 3: c.201–300 at genomic 900–999 (transcript-3')
         { number: 3, cdsStart: 201, cdsEnd: 300, genomicStart: 900, genomicEnd: 999, chr: 'chr1' },
       ],
@@ -105,7 +113,10 @@ describe('placeClinVarRecords', () => {
       const rec: ClinVarRecord = {
         id: 'cv-multibp-exonic',
         label: 'c.101_105del',
-        chr: 'chr1', pos: 1995, refLen: 5, significance: 'pathogenic',
+        chr: 'chr1',
+        pos: 1995,
+        refLen: 5,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -125,7 +136,10 @@ describe('placeClinVarRecords', () => {
       const rec: ClinVarRecord = {
         id: 'cv-multibp-flank',
         label: 'c.101-3_105del',
-        chr: 'chr1', pos: 1995, refLen: 8, significance: 'pathogenic',
+        chr: 'chr1',
+        pos: 1995,
+        refLen: 8,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -143,7 +157,10 @@ describe('placeClinVarRecords', () => {
       const rec: ClinVarRecord = {
         id: 'cv-multibp-overshoot',
         label: 'c.101-20_105del',
-        chr: 'chr1', pos: 1995, refLen: 25, significance: 'pathogenic',
+        chr: 'chr1',
+        pos: 1995,
+        refLen: 25,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -170,7 +187,10 @@ describe('placeClinVarRecords', () => {
       const rec: ClinVarRecord = {
         id: 'cv-intronic-transcript-mode',
         label: 'c.101-20_105del',
-        chr: 'chr1', pos: 1995, refLen: 25, significance: 'pathogenic',
+        chr: 'chr1',
+        pos: 1995,
+        refLen: 25,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -191,8 +211,11 @@ describe('placeClinVarRecords', () => {
       // flags the off-figure overshoot.
       const rec: ClinVarRecord = {
         id: 'cv-past-transcript',
-        label: 'huge deletion past 5\' end',
-        chr: 'chr1', pos: 1990, refLen: 5000, significance: 'pathogenic',
+        label: "huge deletion past 5' end",
+        chr: 'chr1',
+        pos: 1990,
+        refLen: 5000,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -202,14 +225,14 @@ describe('placeClinVarRecords', () => {
       expect(p.endBaselineX).toBeGreaterThan(p.baselineX);
     });
 
-    it('past-transcript overshoot extends through the visible 5\'UTR cap when utr5Bp is set', () => {
+    it("past-transcript overshoot extends through the visible 5'UTR cap when utr5Bp is set", () => {
       // Same fixture, but exon 0 carries a 50bp 5'UTR. The
       // synthesised anchor now sits at cPos = 1 - 50 = -49 (the
       // outermost visible position) so the line covers the whole
       // visible UTR cap, not just the CDS.
       const txWithUtr: Transcript = {
         ...minusStrand,
-        exons: minusStrand.exons.map((e, i) => i === 0 ? { ...e, utr5Bp: 50 } : e),
+        exons: minusStrand.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 50 } : e)),
       };
       const mapper = createCoordinateMapper(txWithUtr);
       const viewport = new ViewportController({
@@ -220,8 +243,11 @@ describe('placeClinVarRecords', () => {
       });
       const rec: ClinVarRecord = {
         id: 'cv-past-transcript-utr',
-        label: 'huge deletion past 5\' UTR',
-        chr: 'chr1', pos: 1990, refLen: 5000, significance: 'pathogenic',
+        label: "huge deletion past 5' UTR",
+        chr: 'chr1',
+        pos: 1990,
+        refLen: 5000,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -242,7 +268,10 @@ describe('placeClinVarRecords', () => {
       const rec: ClinVarRecord = {
         id: 'cv-multibp-crossexon',
         label: 'c.1_110del',
-        chr: 'chr1', pos: 1990, refLen: 1010, significance: 'pathogenic',
+        chr: 'chr1',
+        pos: 1990,
+        refLen: 1010,
+        significance: 'pathogenic',
       };
       const { placed } = placeClinVarRecords([rec], viewport, mapper);
       expect(placed).toHaveLength(1);
@@ -423,9 +452,7 @@ describe('clinVarTrack', () => {
       </svg>
     );
     const { container } = render(<Probe />);
-    const single = container.querySelector<SVGGElement>(
-      '.vv-clinvar-mark:not(.is-cluster)',
-    )!;
+    const single = container.querySelector<SVGGElement>('.vv-clinvar-mark:not(.is-cluster)')!;
     expect(single).not.toBeNull();
     act(() => fireEvent.click(single));
     expect(onFeatureClick).toHaveBeenCalledWith('cv-4');

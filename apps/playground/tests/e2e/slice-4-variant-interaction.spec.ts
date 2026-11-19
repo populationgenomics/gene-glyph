@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Slice 4 — variant track + interaction (RD-1063)', () => {
-  test('hover on a host table row lifts the matching variant tick; click toggles the selection ring', async ({ page }) => {
+  test('hover on a host table row lifts the matching variant tick; click toggles the selection ring', async ({
+    page,
+  }) => {
     await page.goto('/');
     const scenario = page.locator('section[aria-labelledby="scenario-paper-report"]');
     const figure = scenario.locator('svg.vv-figure');
@@ -26,9 +28,13 @@ test.describe('Slice 4 — variant track + interaction (RD-1063)', () => {
     await expect(figure.locator('.vv-variant.is-selected')).toHaveCount(1);
   });
 
-  test('variants that cannot project (intronic, out-of-bounds) appear in the unplaced chip row', async ({ page }) => {
+  test('variants that cannot project (intronic, out-of-bounds) appear in the unplaced chip row', async ({
+    page,
+  }) => {
     await page.goto('/');
-    const below = page.locator('section[aria-labelledby="scenario-paper-report"] [data-testid="gene-glyph-below"]');
+    const below = page.locator(
+      'section[aria-labelledby="scenario-paper-report"] [data-testid="gene-glyph-below"]',
+    );
     await expect(below).toBeVisible();
     await expect(below.locator('.vv-unplaced-chip')).not.toHaveCount(0);
   });

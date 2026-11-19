@@ -133,8 +133,7 @@ test.describe('Slice 16 — brush selection', () => {
     const fig = await figure(s);
     const box = await fig.boundingBox();
     if (!box) throw new Error('figure not visible');
-    const zoomText = () =>
-      s.locator('span[title^="Range"]').textContent();
+    const zoomText = () => s.locator('span[title^="Range"]').textContent();
     const zoomBefore = await zoomText();
     await shiftDrag(page, fig, box.width * 0.25, box.width * 0.5, 0);
     const selectionBtn = s.locator('[data-testid="zoom-to-selection"]');

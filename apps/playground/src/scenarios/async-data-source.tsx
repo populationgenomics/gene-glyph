@@ -77,11 +77,10 @@ export function AsyncDataSourceScenario() {
     <section className="scenario" aria-labelledby="scenario-async">
       <h2 id="scenario-async">Async data source — shared cache</h2>
       <p className="scenario-blurb">
-        Two variant tracks share one <code>DataSource</code> instance with a
-        simulated network delay. Pan or zoom the figure to trigger a
-        debounced re-fetch — the shimmer marks loading tracks, existing
-        features desaturate during the debounce, and only one query fires
-        per unique viewport window thanks to <code>createCachedDataSource</code>.
+        Two variant tracks share one <code>DataSource</code> instance with a simulated network
+        delay. Pan or zoom the figure to trigger a debounced re-fetch — the shimmer marks loading
+        tracks, existing features desaturate during the debounce, and only one query fires per
+        unique viewport window thanks to <code>createCachedDataSource</code>.
       </p>
       <div
         style={{

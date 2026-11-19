@@ -3,11 +3,7 @@ import { render } from '@testing-library/react';
 import { createCoordinateMapper } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
 import { ViewportController } from '../viewport.js';
-import type {
-  InteractionState,
-  Transcript,
-  ViewerVariant,
-} from '../types.js';
+import type { InteractionState, Transcript, ViewerVariant } from '../types.js';
 import { variantSummaryTrack } from './variant-summary-track.js';
 
 const transcript: Transcript = {
@@ -25,7 +21,12 @@ const transcript: Transcript = {
 const variants: ViewerVariant[] = [
   { id: 'v1', label: 'V1', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
   { id: 'v2', label: 'V2', coord: { kind: 'cds', cPos: 150, offset: 0 }, category: 'nonsense' },
-  { id: 'v3-intronic', label: 'V3', coord: { kind: 'cds', cPos: 100, offset: 5 }, category: 'splice' },
+  {
+    id: 'v3-intronic',
+    label: 'V3',
+    coord: { kind: 'cds', cPos: 100, offset: 5 },
+    category: 'splice',
+  },
 ];
 
 function emptyInteraction(): InteractionState {
@@ -86,9 +87,7 @@ describe('variantSummaryTrack', () => {
     expect(ticks).toHaveLength(2);
     const ids = [...ticks].map((t) => t.getAttribute('data-vv-feature-id')).sort();
     expect(ids).toEqual(['v1', 'v2']);
-    const categories = [...ticks]
-      .map((t) => t.getAttribute('data-vv-category'))
-      .sort();
+    const categories = [...ticks].map((t) => t.getAttribute('data-vv-category')).sort();
     expect(categories).toEqual(['missense', 'nonsense']);
   });
 

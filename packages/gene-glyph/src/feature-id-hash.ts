@@ -29,9 +29,7 @@ export function fnv1a32Hex(input: string): string {
  *  of canonical ids they want to round-trip through the URL; the
  *  resolver tries the raw URL value first (backward compat) and falls
  *  back to looking the hash up here. */
-export function buildFeatureIdHashMap(
-  ids: Iterable<string>,
-): Map<string, string> {
+export function buildFeatureIdHashMap(ids: Iterable<string>): Map<string, string> {
   const out = new Map<string, string>();
   for (const id of ids) out.set(fnv1a32Hex(id), id);
   return out;
@@ -43,10 +41,7 @@ export function buildFeatureIdHashMap(
  *  keep working; only if that misses do we fall back to the hash
  *  table. Returns `null` when neither path matches — selection is
  *  silently dropped. */
-export function resolveSelectedId(
-  urlValue: string,
-  knownIds: Iterable<string>,
-): string | null {
+export function resolveSelectedId(urlValue: string, knownIds: Iterable<string>): string | null {
   const trimmed = urlValue.trim();
   if (!trimmed) return null;
   const knownSet = new Set(knownIds);

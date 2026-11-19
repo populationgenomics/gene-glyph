@@ -244,7 +244,8 @@ function setIfMeaningful(el: SVGElement, name: string, value: string | null | un
     return;
   }
   if (v === 'normal' && (name === 'font-style' || name === 'font-weight')) return;
-  if (v === '1' && (name === 'opacity' || name === 'fill-opacity' || name === 'stroke-opacity')) return;
+  if (v === '1' && (name === 'opacity' || name === 'fill-opacity' || name === 'stroke-opacity'))
+    return;
   if (v === 'rgba(0, 0, 0, 0)' && name === 'fill') {
     el.setAttribute(name, 'none');
     return;
@@ -313,11 +314,7 @@ function readBackgroundColor(svg: SVGSVGElement, win: Window): string | null {
   return value;
 }
 
-function finalizeRoot(
-  svg: SVGSVGElement,
-  doc: Document,
-  args: RootFinalizeArgs,
-): void {
+function finalizeRoot(svg: SVGSVGElement, doc: Document, args: RootFinalizeArgs): void {
   svg.setAttribute('xmlns', SVG_NS);
   svg.setAttribute('xmlns:xlink', XLINK_NS);
 
