@@ -92,10 +92,7 @@ describe('parseUserVariant — rejected forms', () => {
 describe('parseUserVariants — list input', () => {
   it('parses a comma-separated list', () => {
     const r = parseUserVariants('17-7674212-C-A,17:7674220C>T');
-    expect(r.parsed.map((p) => p.id)).toEqual([
-      '17-7674212-C-A',
-      '17-7674220-C-T',
-    ]);
+    expect(r.parsed.map((p) => p.id)).toEqual(['17-7674212-C-A', '17-7674220-C-T']);
     expect(r.errors).toEqual([]);
   });
 

@@ -100,7 +100,12 @@ describe('nucleotideTrack', () => {
   it('renders one letter per visible CDS bp with the correct fill', async () => {
     const { mapper, viewport, painter, interaction } = setup(tinyGene);
     const t = nucleotideTrack({ source: 'ACGTACGTACGT' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -121,7 +126,7 @@ describe('nucleotideTrack', () => {
     expect(letters[0]!.getAttribute('data-vv-nt')).toBe('A');
   });
 
-  it("renders nothing below the threshold even when load() has run", async () => {
+  it('renders nothing below the threshold even when load() has run', async () => {
     const longGene: Transcript = {
       geneSymbol: 'LONG',
       transcriptId: 'NM_LONG.1',
@@ -133,7 +138,12 @@ describe('nucleotideTrack', () => {
     };
     const { mapper, viewport, painter, interaction } = setup(longGene);
     const t = nucleotideTrack({ source: 'A'.repeat(600) });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -152,7 +162,12 @@ describe('nucleotideTrack', () => {
   it('renders nothing in protein mode', async () => {
     const { mapper, viewport, painter, interaction } = setup(tinyGene, 'protein');
     const t = nucleotideTrack({ source: 'ACGTACGTACGT' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -171,7 +186,12 @@ describe('nucleotideTrack', () => {
   it('letters land inside the per-exon group of their bp', async () => {
     const { mapper, viewport, painter, interaction } = setup(midGene);
     const t = nucleotideTrack({ source: 'A'.repeat(30) + 'C'.repeat(30) });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -200,7 +220,12 @@ describe('nucleotideTrack', () => {
   it('falls back to N for unknown letters in the source string', async () => {
     const { mapper, viewport, painter, interaction } = setup(tinyGene);
     const t = nucleotideTrack({ source: 'ACG?ACGTACGT' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -242,14 +267,10 @@ describe('nucleotideTrack', () => {
         })}
       </svg>,
     );
-    const flankLetters = [
-      ...container.querySelectorAll<SVGTextElement>('.vv-nt-letter-flank'),
-    ];
+    const flankLetters = [...container.querySelectorAll<SVGTextElement>('.vv-nt-letter-flank')];
     // 4 donor + 4 acceptor = 8 flank glyphs.
     expect(flankLetters.length).toBe(8);
-    const donor = flankLetters.filter(
-      (l) => l.getAttribute('data-vv-flank-side') === 'donor',
-    );
+    const donor = flankLetters.filter((l) => l.getAttribute('data-vv-flank-side') === 'donor');
     const acceptor = flankLetters.filter(
       (l) => l.getAttribute('data-vv-flank-side') === 'acceptor',
     );
@@ -329,7 +350,12 @@ describe('nucleotideTrack', () => {
       source: 'ACGTACGTACGT',
       palette: { A: '#abc123' },
     });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({

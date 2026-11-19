@@ -47,6 +47,7 @@ We use [Changesets](https://github.com/changesets/changesets).
 4. Merging that PR publishes to npm.
 
 Versioning:
+
 - **1.0.0** is the first tagged release — the lit-manager cutover (Slice 13)
   plus all post-cutover slice work. See [`CHANGELOG.md`](./CHANGELOG.md).
 - Strict semver from 1.0: additive features go in `1.x`; breaking API
@@ -125,7 +126,7 @@ The contract for a well-behaved track:
   the visual width doesn't change with zoom.
 - **Circles (variant dots, selection rings) need a counter-scale** — wrap
   them in a `<g>` with `transform: scaleX(calc(1 / var(--vv-exon-scale-x-{N},
-  1)))` so the horizontal scale of the parent exon group doesn't turn them
+1)))` so the horizontal scale of the parent exon group doesn't turn them
   into ellipses.
 - **Labels inside an exon group also need counter-scale** so the parent
   scaleX doesn't horizontally stretch the glyphs. The Pfam / InterPro tracks

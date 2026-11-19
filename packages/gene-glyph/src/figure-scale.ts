@@ -78,10 +78,7 @@ export interface FigureLayout {
  * offset and pass `displayX + offset` to {@link displayToFigure} (and
  * the inverse for figure → display).
  */
-export function layoutFigure(
-  pieces: readonly Piece[],
-  zoomScale: number,
-): FigureLayout {
+export function layoutFigure(pieces: readonly Piece[], zoomScale: number): FigureLayout {
   const n = pieces.length;
   const bounds = new Array<{ start: number; end: number }>(n);
   let cursor = 0;
@@ -204,7 +201,11 @@ export function piecesOverlappingDisplay(
   layout: FigureLayout,
   displayLo: number,
   displayHi: number,
-): readonly { readonly piece: Piece; readonly index: number; readonly bounds: { readonly start: number; readonly end: number } }[] {
+): readonly {
+  readonly piece: Piece;
+  readonly index: number;
+  readonly bounds: { readonly start: number; readonly end: number };
+}[] {
   const lo = Math.min(displayLo, displayHi);
   const hi = Math.max(displayLo, displayHi);
   const out: { piece: Piece; index: number; bounds: { start: number; end: number } }[] = [];
@@ -251,10 +252,7 @@ export function localScaleAtDisplay(layout: FigureLayout, displayX: number): num
  * Returns 1 if there's no flexible content (degenerate case — caller
  * should treat as a constant layout).
  */
-export function fitZoomScale(
-  pieces: readonly Piece[],
-  viewportWidth: number,
-): number {
+export function fitZoomScale(pieces: readonly Piece[], viewportWidth: number): number {
   let totalFlexFigure = 0;
   let totalFixedDisplay = 0;
   for (const p of pieces) {

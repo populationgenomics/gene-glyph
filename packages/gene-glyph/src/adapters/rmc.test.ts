@@ -4,10 +4,26 @@ import { parseAaStart, rmcCategoryFor, type RmcCategory } from './rmc.js';
 describe('parseAaStart', () => {
   it('parses every canonical three-letter amino-acid code', () => {
     const codes = [
-      'Ala', 'Arg', 'Asn', 'Asp', 'Cys',
-      'Glu', 'Gln', 'Gly', 'His', 'Ile',
-      'Leu', 'Lys', 'Met', 'Phe', 'Pro',
-      'Ser', 'Thr', 'Trp', 'Tyr', 'Val',
+      'Ala',
+      'Arg',
+      'Asn',
+      'Asp',
+      'Cys',
+      'Glu',
+      'Gln',
+      'Gly',
+      'His',
+      'Ile',
+      'Leu',
+      'Lys',
+      'Met',
+      'Phe',
+      'Pro',
+      'Ser',
+      'Thr',
+      'Trp',
+      'Tyr',
+      'Val',
     ];
     for (const c of codes) {
       expect(parseAaStart(`${c}42`)).toBe(42);

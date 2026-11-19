@@ -21,7 +21,14 @@ const transcript: Transcript = {
 
 const clinvarRecords: ClinVarRecord[] = [
   { id: 'cv-snv', label: 'c.50G>A', chr: 'chr1', pos: 1049, significance: 'pathogenic' },
-  { id: 'cv-del', label: 'c.50_53del', chr: 'chr1', pos: 1049, significance: 'pathogenic', refLen: 4 },
+  {
+    id: 'cv-del',
+    label: 'c.50_53del',
+    chr: 'chr1',
+    pos: 1049,
+    significance: 'pathogenic',
+    refLen: 4,
+  },
 ];
 
 async function flushTrackLoads() {
@@ -40,9 +47,7 @@ describe('Slice 35 — selection-range overlay', () => {
       />,
     );
     await flushTrackLoads();
-    expect(
-      container.querySelector('[data-testid="gene-glyph-selection-range"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="gene-glyph-selection-range"]')).toBeNull();
   });
 
   it('emits a vertical drop-line for SNV selection (zero-width range)', async () => {
@@ -105,8 +110,6 @@ describe('Slice 35 — selection-range overlay', () => {
       />,
     );
     await flushTrackLoads();
-    expect(
-      container.querySelector('[data-testid="gene-glyph-selection-range"]'),
-    ).toBeNull();
+    expect(container.querySelector('[data-testid="gene-glyph-selection-range"]')).toBeNull();
   });
 });

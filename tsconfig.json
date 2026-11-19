@@ -1,7 +1,4 @@
 {
   "files": [],
-  "references": [
-    { "path": "./packages/gene-glyph" },
-    { "path": "./apps/playground" }
-  ]
+  "references": [{ "path": "./packages/gene-glyph" }, { "path": "./apps/playground" }]
 }

@@ -28,7 +28,10 @@ const shortGene: Transcript = {
   ],
 };
 
-function setup(transcript: Transcript = tp53Like, mode: 'genome' | 'transcript' | 'protein' = 'genome') {
+function setup(
+  transcript: Transcript = tp53Like,
+  mode: 'genome' | 'transcript' | 'protein' = 'genome',
+) {
   const mapper = createCoordinateMapper(transcript);
   const viewport = new ViewportController({ mapper, width: 1000, mode });
   const painter = createSvgPainter({ mode: 'screen' });
@@ -146,7 +149,7 @@ describe('scaleTrack', () => {
     expect(proteinTrack?.getAttribute('data-vv-scale-unit')).toBe('aa');
   });
 
-  it("appends the unit suffix only to the last major label by default", () => {
+  it('appends the unit suffix only to the last major label by default', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = scaleTrack({});
     const { container } = render(
@@ -161,9 +164,9 @@ describe('scaleTrack', () => {
         })}
       </svg>,
     );
-    const labels = [
-      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
-    ].map((n) => n.textContent ?? '');
+    const labels = [...container.querySelectorAll<SVGTextElement>('.vv-scale-label')].map(
+      (n) => n.textContent ?? '',
+    );
     // The last label in DOM order may not equal the last ruler position
     // because labels emit per-exon; pick the one whose text ends with 'bp'.
     const suffixed = labels.filter((l) => /\bbp$/.test(l));
@@ -192,9 +195,9 @@ describe('scaleTrack', () => {
         })}
       </svg>,
     );
-    const labels = [
-      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
-    ].map((n) => n.textContent ?? '');
+    const labels = [...container.querySelectorAll<SVGTextElement>('.vv-scale-label')].map(
+      (n) => n.textContent ?? '',
+    );
     expect(labels.length).toBeGreaterThan(0);
     // Every label starts with the `chrN:` prefix; none have the c. prefix.
     expect(labels.every((l) => /^chr1:/.test(l))).toBe(true);
@@ -217,9 +220,9 @@ describe('scaleTrack', () => {
         })}
       </svg>,
     );
-    const labels = [
-      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
-    ].map((n) => n.textContent ?? '');
+    const labels = [...container.querySelectorAll<SVGTextElement>('.vv-scale-label')].map(
+      (n) => n.textContent ?? '',
+    );
     expect(labels.length).toBeGreaterThan(0);
     expect(labels.every((l) => !/^chr/.test(l))).toBe(true);
   });
@@ -239,9 +242,9 @@ describe('scaleTrack', () => {
         })}
       </svg>,
     );
-    const labels = [
-      ...container.querySelectorAll<SVGTextElement>('.vv-scale-label'),
-    ].map((n) => n.textContent ?? '');
+    const labels = [...container.querySelectorAll<SVGTextElement>('.vv-scale-label')].map(
+      (n) => n.textContent ?? '',
+    );
     expect(labels.every((l) => !/\b(bp|aa)$/.test(l))).toBe(true);
   });
 

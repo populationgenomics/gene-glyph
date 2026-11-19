@@ -46,9 +46,8 @@ export function SequenceTracksScenario() {
     <section className="scenario" aria-labelledby="scenario-sequence">
       <h2 id="scenario-sequence">Sequence ladder — TP53 hotspots</h2>
       <p className="scenario-blurb">
-        Nucleotide + amino-acid letters appear under the exon ribbon
-        once zoom crosses the readability threshold (~8 px/bp,
-        ~14 px/aa). Click a hotspot to zoom in on a known TP53
+        Nucleotide + amino-acid letters appear under the exon ribbon once zoom crosses the
+        readability threshold (~8 px/bp, ~14 px/aa). Click a hotspot to zoom in on a known TP53
         cancer-driver codon.
       </p>
       <div

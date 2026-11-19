@@ -27,12 +27,30 @@ export type RmcCategory =
 
 const THREE_LETTER_CODES: ReadonlySet<string> = new Set([
   // 20 canonical amino acids
-  'Ala', 'Arg', 'Asn', 'Asp', 'Cys',
-  'Glu', 'Gln', 'Gly', 'His', 'Ile',
-  'Leu', 'Lys', 'Met', 'Phe', 'Pro',
-  'Ser', 'Thr', 'Trp', 'Tyr', 'Val',
+  'Ala',
+  'Arg',
+  'Asn',
+  'Asp',
+  'Cys',
+  'Glu',
+  'Gln',
+  'Gly',
+  'His',
+  'Ile',
+  'Leu',
+  'Lys',
+  'Met',
+  'Phe',
+  'Pro',
+  'Ser',
+  'Thr',
+  'Trp',
+  'Tyr',
+  'Val',
   // Termination + the two genetically encoded special cases.
-  'Ter', 'Sec', 'Pyl',
+  'Ter',
+  'Sec',
+  'Pyl',
 ]);
 
 /** Parse a gnomAD RMC `aa_start` / `aa_stop` string (e.g. `"Lys2009"`)

@@ -70,12 +70,7 @@ const DEFAULT_LABEL_FONT = 10;
 const DEFAULT_LABEL_PAD_PX = 12;
 
 const STEP_LADDER: readonly number[] = [
-  1, 2, 5,
-  10, 20, 50,
-  100, 200, 500,
-  1000, 2000, 5000,
-  10000, 20000, 50000,
-  100000, 200000, 500000,
+  1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000,
   1000000,
 ];
 
@@ -121,8 +116,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // so the track needs enough height to clear the longest label —
       // otherwise the figure SVG's `overflow: hidden` clips it.
       const baseline = viewport.baselineGeometry();
-      const hasFlanks =
-        viewport.mode === 'genome' && (baseline.flanks?.length ?? 0) > 0;
+      const hasFlanks = viewport.mode === 'genome' && (baseline.flanks?.length ?? 0) > 0;
       const px =
         labelRotation === 90 || hasFlanks
           ? Math.max(trackHeight, DEFAULT_ROTATED_HEIGHT)
@@ -142,8 +136,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // the rotation per-render so the whole track rotates together
       // (or stays together horizontal when no flanks are visible).
       const hasVisibleFlanks =
-        viewport.mode === 'genome' &&
-        (viewport.baselineGeometry().flanks?.length ?? 0) > 0;
+        viewport.mode === 'genome' && (viewport.baselineGeometry().flanks?.length ?? 0) > 0;
       const effectiveRotation = hasVisibleFlanks ? 90 : labelRotation;
       // Zoom-sensitive tick density: pick the step against the *live*
       // px-per-ruler-unit so the average on-screen spacing between major
@@ -155,10 +148,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // The legacy behaviour (step picked against the fit-gene baseline
       // and kept stable across zoom) is still available by passing an
       // explicit `majorStep` number rather than 'auto'.
-      const visibleRulerSpan = Math.max(
-        1,
-        viewport.range[1] - viewport.range[0],
-      );
+      const visibleRulerSpan = Math.max(1, viewport.range[1] - viewport.range[0]);
       const livePxPerUnit = viewport.width / visibleRulerSpan;
       const majorStep =
         majorStepConfig === 'auto'
@@ -171,9 +161,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // glyphs. When the major step is already 1, suppress minor
       // ticks entirely (every position is already a major).
       const minorStep =
-        minorSubdivisions > 0 && majorStep > 1
-          ? Math.max(1, majorStep / minorSubdivisions)
-          : 0;
+        minorSubdivisions > 0 && majorStep > 1 ? Math.max(1, majorStep / minorSubdivisions) : 0;
 
       // Ruler geometry inside the track band. Ticks hang downward from
       // the band's bottom; labels sit above the major tick height.
@@ -219,10 +207,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
           return labelFontSize / 2 / liveScale;
         }
         return (
-          (formatLabel(tick, unit, withSuffix, labelFormat, mapper).length *
-            charPx) /
-          2 /
-          liveScale
+          (formatLabel(tick, unit, withSuffix, labelFormat, mapper).length * charPx) / 2 / liveScale
         );
       };
       // Merge step-divisible candidates with exon-edge anchor ticks
@@ -262,9 +247,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
             majors.pop();
             const beforePrev = majors[majors.length - 1];
             lastBaselineX = beforePrev?.baselineX ?? -Infinity;
-            lastHalfWidth = beforePrev
-              ? halfWidthOf(beforePrev, false)
-              : 0;
+            lastHalfWidth = beforePrev ? halfWidthOf(beforePrev, false) : 0;
             // Fall through to the emit logic below.
           } else {
             continue;
@@ -295,9 +278,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       // tick survives as a major (and vice versa). Disambiguate by
       // including the intronic side+offset in the key for flank ticks.
       const keyOf = (t: TickRow): string =>
-        t.intronic
-          ? `i:${t.intronic.cPos}:${t.intronic.offset}`
-          : `e:${t.rulerPos}`;
+        t.intronic ? `i:${t.intronic.cPos}:${t.intronic.offset}` : `e:${t.rulerPos}`;
       const majorKeys = new Set(majors.map(keyOf));
       // Intronic ticks that didn't survive the major-crash walk fall
       // through to the minor row so every flank bp still gets a tick
@@ -315,8 +296,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
       const stroke = painter.color('vv-color-text-tertiary', '#94a3b8');
       const labelFill = painter.color('vv-color-text-secondary', '#475569');
 
-      const lastMajorPos =
-        majors.length > 0 ? majors[majors.length - 1]!.rulerPos : null;
+      const lastMajorPos = majors.length > 0 ? majors[majors.length - 1]!.rulerPos : null;
 
       const exonGroups: ReactNode[] = [];
       for (const [exonIdx, exon] of exonByIdx) {
@@ -356,13 +336,7 @@ export function scaleTrack(config: ScaleTrackConfig = {}): Track<ScaleTrackConfi
               {exonMajors.map((t) => {
                 const localX = t.baselineX - exon.xStart;
                 const isLast = lastMajorPos === t.rulerPos;
-                const label = formatLabel(
-                  t,
-                  unit,
-                  showSuffix && isLast,
-                  labelFormat,
-                  mapper,
-                );
+                const label = formatLabel(t, unit, showSuffix && isLast, labelFormat, mapper);
                 // The counter-scale wrap neutralises the exon group's
                 // scaleX so the text inside renders at natural size.
                 // For rotated labels the SVG `transform` attribute on
@@ -459,15 +433,9 @@ function rulerLengthForMode(viewport: Viewport): number {
 /** Pick the smallest ladder step whose label spacing meets the
  *  minimum pixel gap. Pathological short genes demote one rung at a
  *  time so the ruler still shows ≥ 1 tick. */
-export function pickAutoStep(
-  pxPerUnit: number,
-  minSpacingPx: number,
-  rulerLength: number,
-): number {
+export function pickAutoStep(pxPerUnit: number, minSpacingPx: number, rulerLength: number): number {
   const minStepUnits = pxPerUnit > 0 ? minSpacingPx / pxPerUnit : minSpacingPx;
-  let step =
-    STEP_LADDER.find((s) => s >= minStepUnits) ??
-    STEP_LADDER[STEP_LADDER.length - 1]!;
+  let step = STEP_LADDER.find((s) => s >= minStepUnits) ?? STEP_LADDER[STEP_LADDER.length - 1]!;
   while (step > 1 && rulerLength > 0 && rulerLength < step) {
     const idx = STEP_LADDER.indexOf(step);
     if (idx <= 0) break;
@@ -476,11 +444,7 @@ export function pickAutoStep(
   return step;
 }
 
-function collectTicks(
-  viewport: Viewport,
-  mapper: CoordinateMapper,
-  step: number,
-): TickRow[] {
+function collectTicks(viewport: Viewport, mapper: CoordinateMapper, step: number): TickRow[] {
   if (step <= 0) return [];
   const [lo, hi] = viewport.naturalRange();
   if (hi <= lo) return [];
@@ -504,10 +468,7 @@ function collectTicks(
  *  exon's cdsStart with a wide intronic gap in between. Genome mode
  *  only; transcript and protein hard-collapse introns so the spec is
  *  subsumed. The crash walk drops these at lower zoom levels naturally. */
-function collectIntronicTicks(
-  viewport: Viewport,
-  mapper: CoordinateMapper,
-): TickRow[] {
+function collectIntronicTicks(viewport: Viewport, mapper: CoordinateMapper): TickRow[] {
   if (viewport.mode !== 'genome') return [];
   const baseline = viewport.baselineGeometry();
   const flanks = baseline.flanks ?? [];
@@ -559,10 +520,7 @@ function collectIntronicTicks(
  *  guarantee the user always sees the boundary. The crash walk treats
  *  these as preferred — a step tick gets popped to make room for a
  *  colliding anchor. */
-function collectAnchorTicks(
-  viewport: Viewport,
-  mapper: CoordinateMapper,
-): TickRow[] {
+function collectAnchorTicks(viewport: Viewport, mapper: CoordinateMapper): TickRow[] {
   const rows: TickRow[] = [];
   const seen = new Set<number>();
   const push = (rulerPos: number, exonIdx: number): void => {
@@ -598,11 +556,7 @@ function roundedAdd(value: number, step: number): number {
   return Math.round((value + step) / step) * step;
 }
 
-function exonForRulerPos(
-  pos: number,
-  viewport: Viewport,
-  mapper: CoordinateMapper,
-): number | null {
+function exonForRulerPos(pos: number, viewport: Viewport, mapper: CoordinateMapper): number | null {
   if (viewport.mode === 'protein') {
     const cPos = mapper.proteinToCds(pos);
     const hit = mapper.findExonByCds(cPos);

@@ -155,11 +155,7 @@ describe('decipherConsequenceBucket', () => {
   });
 
   it('maps synonymous-class consequences to "synonymous"', () => {
-    for (const c of [
-      'synonymous_variant',
-      'stop_retained_variant',
-      'start_retained_variant',
-    ]) {
+    for (const c of ['synonymous_variant', 'stop_retained_variant', 'start_retained_variant']) {
       expect(decipherConsequenceBucket(c)).toBe('synonymous');
     }
   });

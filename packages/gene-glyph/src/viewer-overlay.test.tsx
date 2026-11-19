@@ -18,8 +18,18 @@ const transcript: Transcript = {
 };
 
 const variants: ViewerVariant[] = [
-  { id: 'v1', label: 'V1 label', coord: { kind: 'cds', cPos: 50, offset: 0 }, category: 'missense' },
-  { id: 'v2', label: 'V2 label', coord: { kind: 'cds', cPos: 250, offset: 0 }, category: 'nonsense' },
+  {
+    id: 'v1',
+    label: 'V1 label',
+    coord: { kind: 'cds', cPos: 50, offset: 0 },
+    category: 'missense',
+  },
+  {
+    id: 'v2',
+    label: 'V2 label',
+    coord: { kind: 'cds', cPos: 250, offset: 0 },
+    category: 'nonsense',
+  },
 ];
 
 async function flushTrackLoads() {
@@ -36,10 +46,24 @@ function stubScreenCtm(container: HTMLElement, width = 1000): void {
   const svg = container.querySelector<SVGSVGElement>('svg.vv-figure')!;
   const wrap = container.querySelector<HTMLDivElement>('.vv-figure-wrap')!;
   wrap.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, left: 0, top: 0, right: width, bottom: 60, width, height: 60, toJSON: () => ({}) }) as DOMRect;
+    ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: 60,
+      width,
+      height: 60,
+      toJSON: () => ({}),
+    }) as DOMRect;
   const fakeCtm = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
   svg.createSVGPoint = () => {
-    const obj: { x: number; y: number; matrixTransform: (m: typeof fakeCtm) => { x: number; y: number } } = {
+    const obj: {
+      x: number;
+      y: number;
+      matrixTransform: (m: typeof fakeCtm) => { x: number; y: number };
+    } = {
       x: 0,
       y: 0,
       matrixTransform(m) {
@@ -60,9 +84,7 @@ async function tickRaf(): Promise<void> {
 
 describe('GeneGlyph — Slice 17 overlay tooltips', () => {
   it('renders an empty overlay layer as a sibling of the figure SVG by default', async () => {
-    const { container } = render(
-      <GeneGlyph transcript={transcript} tracks={[exonTrack({})]} />,
-    );
+    const { container } = render(<GeneGlyph transcript={transcript} tracks={[exonTrack({})]} />);
     await flushTrackLoads();
     const overlay = container.querySelector('[data-testid="gene-glyph-overlay-layer"]')!;
     expect(overlay).not.toBeNull();
@@ -99,7 +121,11 @@ describe('GeneGlyph — Slice 17 overlay tooltips', () => {
   it('uses host-supplied renderTooltip when provided', async () => {
     const renderTooltip = vi.fn((args: TooltipRenderArgs) => {
       const v = args.feature as ViewerVariant;
-      return <span data-testid="custom-tip">{v.id}/{v.category}</span>;
+      return (
+        <span data-testid="custom-tip">
+          {v.id}/{v.category}
+        </span>
+      );
     });
     const { container } = render(
       <GeneGlyph

@@ -176,12 +176,8 @@ export function EmbedView() {
       : { kind: 'error', message: 'Missing ?transcript=ENST… query parameter.' },
   );
   const [selectedId, setSelectedId] = useState<string | null>(initial.selectedId);
-  const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(
-    initial.excludedSigs,
-  );
-  const [excludedStars, setExcludedStars] = useState<ReadonlySet<StarLevel>>(
-    initial.excludedStars,
-  );
+  const [excluded, setExcluded] = useState<ReadonlySet<ClinVarSignificance>>(initial.excludedSigs);
+  const [excludedStars, setExcludedStars] = useState<ReadonlySet<StarLevel>>(initial.excludedStars);
   const [excludedTypes, setExcludedTypes] = useState<ReadonlySet<VariantType>>(
     initial.excludedTypes,
   );
@@ -461,10 +457,7 @@ export function EmbedView() {
   // raw form first and falls back to hashing.
   const resolvedSelectedId = useMemo(() => {
     if (!selectedId) return null;
-    const ids = [
-      ...records.map((r) => r.id),
-      ...allUserVariants.map((v) => v.id),
-    ];
+    const ids = [...records.map((r) => r.id), ...allUserVariants.map((v) => v.id)];
     return resolveSelectedId(selectedId, ids);
   }, [selectedId, records, allUserVariants]);
   // Promote the URL-hash form to its canonical id as soon as the data
@@ -494,7 +487,10 @@ export function EmbedView() {
     if (density !== 'normal') p.set('density', density);
     if (excluded.size > 0) p.set('excluded', csvSorted(excluded));
     if (excludedStars.size > 0)
-      p.set('excludedStars', csvSorted(excludedStars, (a, b) => a - b));
+      p.set(
+        'excludedStars',
+        csvSorted(excludedStars, (a, b) => a - b),
+      );
     if (excludedTypes.size > 0) p.set('excludedTypes', csvSorted(excludedTypes));
     // Slice 35: round-trip selection through a short FNV-1a hash so
     // long deletion ids (`11-5226947-ACCT…CCTGC-A`) don't drag the
@@ -561,8 +557,7 @@ export function EmbedView() {
   ) => {
     if (e.shiftKey) {
       const others = all.filter((x) => x !== val);
-      const alreadySoloed =
-        !excluded.has(val) && others.every((x) => excluded.has(x));
+      const alreadySoloed = !excluded.has(val) && others.every((x) => excluded.has(x));
       setExcluded(alreadySoloed ? new Set() : new Set(others));
       return;
     }
@@ -721,9 +716,7 @@ export function EmbedView() {
     return (
       <div>
         <div style={{ fontWeight: 600 }}>{r.label}</div>
-        {meta.hgvsp && (
-          <div style={{ opacity: 0.85, fontSize: '0.72rem' }}>{meta.hgvsp}</div>
-        )}
+        {meta.hgvsp && <div style={{ opacity: 0.85, fontSize: '0.72rem' }}>{meta.hgvsp}</div>}
         <div style={{ opacity: 0.75, fontSize: '0.72rem' }}>
           {humanSig(r.significance)}
           {typeof meta.goldStars === 'number'
@@ -733,9 +726,7 @@ export function EmbedView() {
         {meta.majorConsequence && (
           <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{meta.majorConsequence}</div>
         )}
-        {r.reviewStatus && (
-          <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.reviewStatus}</div>
-        )}
+        {r.reviewStatus && <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.reviewStatus}</div>}
       </div>
     );
   };
@@ -783,124 +774,116 @@ export function EmbedView() {
           className="embed-card embed-card-filters"
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-          <header
-            style={{
-              fontSize: '0.78rem',
-              fontWeight: 600,
-              color: 'var(--embed-text-secondary)',
-              marginBottom: 6,
-              letterSpacing: 0.2,
-            }}
-          >
-            ClinVar filters
-            <span
+            <header
               style={{
-                marginLeft: 8,
-                fontWeight: 400,
-                opacity: 0.65,
-                fontStyle: 'italic',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                color: 'var(--embed-text-secondary)',
+                marginBottom: 6,
+                letterSpacing: 0.2,
               }}
             >
-              shift-click to solo within a row
-            </span>
-          </header>
-          <div
-            data-testid="embed-significance-filter"
-            style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              margin: '4px 0',
-              color: 'var(--embed-text-secondary)',
-            }}
-          >
-            <span style={{ opacity: 0.75, minWidth: 80 }}>significance:</span>
-            {SIGNIFICANCE_CHIPS.map((sig) => {
-              const active = !excluded.has(sig);
-              return (
-                <button
-                  key={sig}
-                  type="button"
-                  data-testid={`embed-chip-${sig}`}
-                  data-active={active}
-                  onClick={(e) =>
-                    chipClick(e, SIGNIFICANCE_CHIPS, sig, excluded, setExcluded)
-                  }
-                  className="pg-chip"
-                >
-                  {humanSig(sig)}
-                </button>
-              );
-            })}
-          </div>
-          <div
-            data-testid="embed-stars-filter"
-            style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              margin: '4px 0',
-              color: 'var(--embed-text-secondary)',
-            }}
-          >
-            <span style={{ opacity: 0.75, minWidth: 80 }}>review:</span>
-            {STAR_LEVELS.map((n) => {
-              const active = !excludedStars.has(n);
-              const label = n === 0 ? '☆' : '★'.repeat(n);
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  data-testid={`embed-chip-stars-${n}`}
-                  data-active={active}
-                  onClick={(e) =>
-                    chipClick(e, STAR_LEVELS, n, excludedStars, setExcludedStars)
-                  }
-                  aria-label={
-                    n === 0
-                      ? 'no review stars'
-                      : `${n} review star${n === 1 ? '' : 's'}`
-                  }
-                  className="pg-chip"
-                  style={{ letterSpacing: 1 }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <div
-            data-testid="embed-type-filter"
-            style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              margin: '4px 0',
-              color: 'var(--embed-text-secondary)',
-            }}
-          >
-            <span style={{ opacity: 0.75, minWidth: 80 }}>type:</span>
-            {VARIANT_TYPES.map((t) => {
-              const active = !excludedTypes.has(t);
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  data-testid={`embed-chip-type-${t}`}
-                  data-active={active}
-                  onClick={(e) =>
-                    chipClick(e, VARIANT_TYPES, t, excludedTypes, setExcludedTypes)
-                  }
-                  className="pg-chip"
-                >
-                  {VARIANT_TYPE_LABELS[t]}
-                </button>
-              );
-            })}
-          </div>
+              ClinVar filters
+              <span
+                style={{
+                  marginLeft: 8,
+                  fontWeight: 400,
+                  opacity: 0.65,
+                  fontStyle: 'italic',
+                }}
+              >
+                shift-click to solo within a row
+              </span>
+            </header>
+            <div
+              data-testid="embed-significance-filter"
+              style={{
+                display: 'flex',
+                gap: 6,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                margin: '4px 0',
+                color: 'var(--embed-text-secondary)',
+              }}
+            >
+              <span style={{ opacity: 0.75, minWidth: 80 }}>significance:</span>
+              {SIGNIFICANCE_CHIPS.map((sig) => {
+                const active = !excluded.has(sig);
+                return (
+                  <button
+                    key={sig}
+                    type="button"
+                    data-testid={`embed-chip-${sig}`}
+                    data-active={active}
+                    onClick={(e) => chipClick(e, SIGNIFICANCE_CHIPS, sig, excluded, setExcluded)}
+                    className="pg-chip"
+                  >
+                    {humanSig(sig)}
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              data-testid="embed-stars-filter"
+              style={{
+                display: 'flex',
+                gap: 6,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                margin: '4px 0',
+                color: 'var(--embed-text-secondary)',
+              }}
+            >
+              <span style={{ opacity: 0.75, minWidth: 80 }}>review:</span>
+              {STAR_LEVELS.map((n) => {
+                const active = !excludedStars.has(n);
+                const label = n === 0 ? '☆' : '★'.repeat(n);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    data-testid={`embed-chip-stars-${n}`}
+                    data-active={active}
+                    onClick={(e) => chipClick(e, STAR_LEVELS, n, excludedStars, setExcludedStars)}
+                    aria-label={
+                      n === 0 ? 'no review stars' : `${n} review star${n === 1 ? '' : 's'}`
+                    }
+                    className="pg-chip"
+                    style={{ letterSpacing: 1 }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              data-testid="embed-type-filter"
+              style={{
+                display: 'flex',
+                gap: 6,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                margin: '4px 0',
+                color: 'var(--embed-text-secondary)',
+              }}
+            >
+              <span style={{ opacity: 0.75, minWidth: 80 }}>type:</span>
+              {VARIANT_TYPES.map((t) => {
+                const active = !excludedTypes.has(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    data-testid={`embed-chip-type-${t}`}
+                    data-active={active}
+                    onClick={(e) => chipClick(e, VARIANT_TYPES, t, excludedTypes, setExcludedTypes)}
+                    className="pg-chip"
+                  >
+                    {VARIANT_TYPE_LABELS[t]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <DecipherLegend />
         </section>
@@ -980,10 +963,7 @@ export function EmbedView() {
         </GeneGlyph.LeftGutter>
       </GeneGlyph>
       {selectedRecord && (
-        <SelectedVariantCard
-          record={selectedRecord}
-          onClear={() => setSelectedId(null)}
-        />
+        <SelectedVariantCard record={selectedRecord} onClear={() => setSelectedId(null)} />
       )}
       {selectedUserVariant && (
         <SelectedUserVariantCard
@@ -1102,28 +1082,11 @@ function DecipherLegend() {
   );
 }
 
-function LegendGlyph({
-  shape,
-  fill,
-}: {
-  shape: 'triangle-up' | 'square';
-  fill: string;
-}) {
+function LegendGlyph({ shape, fill }: { shape: 'triangle-up' | 'square'; fill: string }) {
   const r = 5;
   return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="-7 -7 14 14"
-      aria-hidden
-      style={{ flexShrink: 0 }}
-    >
-      <path
-        d={glyphPath(shape, r)}
-        fill={fill}
-        stroke="#ffffff"
-        strokeWidth={1}
-      />
+    <svg width={14} height={14} viewBox="-7 -7 14 14" aria-hidden style={{ flexShrink: 0 }}>
+      <path d={glyphPath(shape, r)} fill={fill} stroke="#ffffff" strokeWidth={1} />
     </svg>
   );
 }
@@ -1140,7 +1103,12 @@ function VariantsEntryModal({
   // Open with the current `?variants=` content, one per line so a
   // multi-variant URL doesn't read as one long comma-soup line.
   const initialNewlineSeparated = useMemo(
-    () => initial.split(/[,\n]/).map((s) => s.trim()).filter(Boolean).join('\n'),
+    () =>
+      initial
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join('\n'),
     [initial],
   );
   const [value, setValue] = useState(initialNewlineSeparated);
@@ -1440,11 +1408,7 @@ function Toolbar({
   showFigureControls: boolean;
 }) {
   return (
-    <nav
-      data-testid="embed-toolbar"
-      aria-label="Figure controls"
-      className="embed-toolbar"
-    >
+    <nav data-testid="embed-toolbar" aria-label="Figure controls" className="embed-toolbar">
       {showFigureControls && (
         <>
           <ToolbarGroup label="view mode">
@@ -1723,9 +1687,33 @@ function TrackIcon({ id }: { id: TrackToggleId }) {
       return (
         <svg {...SVG_BASE}>
           <rect x="1.5" y="6" width="3" height="4" fill="currentColor" stroke="none" />
-          <rect x="4.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.7" />
-          <rect x="7.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.45" />
-          <rect x="10.5" y="6" width="3" height="4" fill="currentColor" stroke="none" opacity="0.25" />
+          <rect
+            x="4.5"
+            y="6"
+            width="3"
+            height="4"
+            fill="currentColor"
+            stroke="none"
+            opacity="0.7"
+          />
+          <rect
+            x="7.5"
+            y="6"
+            width="3"
+            height="4"
+            fill="currentColor"
+            stroke="none"
+            opacity="0.45"
+          />
+          <rect
+            x="10.5"
+            y="6"
+            width="3"
+            height="4"
+            fill="currentColor"
+            stroke="none"
+            opacity="0.25"
+          />
         </svg>
       );
     case 'clinvar':
@@ -1741,13 +1729,7 @@ function TrackIcon({ id }: { id: TrackToggleId }) {
   }
 }
 
-function SelectedVariantCard({
-  record,
-  onClear,
-}: {
-  record: ClinVarRecord;
-  onClear: () => void;
-}) {
+function SelectedVariantCard({ record, onClear }: { record: ClinVarRecord; onClear: () => void }) {
   const meta = (record.meta ?? {}) as {
     majorConsequence?: string;
     goldStars?: number;
@@ -1759,10 +1741,7 @@ function SelectedVariantCard({
     ? `https://www.ncbi.nlm.nih.gov/clinvar/variation/${meta.clinvarVariationId}/`
     : null;
   return (
-    <section
-      data-testid="embed-selected-variant"
-      className="embed-card"
-    >
+    <section data-testid="embed-selected-variant" className="embed-card">
       <header className="embed-card-header">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
           <strong style={{ fontSize: '0.95rem' }}>{record.label}</strong>
@@ -1927,9 +1906,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function parseVariantId(
-  id: string,
-): { chr: string; pos: number; ref: string; alt: string } | null {
+function parseVariantId(id: string): { chr: string; pos: number; ref: string; alt: string } | null {
   // gnomAD variant ids are `<chr>-<pos>-<ref>-<alt>` (e.g., 17-7675236-ACTG-A).
   const m = /^([^-]+)-(\d+)-([A-Za-z]+)-([A-Za-z]+)$/.exec(id);
   if (!m) return null;
@@ -1938,13 +1915,7 @@ function parseVariantId(
   return { chr, pos: Number(posRaw), ref, alt };
 }
 
-function StatusBar({
-  state,
-  requestedId,
-}: {
-  state: LoadState;
-  requestedId: string | null;
-}) {
+function StatusBar({ state, requestedId }: { state: LoadState; requestedId: string | null }) {
   if (state.kind === 'error') {
     return (
       <p
@@ -1976,14 +1947,10 @@ function StatusBar({
       style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}
     >
       <strong style={{ fontSize: '1rem' }}>{data.geneSymbol}</strong>
-      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {data.transcript.transcriptId}
-      </span>
+      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{data.transcript.transcriptId}</span>
       <span style={{ opacity: 0.6 }}>
         {data.clinvar.length} ClinVar variants ·{' '}
-        <em style={{ fontStyle: 'normal', opacity: 0.7 }}>
-          source: {data.source}
-        </em>
+        <em style={{ fontStyle: 'normal', opacity: 0.7 }}>source: {data.source}</em>
       </span>
       {data.redirectedToCanonical && (
         <CanonicalBanner
@@ -1995,13 +1962,7 @@ function StatusBar({
   );
 }
 
-function CanonicalBanner({
-  requested,
-  canonical,
-}: {
-  requested: string;
-  canonical: string;
-}) {
+function CanonicalBanner({ requested, canonical }: { requested: string; canonical: string }) {
   // Re-load the page with `force=1` and the original requested id so
   // the user can opt back into seeing the non-canonical transcript.
   const url = new URL(window.location.href);
@@ -2020,8 +1981,7 @@ function CanonicalBanner({
       }}
     >
       Showing canonical <strong>{canonical}</strong> instead of requested{' '}
-      <strong>{requested}</strong>.{' '}
-      <a href={url.toString()}>view requested anyway</a>
+      <strong>{requested}</strong>. <a href={url.toString()}>view requested anyway</a>
     </span>
   );
 }
@@ -2075,7 +2035,10 @@ function readUrlParams(): UrlState {
   if (typeof window === 'undefined') return fallback;
   const p = new URLSearchParams(window.location.search);
   const csv = (key: string) =>
-    (p.get(key) ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    (p.get(key) ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   const modeRaw = p.get('mode');
   const mode: ViewMode =
     modeRaw === 'genome' || modeRaw === 'protein' || modeRaw === 'transcript'
@@ -2093,9 +2056,7 @@ function readUrlParams(): UrlState {
     mode,
     density,
     excludedSigs: new Set(
-      csv('excluded').filter((s) =>
-        SIGNIFICANCE_VALUES.has(s),
-      ) as ClinVarSignificance[],
+      csv('excluded').filter((s) => SIGNIFICANCE_VALUES.has(s)) as ClinVarSignificance[],
     ),
     excludedStars: new Set(
       csv('excludedStars')
@@ -2103,21 +2064,14 @@ function readUrlParams(): UrlState {
         .filter((n): n is StarLevel => STAR_LEVELS.includes(n as StarLevel)),
     ),
     excludedTypes: new Set(
-      csv('excludedTypes').filter((s) =>
-        VARIANT_TYPE_VALUES.has(s),
-      ) as VariantType[],
+      csv('excludedTypes').filter((s) => VARIANT_TYPE_VALUES.has(s)) as VariantType[],
     ),
     selectedId: p.get('selected') || null,
     // `collapsed` overrides the default-collapsed set when present (so
     // `?collapsed=` is "everything open"); absent param keeps the default
     // (ClinVar group + all per-sig subgroups collapsed).
-    collapsedGroups:
-      collapsedRaw === null
-        ? DEFAULT_COLLAPSED_GROUPS
-        : new Set(csv('collapsed')),
-    hiddenTracks: new Set(
-      csv('hide').filter((s): s is TrackToggleId => TRACK_TOGGLE_IDS.has(s)),
-    ),
+    collapsedGroups: collapsedRaw === null ? DEFAULT_COLLAPSED_GROUPS : new Set(csv('collapsed')),
+    hiddenTracks: new Set(csv('hide').filter((s): s is TrackToggleId => TRACK_TOGGLE_IDS.has(s))),
     ...parseUserVariantsParam(p.get('variants') ?? ''),
   };
 }

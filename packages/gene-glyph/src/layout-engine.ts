@@ -65,7 +65,15 @@ export function layoutTracks(args: LayoutEngineArgs): LayoutResult {
   const yStart = args.yStart ?? 0;
   const collapsedGroupIds = args.collapsedGroupIds ?? EMPTY_COLLAPSED_SET;
   const trackRects = new Map<string, TrackRect>();
-  const walked = walkEntries(tracks, viewport, data, yStart, totalHeightBudget, collapsedGroupIds, trackRects);
+  const walked = walkEntries(
+    tracks,
+    viewport,
+    data,
+    yStart,
+    totalHeightBudget,
+    collapsedGroupIds,
+    trackRects,
+  );
   return { totalHeight: walked.consumed, items: walked.items, trackRects };
 }
 
@@ -211,8 +219,7 @@ function layoutGroup(
   // zero-height group from the gutter and there'd be no way to expand
   // it again.
   const headerHeight = Math.max(0, group.headerHeight ?? 0);
-  const headerConsumed =
-    collapsed && group.summaryTrack ? 0 : Math.min(headerHeight, budget);
+  const headerConsumed = collapsed && group.summaryTrack ? 0 : Math.min(headerHeight, budget);
   const remainingBudget = Math.max(0, budget - headerConsumed);
   const bodyYStart = yTop + headerConsumed;
 

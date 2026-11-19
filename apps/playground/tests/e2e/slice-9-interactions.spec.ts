@@ -3,14 +3,21 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 /** Read the current `[lo–hi] · NN×` readout from the interaction-demo
  *  header. Returns numeric range values so tests can compare numerically. */
 async function readRange(page: Page): Promise<[number, number]> {
-  const text = await page.locator('section[aria-labelledby="scenario-interactions"]').locator('span', { hasText: /range \[/ }).textContent();
+  const text = await page
+    .locator('section[aria-labelledby="scenario-interactions"]')
+    .locator('span', { hasText: /range \[/ })
+    .textContent();
   const match = (text ?? '').match(/range \[(-?\d+)[\s–—-]+(-?\d+)\]/);
   if (!match) throw new Error(`could not parse range from ${text}`);
   return [Number(match[1]), Number(match[2])];
 }
 
 async function lastReason(page: Page): Promise<string | null> {
-  const txt = (await page.locator('section[aria-labelledby="scenario-interactions"]').locator('span', { hasText: 'last:' }).textContent()) ?? null;
+  const txt =
+    (await page
+      .locator('section[aria-labelledby="scenario-interactions"]')
+      .locator('span', { hasText: 'last:' })
+      .textContent()) ?? null;
   return txt ? txt.replace(/^last:\s*/, '').trim() : null;
 }
 
@@ -27,11 +34,15 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     // Focus the keyboard-handling root directly. Slice 17 added a
     // .vv-figure-wrap between the SVG and the figure row, so relative
     // parent-walks are now brittle.
-    const container = page.locator('section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]');
+    const container = page.locator(
+      'section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]',
+    );
     await container.focus();
     const before = await readRange(page);
     await page.keyboard.press('ArrowRight');
-    await expect.poll(async () => (await readRange(page))[0], { timeout: 2_000 }).toBeGreaterThan(before[0]);
+    await expect
+      .poll(async () => (await readRange(page))[0], { timeout: 2_000 })
+      .toBeGreaterThan(before[0]);
     const after = await readRange(page);
     expect(after[1]).toBeGreaterThan(before[1]);
     expect(await lastReason(page)).toBe('keyboard');
@@ -40,15 +51,21 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
   test('keyboard "1" returns to fit-gene', async ({ page }) => {
     await page.goto('/');
     await getFigure(page);
-    const container = page.locator('section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]');
+    const container = page.locator(
+      'section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]',
+    );
     await container.focus();
     await page.keyboard.press('ArrowRight');
     // The readout updates via rAF, not synchronously on keydown — poll until
     // the panned state propagates so the subsequent "1" reset is observable.
-    await expect.poll(async () => (await readRange(page))[0], { timeout: 2_000 }).toBeGreaterThan(1);
+    await expect
+      .poll(async () => (await readRange(page))[0], { timeout: 2_000 })
+      .toBeGreaterThan(1);
     await container.focus();
     await page.keyboard.press('1');
-    await expect.poll(async () => (await readRange(page))[0], { timeout: 2_000 }).toBeLessThanOrEqual(1);
+    await expect
+      .poll(async () => (await readRange(page))[0], { timeout: 2_000 })
+      .toBeLessThanOrEqual(1);
     const reset = await readRange(page);
     // Natural range is [1, cdsLength=1182] in genome mode.
     expect(reset[1]).toBeGreaterThanOrEqual(1100);
@@ -62,8 +79,11 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     if (!box) throw new Error('figure not visible');
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(120, 0);
+    // mouse.wheel resolves without waiting for the page to handle the event.
+    await expect
+      .poll(async () => (await readRange(page))[0], { timeout: 2_000 })
+      .toBeGreaterThan(before[0]);
     const after = await readRange(page);
-    expect(after[0]).toBeGreaterThan(before[0]);
     expect(after[1]).toBeGreaterThan(before[1]);
     expect(await lastReason(page)).toBe('wheel');
   });
@@ -71,7 +91,9 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
   test('Space+drag pans the gene under the cursor', async ({ page }) => {
     await page.goto('/');
     // Seed an inset range so drag has room to move in either direction.
-    const container = page.locator('section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]');
+    const container = page.locator(
+      'section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]',
+    );
     await container.focus();
     await page.keyboard.press('+');
     const before = await readRange(page);
@@ -107,7 +129,9 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     // Synthesise a Cmd+wheel zoom; in embed mode the listener returns
     // without preventing default, so the viewer range stays put.
     await figure.evaluate((el, dy) => {
-      el.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, ctrlKey: true, bubbles: true, cancelable: true }));
+      el.dispatchEvent(
+        new WheelEvent('wheel', { deltaY: dy, ctrlKey: true, bubbles: true, cancelable: true }),
+      );
     }, -100);
     const after = await readRange(page);
     expect(after).toEqual(before);

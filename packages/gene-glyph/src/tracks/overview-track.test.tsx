@@ -34,8 +34,10 @@ describe('overviewTrack — factory', () => {
     const t = overviewTrack({ viewerRef: ref, height: 40 });
     expect(t.heightPolicy).toBe('fixed');
     expect(t.coordSystem).toBe('cds');
-    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } }))
-      .toEqual({ px: 40, didTruncate: false });
+    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } })).toEqual({
+      px: 40,
+      didTruncate: false,
+    });
   });
 
   it('auto-sizes height from the number of upstream-track minimap rows', () => {
@@ -45,8 +47,7 @@ describe('overviewTrack — factory', () => {
       viewerRef: ref,
       tracks: [exonTrack({ id: 'a' }), exonTrack({ id: 'b' }), exonTrack({ id: 'c' })],
     });
-    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } }).px)
-      .toBe(56);
+    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } }).px).toBe(56);
   });
 
   it('honours an explicit height override', () => {
@@ -56,8 +57,7 @@ describe('overviewTrack — factory', () => {
       tracks: [exonTrack({}), exonTrack({ id: 'b' })],
       height: 80,
     });
-    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } }).px)
-      .toBe(80);
+    expect(t.height({ data: null, viewport: {} as never, hint: { maxPx: 200 } }).px).toBe(80);
   });
 });
 
@@ -70,10 +70,7 @@ describe('overviewTrack — embedded render', () => {
         ref={ref}
         transcript={transcript}
         width={720}
-        tracks={[
-          overviewTrack({ viewerRef: ref, tracks: upstream }),
-          ...upstream,
-        ]}
+        tracks={[overviewTrack({ viewerRef: ref, tracks: upstream }), ...upstream]}
       />,
     );
     await flush();
@@ -81,9 +78,7 @@ describe('overviewTrack — embedded render', () => {
     expect(figure).not.toBeNull();
     // The exon track's renderMinimap output appears inside the overview's
     // row wrapper, one rect per exon.
-    expect(
-      figure!.querySelectorAll('.vv-overview-row .vv-exon-minimap-exon'),
-    ).toHaveLength(3);
+    expect(figure!.querySelectorAll('.vv-overview-row .vv-exon-minimap-exon')).toHaveLength(3);
     const window = figure!.querySelector<SVGRectElement>(
       '[data-testid="gene-glyph-overview-window"]',
     );
@@ -153,9 +148,7 @@ describe('overviewTrack — embedded render', () => {
     });
     await flush();
     const rangeBefore = ref.current!.getViewportInfo().range;
-    const bg = container.querySelector<SVGRectElement>(
-      '[data-testid="gene-glyph-overview-bg"]',
-    )!;
+    const bg = container.querySelector<SVGRectElement>('[data-testid="gene-glyph-overview-bg"]')!;
     fireEvent.pointerDown(bg, { clientX: 0, clientY: 5, button: 0 });
     await flush();
     const rangeAfter = ref.current!.getViewportInfo().range;

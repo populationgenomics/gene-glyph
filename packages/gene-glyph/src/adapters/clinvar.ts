@@ -1,8 +1,5 @@
 import { createCachedDataSource } from '../data-source.js';
-import {
-  parseClinVarSignificance,
-  type ClinVarRecord,
-} from '../tracks/clinvar-track.js';
+import { parseClinVarSignificance, type ClinVarRecord } from '../tracks/clinvar-track.js';
 import type { DataSource, Transcript, ViewportQuery } from '../types.js';
 
 const DEFAULT_BASE_URL = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
@@ -100,9 +97,7 @@ async function fetchAllIds(args: FetchIdsArgs): Promise<string[]> {
       `&retmax=${pageSize}&retstart=${retstart}`;
     const res = await fetchImpl(url, { signal });
     if (!res.ok) {
-      throw new Error(
-        `ClinVar esearch failed for ${geneSymbol} (HTTP ${res.status})`,
-      );
+      throw new Error(`ClinVar esearch failed for ${geneSymbol} (HTTP ${res.status})`);
     }
     const body = (await res.json()) as EsearchResponse;
     const result = body.esearchresult;
@@ -129,8 +124,7 @@ interface FetchSummaryArgs {
 async function fetchSummaryBatch(args: FetchSummaryArgs): Promise<ClinVarRecord[]> {
   const { baseUrl, ids, fetchImpl, signal } = args;
   if (ids.length === 0) return [];
-  const url =
-    `${baseUrl}/esummary.fcgi?db=clinvar&retmode=json&id=${ids.join(',')}`;
+  const url = `${baseUrl}/esummary.fcgi?db=clinvar&retmode=json&id=${ids.join(',')}`;
   const res = await fetchImpl(url, { signal });
   if (!res.ok) {
     throw new Error(`ClinVar esummary failed (HTTP ${res.status})`);
@@ -184,8 +178,9 @@ function summaryToRecord(uid: string, summary: ClinVarSummary): ClinVarRecord | 
   if (!variation) return null;
   // Prefer GRCh38 when both assemblies are present.
   const loc =
-    variation.variation_loc?.find((l) => (l.assembly_name ?? '').toUpperCase().includes('GRCH38')) ??
-    variation.variation_loc?.[0];
+    variation.variation_loc?.find((l) =>
+      (l.assembly_name ?? '').toUpperCase().includes('GRCH38'),
+    ) ?? variation.variation_loc?.[0];
   if (!loc) return null;
   const pos = Number.parseInt(loc.start ?? '', 10);
   if (!Number.isFinite(pos)) return null;

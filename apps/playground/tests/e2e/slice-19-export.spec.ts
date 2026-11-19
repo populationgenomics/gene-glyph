@@ -50,7 +50,9 @@ test.describe('Slice 19 — camera-ready export', () => {
     expect(printSvg).toMatch(/fill="rgb\(255, 255, 255\)"|fill="#fff/i);
   });
 
-  test('exported figure carries concrete transform matrices instead of CSS vars', async ({ page }) => {
+  test('exported figure carries concrete transform matrices instead of CSS vars', async ({
+    page,
+  }) => {
     const s = await scenario(page);
     const svg = await exportSvgViaPreview(s);
     // At least one exon group should have a resolved matrix() transform —

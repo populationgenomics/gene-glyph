@@ -7,11 +7,7 @@ import {
   pfamTrack,
   variantTrack,
 } from '@populationgenomics/gene-glyph';
-import type {
-  GeneGlyphRef,
-  Track,
-  ViewportInfo,
-} from '@populationgenomics/gene-glyph';
+import type { GeneGlyphRef, Track, ViewportInfo } from '@populationgenomics/gene-glyph';
 import { TP53_PROTEIN, TP53_TRANSCRIPT, TP53_VARIANTS } from '../fixtures/tp53.js';
 
 /** Live readout of the viewport's canonical state. Subscribes to the
@@ -50,12 +46,17 @@ function ViewportDebug({ refForward }: { refForward: React.RefObject<GeneGlyphRe
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
       }}
     >
-      mode={info.mode}  zoom={fmt(info.zoom)} (biological)  zoomScale={fmt(info.zoomScale)} (layout){'\n'}
-      range         = {fmtRange(info.range)}  (ruler, derived){'\n'}
-      naturalRange  = {fmtRange(info.naturalRange)}{'\n'}
-      baselineWindow= {fmtRange(info.baselineWindow)}  span={fmt(baselineSpan)} (baseline){'\n'}
-      displayOffset = {fmt(info.displayOffset)}  totalDisplay={fmt(info.totalDisplayWidth)}  viewportWidth={fmt(info.viewportWidth)}{'\n'}
-      figureBaseline= [0, {fmt(info.baselineGeometry.totalWidth)}]  pxPerBp={fmt(info.baselineGeometry.pxPerBp)}  gapPx={fmt(info.baselineGeometry.gapPx)}
+      mode={info.mode} zoom={fmt(info.zoom)} (biological) zoomScale={fmt(info.zoomScale)} (layout)
+      {'\n'}
+      range = {fmtRange(info.range)} (ruler, derived){'\n'}
+      naturalRange = {fmtRange(info.naturalRange)}
+      {'\n'}
+      baselineWindow= {fmtRange(info.baselineWindow)} span={fmt(baselineSpan)} (baseline){'\n'}
+      displayOffset = {fmt(info.displayOffset)} totalDisplay={fmt(info.totalDisplayWidth)}{' '}
+      viewportWidth={fmt(info.viewportWidth)}
+      {'\n'}
+      figureBaseline= [0, {fmt(info.baselineGeometry.totalWidth)}] pxPerBp=
+      {fmt(info.baselineGeometry.pxPerBp)} gapPx={fmt(info.baselineGeometry.gapPx)}
     </pre>
   );
 }
@@ -81,11 +82,7 @@ function OverviewSubFigure() {
   // is stable across renders (otherwise the viewer would reload tracks
   // on every render).
   const upstream = useMemo<Track[]>(
-    () => [
-      exonTrack({}),
-      variantTrack({ id: 'variants', source: TP53_VARIANTS }),
-      pfamTrack({}),
-    ],
+    () => [exonTrack({}), variantTrack({ id: 'variants', source: TP53_VARIANTS }), pfamTrack({})],
     [],
   );
   const tracks = useMemo(
@@ -114,11 +111,10 @@ export function OverviewTrackDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-overview-track">
       <h2 id="scenario-overview-track">Overview track vs minimap — TP53</h2>
       <p className="scenario-blurb">
-        Both navigation widgets share the same imperative-ref plumbing.{' '}
-        <code>overviewTrack</code> lives inside the figure SVG (top) so it
-        rides along on <code>exportSVG()</code>; <code>&lt;DefaultMinimap&gt;</code>{' '}
-        lives in the Footer slot (bottom) as React DOM chrome that's dropped
-        on export.
+        Both navigation widgets share the same imperative-ref plumbing. <code>overviewTrack</code>{' '}
+        lives inside the figure SVG (top) so it rides along on <code>exportSVG()</code>;{' '}
+        <code>&lt;DefaultMinimap&gt;</code> lives in the Footer slot (bottom) as React DOM chrome
+        that's dropped on export.
       </p>
 
       <div style={{ marginBottom: 16 }}>

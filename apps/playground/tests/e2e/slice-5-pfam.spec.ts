@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Slice 5 — Pfam + protein-range fragmentation (RD-1064)', () => {
-  test('a multi-exon Pfam domain renders fragmented rectangles joined by linkers over the intron gaps', async ({ page }) => {
+  test('a multi-exon Pfam domain renders fragmented rectangles joined by linkers over the intron gaps', async ({
+    page,
+  }) => {
     await page.goto('/');
     const figure = page.locator('section[aria-labelledby="scenario-pfam"] svg.vv-figure');
     await expect(figure).toBeVisible();

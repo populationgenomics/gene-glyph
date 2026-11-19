@@ -17,10 +17,7 @@ import type {
  *  `collapsedRegions` prop to override this — leaving an intronic
  *  range out of the spec keeps it linear (i.e., expanded); adding a
  *  range covering exonic bp compresses that too. */
-export function defaultCollapsedRegions(
-  transcript: Transcript,
-  flankBp = 10,
-): CollapsedRegion[] {
+export function defaultCollapsedRegions(transcript: Transcript, flankBp = 10): CollapsedRegion[] {
   const regions: CollapsedRegion[] = [];
   for (let i = 0; i < transcript.exons.length - 1; i++) {
     const upstream = transcript.exons[i]!;

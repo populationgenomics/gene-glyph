@@ -40,17 +40,7 @@ import { fetchGeneData, type LiveGeneData } from '../lib/gnomad.js';
  * width.
  */
 
-const GENES = [
-  'TP53',
-  'BRCA1',
-  'BRCA2',
-  'KRAS',
-  'EGFR',
-  'PTEN',
-  'MLH1',
-  'CFTR',
-  'LDLR',
-] as const;
+const GENES = ['TP53', 'BRCA1', 'BRCA2', 'KRAS', 'EGFR', 'PTEN', 'MLH1', 'CFTR', 'LDLR'] as const;
 type GeneSymbol = (typeof GENES)[number];
 
 type LoadState =
@@ -82,17 +72,11 @@ export function LiveDataDemoScenario() {
   // folded so expanding the parent reveals six density heat-strips
   // (one per significance) rather than blowing the figure up.
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(
-    () => new Set([
-      CLINVAR_GROUP_ID,
-      ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`),
-    ]),
+    () => new Set([CLINVAR_GROUP_ID, ...SIGNIFICANCE_CHIPS.map((sig) => `clinvar-${sig}`)]),
   );
   const viewerRef = useRef<GeneGlyphRef | null>(null);
 
-  const filter = useCallback(
-    (r: ClinVarRecord) => !excluded.has(r.significance),
-    [excluded],
-  );
+  const filter = useCallback((r: ClinVarRecord) => !excluded.has(r.significance), [excluded]);
 
   const toggleExcluded = (sig: ClinVarSignificance) => {
     setExcluded((prev) => {
@@ -129,65 +113,61 @@ export function LiveDataDemoScenario() {
     return () => controller.abort();
   }, [gene]);
 
-  const tracks = useMemo<TrackOrGroup[]>(
-    () => {
-      const records = state.kind === 'ready' ? state.data.clinvar : [];
-      // One sub-group per significance bucket — each independently
-      // foldable, each carrying its own filtered detail + filtered
-      // summary. The parent ClinVar group sits one level above and
-      // owns a whole-record summary heat-strip so folding the parent
-      // (regardless of any child fold state) lands the figure at one
-      // row covering the entire ClinVar surface.
-      const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
-        const sigFilter = (r: ClinVarRecord) =>
-          r.significance === sig && filter(r);
-        return {
-          kind: 'group',
-          id: `clinvar-${sig}`,
-          label: humanSig(sig),
-          // Each sub-group's body is a single row (summary when folded,
-          // a stacked detail block when expanded). No header reservation
-          // here — the gutter cell spans the full extent so the chevron
-          // label and the figure-side strip share the same y. `gapAbove`
-          // gives the row breathing space without pushing the strip out
-          // of alignment with its label.
-          gapAbove: 6,
-          tracks: [
-            clinVarTrack({
-              id: `clinvar-${sig}-detail`,
-              source: records,
-              stackedVariantStyle: decipherClinVarSymbolEncoding,
-              filter: sigFilter,
-            }),
-          ],
-          summaryTrack: clinVarSummaryTrack({
-            id: `clinvar-${sig}-summary`,
+  const tracks = useMemo<TrackOrGroup[]>(() => {
+    const records = state.kind === 'ready' ? state.data.clinvar : [];
+    // One sub-group per significance bucket — each independently
+    // foldable, each carrying its own filtered detail + filtered
+    // summary. The parent ClinVar group sits one level above and
+    // owns a whole-record summary heat-strip so folding the parent
+    // (regardless of any child fold state) lands the figure at one
+    // row covering the entire ClinVar surface.
+    const subgroup = (sig: ClinVarSignificance): TrackOrGroup => {
+      const sigFilter = (r: ClinVarRecord) => r.significance === sig && filter(r);
+      return {
+        kind: 'group',
+        id: `clinvar-${sig}`,
+        label: humanSig(sig),
+        // Each sub-group's body is a single row (summary when folded,
+        // a stacked detail block when expanded). No header reservation
+        // here — the gutter cell spans the full extent so the chevron
+        // label and the figure-side strip share the same y. `gapAbove`
+        // gives the row breathing space without pushing the strip out
+        // of alignment with its label.
+        gapAbove: 6,
+        tracks: [
+          clinVarTrack({
+            id: `clinvar-${sig}-detail`,
             source: records,
+            stackedVariantStyle: decipherClinVarSymbolEncoding,
             filter: sigFilter,
           }),
-        };
+        ],
+        summaryTrack: clinVarSummaryTrack({
+          id: `clinvar-${sig}-summary`,
+          source: records,
+          filter: sigFilter,
+        }),
       };
-      return [
-        exonTrack({}),
-        {
-          kind: 'group',
-          id: CLINVAR_GROUP_ID,
-          label: 'ClinVar',
-          // Same label-row reservation at the parent level — keeps the
-          // ClinVar chevron in its own slot above the six sub-group
-          // chevrons.
-          headerHeight: 22,
-          tracks: SIGNIFICANCE_CHIPS.map(subgroup),
-          summaryTrack: clinVarSummaryTrack({
-            id: 'clinvar-summary',
-            source: records,
-            filter,
-          }),
-        },
-      ];
-    },
-    [state, filter],
-  );
+    };
+    return [
+      exonTrack({}),
+      {
+        kind: 'group',
+        id: CLINVAR_GROUP_ID,
+        label: 'ClinVar',
+        // Same label-row reservation at the parent level — keeps the
+        // ClinVar chevron in its own slot above the six sub-group
+        // chevrons.
+        headerHeight: 22,
+        tracks: SIGNIFICANCE_CHIPS.map(subgroup),
+        summaryTrack: clinVarSummaryTrack({
+          id: 'clinvar-summary',
+          source: records,
+          filter,
+        }),
+      },
+    ];
+  }, [state, filter]);
 
   const renderTooltip = (args: TooltipRenderArgs) => {
     // Detail tracks expose `clinvar-<sig>-detail`, summaries
@@ -203,21 +183,17 @@ export function LiveDataDemoScenario() {
     return (
       <div>
         <div style={{ fontWeight: 600 }}>{r.label}</div>
-        {meta.hgvsp && (
-          <div style={{ opacity: 0.85, fontSize: '0.72rem' }}>{meta.hgvsp}</div>
-        )}
+        {meta.hgvsp && <div style={{ opacity: 0.85, fontSize: '0.72rem' }}>{meta.hgvsp}</div>}
         <div style={{ opacity: 0.75, fontSize: '0.72rem' }}>
           {humanSig(r.significance)}
-          {typeof meta.goldStars === 'number' ? ` · ${'★'.repeat(meta.goldStars)}${'☆'.repeat(4 - meta.goldStars)}` : ''}
+          {typeof meta.goldStars === 'number'
+            ? ` · ${'★'.repeat(meta.goldStars)}${'☆'.repeat(4 - meta.goldStars)}`
+            : ''}
         </div>
         {meta.majorConsequence && (
-          <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>
-            {meta.majorConsequence}
-          </div>
+          <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{meta.majorConsequence}</div>
         )}
-        {r.reviewStatus && (
-          <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.reviewStatus}</div>
-        )}
+        {r.reviewStatus && <div style={{ opacity: 0.6, fontSize: '0.7rem' }}>{r.reviewStatus}</div>}
       </div>
     );
   };
@@ -245,29 +221,20 @@ export function LiveDataDemoScenario() {
     }),
     [gene],
   );
-  const transcript =
-    state.kind === 'ready' ? state.data.transcript : placeholder;
-  const variantCount =
-    state.kind === 'ready' ? state.data.clinvar.length : null;
+  const transcript = state.kind === 'ready' ? state.data.transcript : placeholder;
+  const variantCount = state.kind === 'ready' ? state.data.clinvar.length : null;
 
   return (
     <section className="scenario" aria-labelledby="scenario-live-data">
       <h2 id="scenario-live-data">Live data — real ClinVar via gnomAD</h2>
       <p className="scenario-blurb">
-        Pulls the canonical transcript and every ClinVar variant for the
-        selected gene from the{' '}
-        <a
-          href="https://gnomad.broadinstitute.org/api"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
+        Pulls the canonical transcript and every ClinVar variant for the selected gene from the{' '}
+        <a href="https://gnomad.broadinstitute.org/api" target="_blank" rel="noopener noreferrer">
           gnomAD GraphQL API
         </a>{' '}
-        and renders through the same exon + ClinVar tracks the offline
-        fixtures use. Switch genes from the picker; results cache in
-        memory so repeat picks are instant. Click a cluster diamond to
-        expand the popover; zoom in (<code>=</code>) to break clusters
-        apart.
+        and renders through the same exon + ClinVar tracks the offline fixtures use. Switch genes
+        from the picker; results cache in memory so repeat picks are instant. Click a cluster
+        diamond to expand the popover; zoom in (<code>=</code>) to break clusters apart.
       </p>
       <div
         style={{

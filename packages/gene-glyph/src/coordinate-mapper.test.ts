@@ -147,8 +147,8 @@ describe('defaultCollapsedRegions — Phase 3 soft-collapse spec', () => {
     const regions = defaultCollapsedRegions(plusTranscript);
     expect(regions).toHaveLength(2); // 3 exons → 2 introns
     expect(regions[0]).toEqual({
-      start: { cPos: 100, offset: 11 },  // c.100+11 — first bulk bp
-      end: { cPos: 101, offset: -11 },   // c.101-11 — last bulk bp
+      start: { cPos: 100, offset: 11 }, // c.100+11 — first bulk bp
+      end: { cPos: 101, offset: -11 }, // c.101-11 — last bulk bp
     });
     expect(regions[1]).toEqual({
       start: { cPos: 250, offset: 11 },

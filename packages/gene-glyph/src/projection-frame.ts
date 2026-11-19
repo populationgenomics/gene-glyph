@@ -7,11 +7,7 @@ import {
   type FigureLayout,
   type Piece,
 } from './figure-scale.js';
-import {
-  buildSegments,
-  segmentToPiece,
-  type Segment,
-} from './segments.js';
+import { buildSegments, segmentToPiece, type Segment } from './segments.js';
 import type { BaselineGeometry, ViewMode } from './types.js';
 
 /** Per-exon CDS bp bounds used by the frame for ruler ↔ baseline mapping in

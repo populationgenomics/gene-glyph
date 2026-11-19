@@ -100,10 +100,12 @@ describe('exonTrack', () => {
     const fit = render(<Probe vp={fitVp} />);
     const zoom = render(<Probe vp={zoomedVp} />);
 
-    const fitWidths = [...fit.container.querySelectorAll<SVGRectElement>('.vv-exon-rect')]
-      .map((r) => r.getAttribute('width'));
-    const zoomWidths = [...zoom.container.querySelectorAll<SVGRectElement>('.vv-exon-rect')]
-      .map((r) => r.getAttribute('width'));
+    const fitWidths = [...fit.container.querySelectorAll<SVGRectElement>('.vv-exon-rect')].map(
+      (r) => r.getAttribute('width'),
+    );
+    const zoomWidths = [...zoom.container.querySelectorAll<SVGRectElement>('.vv-exon-rect')].map(
+      (r) => r.getAttribute('width'),
+    );
 
     // All three exons rendered in both configurations (no exon dropped, no
     // visible-only filtering) and rect widths are identical.

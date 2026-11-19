@@ -5,7 +5,7 @@ name: Deploy playground to GitHub Pages
 # `apps/playground/node_modules/@populationgenomics/gene-glyph/dist/`
 # resolves to fresh code, matching how the Playwright job in `ci.yml`
 # stages its build. The Pages deploy uses the modern `actions/deploy-
-# pages@v4` flow (artifact upload + a separate deploy job) rather than
+# pages` flow (artifact upload + a separate deploy job) rather than
 # the legacy `peaceiris/actions-gh-pages` branch push so the deploy
 # inherits the official `github-pages` environment URL on the PR /
 # commit summary.
@@ -15,10 +15,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 # Allow only one concurrent Pages deploy. `cancel-in-progress: false`
 # lets in-flight deploys finish — cancelling would leave the Pages site
@@ -30,12 +27,14 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -48,9 +47,9 @@ jobs:
         env:
           PLAYGROUND_BASE: /gene-glyph/
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: apps/playground/dist
 
@@ -60,6 +59,9 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

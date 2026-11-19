@@ -21,9 +21,7 @@ const TX_FIXTURE = {
     symbol: 'TESTGENE',
     canonical_transcript_id: 'ENST_TEST',
   },
-  exons: [
-    { feature_type: 'CDS', start: 7674200, stop: 7674300 },
-  ],
+  exons: [{ feature_type: 'CDS', start: 7674200, stop: 7674300 }],
   clinvar_variants: [],
 } as const;
 
@@ -60,9 +58,7 @@ async function stubEmbedNetwork(page: import('@playwright/test').Page) {
 test.describe('Slice 34 — user-supplied variants from `?variants=`', () => {
   test('renders the user-variant track when the URL carries valid variants', async ({ page }) => {
     await stubEmbedNetwork(page);
-    await page.goto(
-      '/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,17-7674220-G-A',
-    );
+    await page.goto('/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,17-7674220-G-A');
     const figure = page.locator('svg.vv-figure');
     await expect(figure).toBeVisible();
     // The user-variant track sits in its own track row, with marks
@@ -90,9 +86,7 @@ test.describe('Slice 34 — user-supplied variants from `?variants=`', () => {
 
   test('surfaces parse errors in the footer; valid variants still render', async ({ page }) => {
     await stubEmbedNetwork(page);
-    await page.goto(
-      '/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,9:abc,1:12345X',
-    );
+    await page.goto('/embed.html?transcript=ENST_TEST&variants=17:7674210C>T,9:abc,1:12345X');
     const footer = page.getByTestId('embed-user-variant-footer');
     await expect(footer).toBeVisible();
     const errors = page.getByTestId('embed-user-variant-error');

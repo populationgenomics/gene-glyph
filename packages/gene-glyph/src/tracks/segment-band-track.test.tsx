@@ -4,10 +4,7 @@ import { createCoordinateMapper } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
 import type { InteractionState, Transcript } from '../types.js';
 import { ViewportController } from '../viewport.js';
-import {
-  segmentBandTrack,
-  type SegmentBandDatum,
-} from './segment-band-track.js';
+import { segmentBandTrack, type SegmentBandDatum } from './segment-band-track.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',

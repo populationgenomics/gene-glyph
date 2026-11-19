@@ -27,9 +27,7 @@ export default defineConfig({
     // with macOS dark mode would otherwise flip the theme mid-test).
     colorScheme: 'light',
   },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-  ],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5174',

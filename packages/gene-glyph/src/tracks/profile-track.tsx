@@ -24,9 +24,7 @@ export interface ProfileDatum {
  *  already in hand) or a callable for sparse / on-demand signals.
  *  Callables return `null` when a position has no sample — those
  *  positions are skipped by aggregation. */
-export type ProfileSource =
-  | ReadonlyArray<ProfileDatum>
-  | ((position: number) => number | null);
+export type ProfileSource = ReadonlyArray<ProfileDatum> | ((position: number) => number | null);
 
 /** Maps a value into a CSS colour. `domain` is the [min, max] of the
  *  resolved yScale so hosts can build palette functions without
@@ -109,14 +107,7 @@ export interface ProfileTrackData {
 
 const DEFAULT_HEIGHT_PX = 24;
 
-const VIRIDIS_STOPS = [
-  '#440154',
-  '#404387',
-  '#29788e',
-  '#22a784',
-  '#79d151',
-  '#fde724',
-] as const;
+const VIRIDIS_STOPS = ['#440154', '#404387', '#29788e', '#22a784', '#79d151', '#fde724'] as const;
 
 /**
  * Slice 31 — per-position numeric signal as either a histogram (area-fill

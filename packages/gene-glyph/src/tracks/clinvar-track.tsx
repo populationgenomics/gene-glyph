@@ -57,9 +57,7 @@ export interface ClinVarRecord {
   meta?: Record<string, unknown>;
 }
 
-export type ClinVarSource =
-  | ClinVarRecord[]
-  | DataSource<ViewportQuery, ClinVarRecord[]>;
+export type ClinVarSource = ClinVarRecord[] | DataSource<ViewportQuery, ClinVarRecord[]>;
 
 export interface ClinVarTrackConfig {
   id?: string;
@@ -284,14 +282,12 @@ function projectHgvs(
     const flanks = geom.flanks ?? [];
     for (const flank of flanks) {
       const matchSide =
-        (flank.side === 'donor' && pos.offset > 0) ||
-        (flank.side === 'acceptor' && pos.offset < 0);
+        (flank.side === 'donor' && pos.offset > 0) || (flank.side === 'acceptor' && pos.offset < 0);
       if (!matchSide) continue;
       const exonIdx = flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
       const associatedExon = mapper.transcript.exons[exonIdx];
       if (!associatedExon) continue;
-      const expectedCpos =
-        flank.side === 'donor' ? associatedExon.cdsEnd : associatedExon.cdsStart;
+      const expectedCpos = flank.side === 'donor' ? associatedExon.cdsEnd : associatedExon.cdsStart;
       if (pos.cPos !== expectedCpos) continue;
       const k = Math.abs(pos.offset);
       if (k <= flank.bp) {
@@ -407,9 +403,8 @@ export function placeClinVarRecords(
         }
       }
     }
-    const [anchor, far] = compareHgvs(startHgvs, endHgvs) <= 0
-      ? [startHgvs, endHgvs]
-      : [endHgvs, startHgvs];
+    const [anchor, far] =
+      compareHgvs(startHgvs, endHgvs) <= 0 ? [startHgvs, endHgvs] : [endHgvs, startHgvs];
 
     // Resolve both endpoints to baseline-x. Intronic positions in the
     // linear-scale flank zone get a real baseline-x; positions in the
@@ -482,10 +477,7 @@ export function placeClinVarRecords(
  *  whose neighbour-distance is below the threshold. The threshold is in
  *  *screen* pixels so the user-visible density changes with zoom — fit-gene
  *  produces broad clusters, deep zoom breaks them apart. */
-export function clusterClinVar(
-  placed: PlacedClinVar[],
-  clusterPx: number,
-): ClinVarCluster[] {
+export function clusterClinVar(placed: PlacedClinVar[], clusterPx: number): ClinVarCluster[] {
   // Off-screen placements carry `screenX = Infinity` (so they don't
   // collide with on-screen cluster windows). Filter them out before
   // clustering — they'd otherwise emit singleton clusters off-figure
@@ -507,9 +499,10 @@ export function clusterClinVar(
         rep = m;
       }
     }
-    const id = members.length === 1
-      ? `member:${members[0]!.record.id}`
-      : `cluster:${members[0]!.record.id}+${members.length - 1}`;
+    const id =
+      members.length === 1
+        ? `member:${members[0]!.record.id}`
+        : `cluster:${members[0]!.record.id}+${members.length - 1}`;
     out.push({
       id,
       members,
@@ -658,9 +651,7 @@ function orderedLaneKeys<T>(
   if (!declared || declared.length === 0) return allKeys.slice().sort(compareStrings);
   const declaredSet = new Set(declared);
   const ordered = declared.filter((k) => groups.has(k));
-  const leftovers = allKeys
-    .filter((k) => !declaredSet.has(k))
-    .sort(compareStrings);
+  const leftovers = allKeys.filter((k) => !declaredSet.has(k)).sort(compareStrings);
   return [...ordered, ...leftovers];
 }
 
@@ -715,9 +706,7 @@ export function clinVarTrack(
         const rows = data?.stackLayout?.rowCount ?? 0;
         const laneCount = data?.stackLayout?.lanes?.length ?? 0;
         const laneHeadroom =
-          stackedEncoding.laneLabels && laneCount > 1
-            ? laneCount * LANE_TOP_PAD
-            : 0;
+          stackedEncoding.laneLabels && laneCount > 1 ? laneCount * LANE_TOP_PAD : 0;
         const px = Math.max(
           trackHeight,
           stackTopPad + rows * stackLanePx + laneHeadroom + stackBottomPad,
@@ -1032,17 +1021,7 @@ function ClinVarStackedBody({
       );
     }
     return { groupsByExon, useLaneDividers };
-  }, [
-    layout,
-    baseline,
-    encoding,
-    markRadius,
-    laneHeight,
-    topPad,
-    laneTopPad,
-    rect.yTop,
-    painter,
-  ]);
+  }, [layout, baseline, encoding, markRadius, laneHeight, topPad, laneTopPad, rect.yTop, painter]);
   const { groupsByExon, useLaneDividers } = cache;
   const groups = Array.from(groupsByExon.values());
 
@@ -1112,12 +1091,7 @@ function ClinVarStackedBody({
       // Divider y: centered inside this lane's pre-block pad. The pad
       // spans [topPad + S*laneHeight + li*laneTopPad, topPad + S*laneHeight + (li+1)*laneTopPad];
       // we sit at its midpoint.
-      const y =
-        rect.yTop +
-        topPad +
-        lane.startRow * laneHeight +
-        li * laneTopPad +
-        laneTopPad / 2;
+      const y = rect.yTop + topPad + lane.startRow * laneHeight + li * laneTopPad + laneTopPad / 2;
       // Approximate label width — short bucket names ("LoF", "Splice
       // region"); the heuristic is the same one Pfam labels use.
       const estCharW = laneLabelFontSize * 0.58;
@@ -1193,7 +1167,13 @@ interface ClinVarBodyProps {
   args: TrackRenderArgs<ClinVarTrackData>;
 }
 
-function ClinVarBody({ trackId, clusterPx, markRadius, filter, args }: ClinVarBodyProps): ReactNode {
+function ClinVarBody({
+  trackId,
+  clusterPx,
+  markRadius,
+  filter,
+  args,
+}: ClinVarBodyProps): ReactNode {
   const { data, rect, viewport, mapper, painter, onFeatureHover, onFeatureClick } = args;
   const [openClusterKey, setOpenClusterKey] = useState<string | null>(null);
 
@@ -1260,11 +1240,7 @@ function ClinVarBody({ trackId, clusterPx, markRadius, filter, args }: ClinVarBo
         cluster.exonIdx,
         <g
           key={`clinvar-cluster-${cluster.id}`}
-          className={[
-            'vv-clinvar-mark',
-            isMulti && 'is-cluster',
-            isOpen && 'is-open',
-          ]
+          className={['vv-clinvar-mark', isMulti && 'is-cluster', isOpen && 'is-open']
             .filter(Boolean)
             .join(' ')}
           data-vv-feature-id={featureId}
@@ -1330,9 +1306,7 @@ function ClinVarBody({ trackId, clusterPx, markRadius, filter, args }: ClinVarBo
   // to the new position rather than tweening, which is fine because the user
   // would dismiss it before re-aiming the view anyway.
   let popoverNode: ReactNode = null;
-  const openCluster = openClusterKey
-    ? clusters.find((c) => c.id === openClusterKey)
-    : null;
+  const openCluster = openClusterKey ? clusters.find((c) => c.id === openClusterKey) : null;
   if (openCluster) {
     popoverNode = (
       <ClusterPopover
@@ -1549,13 +1523,7 @@ function ClusterPopover({
                 onMemberClick(r.id);
               }}
             >
-              <rect
-                x={0}
-                y={0}
-                width={innerW}
-                height={POPOVER_ROW_H}
-                fill="transparent"
-              />
+              <rect x={0} y={0} width={innerW} height={POPOVER_ROW_H} fill="transparent" />
               <circle cx={POPOVER_PAD + 4} cy={POPOVER_ROW_H / 2} r={4} fill={fill} />
               <text
                 x={POPOVER_PAD + 14}

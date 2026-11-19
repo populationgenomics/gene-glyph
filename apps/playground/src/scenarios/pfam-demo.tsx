@@ -17,10 +17,9 @@ export function PfamDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-pfam">
       <h2 id="scenario-pfam">Pfam — TP53</h2>
       <p className="scenario-blurb">
-        Slice 5 acceptance bar: each Pfam domain renders as joined per-exon
-        rectangles with a thin linker over each collapsed-intron gap; centred
-        labels truncate to half-distance against their neighbours so they
-        never bleed into adjacent labels.
+        Slice 5 acceptance bar: each Pfam domain renders as joined per-exon rectangles with a thin
+        linker over each collapsed-intron gap; centred labels truncate to half-distance against
+        their neighbours so they never bleed into adjacent labels.
       </p>
       <GeneGlyph
         transcript={TP53_TRANSCRIPT}

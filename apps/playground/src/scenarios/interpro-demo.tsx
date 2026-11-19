@@ -19,15 +19,13 @@ export function InterProDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-interpro">
       <h2 id="scenario-interpro">InterPro — TP53</h2>
       <p className="scenario-blurb">
-        InterPro lanes render in the <code>minimal</code> style by default —
-        a thin coloured line per domain with end-cap ticks and a label
-        left-aligned to the domain&apos;s start. Pfam stays rect-shaped, so
-        InterPro reads as secondary annotation. The left gutter renders the
-        nesting structure: the <em>InterPro</em> group label sits at the
-        top of the group&apos;s y-extent, with the entry-type sub-track
-        labels (Family, Domain, Repeat, Homologous SF) indented below.
-        Overlapping family entries still lane-pack into two rows without
-        crashing labels.
+        InterPro lanes render in the <code>minimal</code> style by default — a thin coloured line
+        per domain with end-cap ticks and a label left-aligned to the domain&apos;s start. Pfam
+        stays rect-shaped, so InterPro reads as secondary annotation. The left gutter renders the
+        nesting structure: the <em>InterPro</em> group label sits at the top of the group&apos;s
+        y-extent, with the entry-type sub-track labels (Family, Domain, Repeat, Homologous SF)
+        indented below. Overlapping family entries still lane-pack into two rows without crashing
+        labels.
       </p>
       <GeneGlyph
         transcript={TP53_TRANSCRIPT}

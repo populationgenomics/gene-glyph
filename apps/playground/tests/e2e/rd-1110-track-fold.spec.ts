@@ -11,14 +11,15 @@ async function waitForReady(s: Locator, gene: string): Promise<void> {
   // The live-data scenario fetches gnomAD and reports the ClinVar variant
   // count once the transcript + records arrive.
   await s.locator('[data-testid="live-data-gene-picker"]').selectOption(gene);
-  await expect(s.locator('[data-testid="live-data-status"]')).toContainText(
-    /ClinVar variants/,
-    { timeout: 20_000 },
-  );
+  await expect(s.locator('[data-testid="live-data-status"]')).toContainText(/ClinVar variants/, {
+    timeout: 20_000,
+  });
 }
 
 test.describe('RD-1110 — nested ClinVar fold contract', () => {
-  test('folded parent shows whole-record summary; unfolding parent reveals per-significance sub-groups', async ({ page }) => {
+  test('folded parent shows whole-record summary; unfolding parent reveals per-significance sub-groups', async ({
+    page,
+  }) => {
     const s = await liveDataScenario(page);
     await waitForReady(s, 'BRCA1');
 
@@ -31,7 +32,9 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     // because their enclosing group is skipped.
     const parentSummary = s.locator('[data-testid="gene-glyph-track-clinvar-summary"]');
     await expect(parentSummary).toBeAttached();
-    await expect(s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]')).toHaveCount(0);
+    await expect(
+      s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]'),
+    ).toHaveCount(0);
 
     // Unfold the parent. Now the six per-significance sub-group
     // chevrons are reachable and each sub-group is still folded, so
@@ -41,13 +44,17 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     const pathogenic = s.locator('[data-testid="gene-glyph-chevron-clinvar-pathogenic"]');
     await expect(pathogenic).toHaveAttribute('aria-expanded', 'false');
     await expect(parentSummary).toHaveCount(0);
-    await expect(s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]')).toBeAttached();
+    await expect(
+      s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]'),
+    ).toBeAttached();
     await expect(
       s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-pathogenic-detail"]'),
     ).toHaveCount(0);
   });
 
-  test('unfolding one sub-group swaps its summary for the stacked detail; others remain folded', async ({ page }) => {
+  test('unfolding one sub-group swaps its summary for the stacked detail; others remain folded', async ({
+    page,
+  }) => {
     const s = await liveDataScenario(page);
     await waitForReady(s, 'BRCA1');
 
@@ -55,8 +62,8 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     await s.locator('[data-testid="gene-glyph-chevron-clinvar-group"]').click();
 
     const figure = s.locator('svg.vv-figure');
-    const beforeHeight = await figure.evaluate((el) =>
-      (el as SVGSVGElement).getBoundingClientRect().height,
+    const beforeHeight = await figure.evaluate(
+      (el) => (el as SVGSVGElement).getBoundingClientRect().height,
     );
 
     // Unfold just the pathogenic sub-group. Its stacked detail mounts;
@@ -70,14 +77,18 @@ test.describe('RD-1110 — nested ClinVar fold contract', () => {
     await expect(
       s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-pathogenic-detail"]'),
     ).toBeAttached();
-    await expect(s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]')).toHaveCount(0);
-    await expect(s.locator('[data-testid="gene-glyph-track-clinvar-likely_pathogenic-summary"]')).toBeAttached();
+    await expect(
+      s.locator('[data-testid="gene-glyph-track-clinvar-pathogenic-summary"]'),
+    ).toHaveCount(0);
+    await expect(
+      s.locator('[data-testid="gene-glyph-track-clinvar-likely_pathogenic-summary"]'),
+    ).toBeAttached();
     await expect(
       s.locator('.vv-clinvar-track-stacked[data-vv-track-id="clinvar-likely_pathogenic-detail"]'),
     ).toHaveCount(0);
 
-    const afterHeight = await figure.evaluate((el) =>
-      (el as SVGSVGElement).getBoundingClientRect().height,
+    const afterHeight = await figure.evaluate(
+      (el) => (el as SVGSVGElement).getBoundingClientRect().height,
     );
     expect(afterHeight).toBeGreaterThan(beforeHeight);
   });

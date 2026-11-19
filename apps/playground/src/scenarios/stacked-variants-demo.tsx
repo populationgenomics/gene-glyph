@@ -62,10 +62,10 @@ export function StackedVariantsDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-stacked-variants">
       <h2 id="scenario-stacked-variants">Stacked variant view — Decipher-style</h2>
       <p className="scenario-blurb">
-        Same data, two render styles. The classic tick+dot row hides variant
-        depth at hotspot codons; the stacked column shows each variant as its
-        own glyph with shape × fill × lane encoding category, predicted
-        effect, and lane group. Track height grows to fit the deepest stack.
+        Same data, two render styles. The classic tick+dot row hides variant depth at hotspot
+        codons; the stacked column shows each variant as its own glyph with shape × fill × lane
+        encoding category, predicted effect, and lane group. Track height grows to fit the deepest
+        stack.
       </p>
       <div
         style={{
@@ -77,10 +77,7 @@ export function StackedVariantsDemoScenario() {
           color: '#475569',
         }}
       >
-        <span
-          data-testid="stacked-last-clicked"
-          style={{ fontVariantNumeric: 'tabular-nums' }}
-        >
+        <span data-testid="stacked-last-clicked" style={{ fontVariantNumeric: 'tabular-nums' }}>
           last clicked: <strong>{variant ?? '—'}</strong>
         </span>
       </div>
@@ -105,13 +102,9 @@ export function StackedVariantsDemoScenario() {
         />
       </div>
       <h3 style={{ marginTop: 24, fontSize: '0.9rem' }}>ClinVar in stacked mode</h3>
-      <p
-        className="scenario-blurb"
-        style={{ marginTop: 0 }}
-      >
-        Stacking suppresses ClinVar's density clustering — every record gets
-        its own glyph. Shape encodes clinical significance (diamond
-        pathogenic, circle benign, pentagon conflicting, …).
+      <p className="scenario-blurb" style={{ marginTop: 0 }}>
+        Stacking suppresses ClinVar's density clustering — every record gets its own glyph. Shape
+        encodes clinical significance (diamond pathogenic, circle benign, pentagon conflicting, …).
       </p>
       <GeneGlyph
         transcript={TP53_TRANSCRIPT}

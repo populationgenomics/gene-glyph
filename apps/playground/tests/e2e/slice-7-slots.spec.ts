@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Slice 7 — slot system (RD-1067)', () => {
-  test('header, footer, and right gutter slots all render alongside the figure', async ({ page }) => {
+  test('header, footer, and right gutter slots all render alongside the figure', async ({
+    page,
+  }) => {
     await page.goto('/');
     const scenario = page.locator('section[aria-labelledby="scenario-slots"]');
     await expect(scenario.locator('[data-testid="gene-glyph-header-slot"]')).toBeVisible();

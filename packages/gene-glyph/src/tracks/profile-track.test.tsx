@@ -250,10 +250,18 @@ describe('profileTrack — render', () => {
       render: 'heatmap',
     });
     const { mapper, viewport, painter, interaction } = setup(smallGene, 'protein');
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
-        {t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }) })}
+        {t.render({
+          data,
+          ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }),
+        })}
       </svg>,
     );
     const cells = container.querySelectorAll('.vv-profile-cell');
@@ -270,14 +278,24 @@ describe('profileTrack — render', () => {
       render: 'histogram',
     });
     const { mapper, viewport, painter, interaction } = setup(longGene, 'protein');
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
-        {t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }) })}
+        {t.render({
+          data,
+          ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }),
+        })}
       </svg>,
     );
     // 2000 aa over 600 px viewport → ~0.3 px/aa → step ≥ 3 → ≤ 700 buckets.
-    const step = Number(container.querySelector('.vv-profile-track')!.getAttribute('data-vv-profile-step'));
+    const step = Number(
+      container.querySelector('.vv-profile-track')!.getAttribute('data-vv-profile-step'),
+    );
     expect(step).toBeGreaterThan(1);
     // One <path> per exon (here, one exon) — the area is consolidated.
     expect(container.querySelectorAll('.vv-profile-area').length).toBe(1);
@@ -295,10 +313,18 @@ describe('profileTrack — render', () => {
       colorRamp: (v) => (v >= 0.5 ? '#abc' : '#def'),
     });
     const { mapper, viewport, painter, interaction } = setup(smallGene, 'protein');
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
-        {t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }) })}
+        {t.render({
+          data,
+          ...renderArgs({ yTop: 0, yBottom: 24 }, { mapper, viewport, painter, interaction }),
+        })}
       </svg>,
     );
     const bars = [...container.querySelectorAll<SVGRectElement>('.vv-profile-bar')];
@@ -341,10 +367,14 @@ describe('profileTrack — render', () => {
       protein: null,
     });
     const a = render(
-      <svg>{linearTrack.render({ data: linData, ...renderArgs({ yTop: 0, yBottom: 100 }, ctx) })}</svg>,
+      <svg>
+        {linearTrack.render({ data: linData, ...renderArgs({ yTop: 0, yBottom: 100 }, ctx) })}
+      </svg>,
     );
     const b = render(
-      <svg>{logTrack.render({ data: logData, ...renderArgs({ yTop: 0, yBottom: 100 }, ctx) })}</svg>,
+      <svg>
+        {logTrack.render({ data: logData, ...renderArgs({ yTop: 0, yBottom: 100 }, ctx) })}
+      </svg>,
     );
     const linBars = [...a.container.querySelectorAll<SVGRectElement>('.vv-profile-bar')];
     const logBars = [...b.container.querySelectorAll<SVGRectElement>('.vv-profile-bar')];
@@ -366,7 +396,12 @@ describe('profileTrack — render', () => {
       length: 20,
     });
     const ctx = setup(smallGene, 'protein');
-    const data = await t.load({ viewport: ctx.viewport, mapper: ctx.mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport: ctx.viewport,
+      mapper: ctx.mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>{t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, ctx) })}</svg>,
     );
@@ -382,7 +417,12 @@ describe('profileTrack — render', () => {
       render: 'heatmap',
     });
     const ctx = setup(smallGene, 'genome');
-    const data = await t.load({ viewport: ctx.viewport, mapper: ctx.mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport: ctx.viewport,
+      mapper: ctx.mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>{t.render({ data, ...renderArgs({ yTop: 0, yBottom: 24 }, ctx) })}</svg>,
     );

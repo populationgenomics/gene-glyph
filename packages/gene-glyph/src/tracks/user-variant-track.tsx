@@ -1,9 +1,5 @@
 import type { SymbolEncoding } from '../symbol-encoding.js';
-import type {
-  DataSource,
-  Track,
-  ViewportQuery,
-} from '../types.js';
+import type { DataSource, Track, ViewportQuery } from '../types.js';
 import {
   clinVarTrack,
   type ClinVarRecord,
@@ -83,14 +79,16 @@ function toClinVarShaped(r: UserVariantRecord): ClinVarRecord {
 
 function fromClinVarShaped(r: ClinVarRecord): UserVariantRecord {
   const original = (r.meta ?? {})[ORIGINAL_KEY] as UserVariantRecord | undefined;
-  return original ?? {
-    id: r.id,
-    chr: r.chr,
-    pos: r.pos,
-    label: r.label,
-    refLen: r.refLen,
-    meta: r.meta,
-  };
+  return (
+    original ?? {
+      id: r.id,
+      chr: r.chr,
+      pos: r.pos,
+      label: r.label,
+      refLen: r.refLen,
+      meta: r.meta,
+    }
+  );
 }
 
 /** Build a track that renders user-supplied variants as purple crosses

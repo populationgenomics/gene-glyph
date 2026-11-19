@@ -3,11 +3,7 @@ import {
   parseClinVarSignificance,
   rmcCategoryFor,
 } from '@populationgenomics/gene-glyph';
-import type {
-  ClinVarRecord,
-  RmcCategory,
-  Transcript,
-} from '@populationgenomics/gene-glyph';
+import type { ClinVarRecord, RmcCategory, Transcript } from '@populationgenomics/gene-glyph';
 
 /**
  * Playground-only helpers that pull transcript structure and ClinVar
@@ -205,10 +201,7 @@ const dataCache = new Map<string, LiveGeneData>();
  *  another caller's promise. */
 const inFlight = new Map<string, Promise<LiveGeneData>>();
 
-export function fetchGeneData(
-  geneSymbol: string,
-  signal?: AbortSignal,
-): Promise<LiveGeneData> {
+export function fetchGeneData(geneSymbol: string, signal?: AbortSignal): Promise<LiveGeneData> {
   const key = geneSymbol.toUpperCase();
   const cached = dataCache.get(key);
   if (cached) return Promise.resolve(cached);
@@ -333,10 +326,7 @@ function wrapWithSignal<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
   });
 }
 
-async function doFetchTranscript(
-  requestedId: string,
-  force: boolean,
-): Promise<LiveTranscriptData> {
+async function doFetchTranscript(requestedId: string, force: boolean): Promise<LiveTranscriptData> {
   // gnomAD primary: one request returns structure + ClinVar + the
   // parent gene's canonical id. If the requested id isn't the canonical
   // and the caller hasn't forced, re-fetch using the canonical and
@@ -374,9 +364,7 @@ async function doFetchTranscript(
   return { ...ensembl, requestedTranscriptId: requestedId };
 }
 
-async function tryGnomadTranscript(
-  transcriptId: string,
-): Promise<GnomadTranscriptResult | null> {
+async function tryGnomadTranscript(transcriptId: string): Promise<GnomadTranscriptResult | null> {
   const res = await fetch(GNOMAD_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -429,15 +417,11 @@ async function fetchEnsemblTranscript(
   const url = `${ENSEMBL_REST}/lookup/id/${encodeURIComponent(transcriptId)}?expand=1`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) {
-    throw new Error(
-      `Ensembl: HTTP ${res.status} ${res.statusText} for ${transcriptId}`,
-    );
+    throw new Error(`Ensembl: HTTP ${res.status} ${res.statusText} for ${transcriptId}`);
   }
   const json = (await res.json()) as EnsemblTranscriptResponse;
   if (!json?.Translation) {
-    throw new Error(
-      `Ensembl: ${transcriptId} has no Translation (non-coding transcript?)`,
-    );
+    throw new Error(`Ensembl: ${transcriptId} has no Translation (non-coding transcript?)`);
   }
   const transcript = ensemblToTranscript(json);
   const geneSymbol = json.display_name?.split('-')[0] ?? json.Parent;
@@ -577,10 +561,7 @@ function summarizeUtrBp(
     : { utr5Bp: rightLen, utr3Bp: leftLen };
 }
 
-function gnomadClinVarToRecords(
-  variants: GnomadClinVarVariant[],
-  chrom: string,
-): ClinVarRecord[] {
+function gnomadClinVarToRecords(variants: GnomadClinVarVariant[], chrom: string): ClinVarRecord[] {
   const chr = prefixChrom(chrom);
   return variants.map((v) => ({
     id: v.variant_id,
@@ -660,10 +641,7 @@ const RMC_QUERY = /* GraphQL */ `
   }
 `;
 
-export function fetchRmcResult(
-  geneSymbol: string,
-  signal?: AbortSignal,
-): Promise<RmcResult> {
+export function fetchRmcResult(geneSymbol: string, signal?: AbortSignal): Promise<RmcResult> {
   const key = geneSymbol.toUpperCase();
   const cached = rmcCache.get(key);
   if (cached) return Promise.resolve(cached);
@@ -742,8 +720,7 @@ function toRmcRegions(raw: GnomadRmcRegion[] | null): RmcRegion[] {
 function toTranscript(gene: GnomadGene): Transcript {
   const txId = gene.canonical_transcript_id;
   const tx =
-    (txId ? gene.transcripts.find((t) => t.transcript_id === txId) : null) ??
-    gene.transcripts[0];
+    (txId ? gene.transcripts.find((t) => t.transcript_id === txId) : null) ?? gene.transcripts[0];
   if (!tx) {
     throw new Error(`gnomAD: no transcript for ${gene.symbol}`);
   }

@@ -7,8 +7,8 @@ linked to from a report, an issue, or another dashboard.
 
 ## Required
 
-| Param        | Values            | Notes                                                                                                  |
-| ------------ | ----------------- | ------------------------------------------------------------------------------------------------------ |
+| Param        | Values             | Notes                                                                                                                                                  |
+| ------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `transcript` | Ensembl `ENST…` id | The page renders an error when this is missing. Non-canonical ids are auto-redirected to the gene's canonical transcript unless `force=1` is also set. |
 
 ## Optional
@@ -17,18 +17,18 @@ Only values that differ from the defaults are written to the URL — a
 freshly-opened, untouched embed reads as `?transcript=ENST…` with nothing
 else.
 
-| Param           | Values                                                              | Default        | Effect                                                                                                                                                                                                                          |
-| --------------- | ------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `force`         | `1` / `true`                                                        | _absent_       | Disable the "redirect non-canonical → canonical" step. Use to view a specific non-canonical transcript verbatim.                                                                                                                |
-| `mode`          | `genome` / `transcript` / `protein`                                 | `transcript`   | Initial view mode. `genome` adds the intron decoration / splice-site flanks; `transcript` collapses introns to zero-width junctions; `protein` lays out by amino-acid coordinates.                                              |
-| `density`       | `compact` / `normal` / `roomy`                                      | `normal`       | Per-row pitch + marker radius for the stacked ClinVar tracks. `compact` ≈ half the vertical pitch of `normal`; `roomy` trades that back.                                                                                        |
-| `excluded`      | CSV of clinical-significance values (see below)                     | _empty_        | Significance chips that start excluded. Plain-click a chip in the page toggles a single value; shift-click solos the chip within its row.                                                                                       |
-| `excludedStars` | CSV of integers `0`–`4`                                             | _empty_        | Review-star chips that start excluded. `0` = no stars, `1`–`4` = 1–4 review stars.                                                                                                                                              |
-| `excludedTypes` | CSV of variant-type values (see below)                              | _empty_        | Variant-type chips that start excluded. Each value maps a class of gnomAD `major_consequence` SO terms.                                                                                                                         |
-| `selected`      | Variant id or 8-hex FNV-1a hash (see "Selection" below)              | _absent_       | Pre-select a variant. The detail card opens, the matching marker draws its selection ring, and a full-figure-height drop-line / range overlay highlights the variant's coordinate span. Survives chip toggles: if the selected variant gets filtered out, the card hides until the matching chip is re-enabled. |
-| `collapsed`     | CSV of group ids                                                    | see "Collapse" | Override the set of folded ClinVar groups. The param's _presence_ (even empty: `?collapsed=`) overrides the default; only its absence falls back to the default-collapsed state.                                                |
-| `hide`          | CSV of track ids (see below)                                        | _empty_        | Tracks to omit from the figure entirely.                                                                                                                                                                                        |
-| `variants`      | CSV of user-supplied variants (see "User variants" below)            | _empty_        | Renders a purple-cross row of user variants between the exon and InterPro tracks. Empty value (or absent param) hides the row entirely.                                                                                          |
+| Param           | Values                                                    | Default        | Effect                                                                                                                                                                                                                                                                                                          |
+| --------------- | --------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `force`         | `1` / `true`                                              | _absent_       | Disable the "redirect non-canonical → canonical" step. Use to view a specific non-canonical transcript verbatim.                                                                                                                                                                                                |
+| `mode`          | `genome` / `transcript` / `protein`                       | `transcript`   | Initial view mode. `genome` adds the intron decoration / splice-site flanks; `transcript` collapses introns to zero-width junctions; `protein` lays out by amino-acid coordinates.                                                                                                                              |
+| `density`       | `compact` / `normal` / `roomy`                            | `normal`       | Per-row pitch + marker radius for the stacked ClinVar tracks. `compact` ≈ half the vertical pitch of `normal`; `roomy` trades that back.                                                                                                                                                                        |
+| `excluded`      | CSV of clinical-significance values (see below)           | _empty_        | Significance chips that start excluded. Plain-click a chip in the page toggles a single value; shift-click solos the chip within its row.                                                                                                                                                                       |
+| `excludedStars` | CSV of integers `0`–`4`                                   | _empty_        | Review-star chips that start excluded. `0` = no stars, `1`–`4` = 1–4 review stars.                                                                                                                                                                                                                              |
+| `excludedTypes` | CSV of variant-type values (see below)                    | _empty_        | Variant-type chips that start excluded. Each value maps a class of gnomAD `major_consequence` SO terms.                                                                                                                                                                                                         |
+| `selected`      | Variant id or 8-hex FNV-1a hash (see "Selection" below)   | _absent_       | Pre-select a variant. The detail card opens, the matching marker draws its selection ring, and a full-figure-height drop-line / range overlay highlights the variant's coordinate span. Survives chip toggles: if the selected variant gets filtered out, the card hides until the matching chip is re-enabled. |
+| `collapsed`     | CSV of group ids                                          | see "Collapse" | Override the set of folded ClinVar groups. The param's _presence_ (even empty: `?collapsed=`) overrides the default; only its absence falls back to the default-collapsed state.                                                                                                                                |
+| `hide`          | CSV of track ids (see below)                              | _empty_        | Tracks to omit from the figure entirely.                                                                                                                                                                                                                                                                        |
+| `variants`      | CSV of user-supplied variants (see "User variants" below) | _empty_        | Renders a purple-cross row of user variants between the exon and InterPro tracks. Empty value (or absent param) hides the row entirely.                                                                                                                                                                         |
 
 ### Significance values (`excluded`)
 
@@ -41,16 +41,16 @@ ignored.
 Each value maps a coarse bucket of gnomAD's `major_consequence` SO
 terms:
 
-| Value           | gnomAD `major_consequence` mapping                                |
-| --------------- | ------------------------------------------------------------------ |
-| `missense`      | `missense_variant`                                                 |
-| `nonsense`      | `stop_gained`, `stop_lost`, `start_lost`                           |
-| `frameshift`    | `frameshift_variant`                                               |
+| Value           | gnomAD `major_consequence` mapping                                                             |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `missense`      | `missense_variant`                                                                             |
+| `nonsense`      | `stop_gained`, `stop_lost`, `start_lost`                                                       |
+| `frameshift`    | `frameshift_variant`                                                                           |
 | `splice`        | any `splice_*` (`splice_donor_variant`, `splice_acceptor_variant`, `splice_region_variant`, …) |
-| `inframe_indel` | `inframe_insertion`, `inframe_deletion`                            |
-| `synonymous`    | `synonymous_variant`, `stop_retained_variant`                      |
-| `utr`           | `*_utr_variant`, `non_coding_transcript_exon_variant`              |
-| `other`         | anything not matched above                                         |
+| `inframe_indel` | `inframe_insertion`, `inframe_deletion`                                                        |
+| `synonymous`    | `synonymous_variant`, `stop_retained_variant`                                                  |
+| `utr`           | `*_utr_variant`, `non_coding_transcript_exon_variant`                                          |
+| `other`         | anything not matched above                                                                     |
 
 ### Track ids (`hide`)
 
@@ -66,11 +66,11 @@ The embed accepts a clinician-pasteable list of variants alongside
 ClinVar. Format: one variant per entry, separated by `,` (URL) or
 newlines (modal). Accepted forms:
 
-| Form              | Example                | Notes                                       |
-| ----------------- | ---------------------- | ------------------------------------------- |
-| gnomAD canonical  | `17-7674212-C-A`       | Direct match against ClinVar id space.      |
-| Tab-style         | `17:7674212C>T`        | Optional `chr` prefix, lowercase tolerated. |
-| Dash-style        | `17:7674212-C-T`       | Same.                                       |
+| Form                     | Example                              | Notes                                                             |
+| ------------------------ | ------------------------------------ | ----------------------------------------------------------------- |
+| gnomAD canonical         | `17-7674212-C-A`                     | Direct match against ClinVar id space.                            |
+| Tab-style                | `17:7674212C>T`                      | Optional `chr` prefix, lowercase tolerated.                       |
+| Dash-style               | `17:7674212-C-T`                     | Same.                                                             |
 | HGVS transcript-relative | `c.524G>A`, `n.41A>G`, `p.Arg175His` | Routed through VariantValidator (GRCh38, transcript-set Ensembl). |
 
 Each entry normalises to the gnomAD form `chr-pos-REF-ALT` (no `chr`

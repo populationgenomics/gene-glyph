@@ -8,12 +8,7 @@ import {
   pfamTrack,
   variantTrack,
 } from '@populationgenomics/gene-glyph';
-import type {
-  GeneGlyphRef,
-  GutterItem,
-  Track,
-  TrackOrGroup,
-} from '@populationgenomics/gene-glyph';
+import type { GeneGlyphRef, GutterItem, Track, TrackOrGroup } from '@populationgenomics/gene-glyph';
 
 // When the host collapses a track we want the chevron to stay reachable
 // so the user can expand it back. The cleanest way: leave the track in
@@ -134,10 +129,9 @@ export function DefaultChromeScenario() {
     <section className="scenario" aria-labelledby="scenario-default-chrome">
       <h2 id="scenario-default-chrome">Default chrome — TP53</h2>
       <p className="scenario-blurb">
-        <code>&lt;DefaultTrackChevron&gt;</code> handles the LeftGutter row
-        toggle UI; <code>&lt;DefaultMinimap&gt;</code> lives in the Footer
-        and drives pan/zoom by direct manipulation. Both are built using
-        only the public ref API and the slot system.
+        <code>&lt;DefaultTrackChevron&gt;</code> handles the LeftGutter row toggle UI;{' '}
+        <code>&lt;DefaultMinimap&gt;</code> lives in the Footer and drives pan/zoom by direct
+        manipulation. Both are built using only the public ref API and the slot system.
       </p>
       <GeneGlyph
         ref={ref}
@@ -208,10 +202,7 @@ export function DefaultChromeScenario() {
                   }}
                   title={label}
                 >
-                  <span
-                    aria-hidden
-                    style={{ width: 3, background: '#cbd5e1' }}
-                  />
+                  <span aria-hidden style={{ width: 3, background: '#cbd5e1' }} />
                   <span
                     style={{
                       display: 'inline-flex',

@@ -73,10 +73,7 @@ describe('GeneGlyph.LeftGutter slot', () => {
       <GeneGlyph
         transcript={transcript}
         protein={protein}
-        tracks={[
-          exonTrack({}),
-          interProTrack({ groups: ['family', 'domain'] }),
-        ]}
+        tracks={[exonTrack({}), interProTrack({ groups: ['family', 'domain'] })]}
       >
         <GeneGlyph.LeftGutter width={64}>
           {(item) => {
@@ -112,13 +109,13 @@ describe('GeneGlyph.LeftGutter slot', () => {
         protein={protein}
         tracks={[exonTrack({}), interProTrack({ groups: ['family'] })]}
       >
-        <GeneGlyph.LeftGutter width={88}>
-          {() => <span>row</span>}
-        </GeneGlyph.LeftGutter>
+        <GeneGlyph.LeftGutter width={88}>{() => <span>row</span>}</GeneGlyph.LeftGutter>
       </GeneGlyph>,
     );
     await flushLoads();
-    const gutter = container.querySelector<HTMLDivElement>('[data-testid="gene-glyph-left-gutter"]');
+    const gutter = container.querySelector<HTMLDivElement>(
+      '[data-testid="gene-glyph-left-gutter"]',
+    );
     expect(gutter?.style.width).toBe('88px');
   });
 });

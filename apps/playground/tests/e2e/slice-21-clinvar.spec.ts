@@ -34,7 +34,9 @@ test.describe('Slice 21 — ClinVar density-clustered track', () => {
     expect(rowCount).toBeGreaterThanOrEqual(2);
   });
 
-  test('clicking a member row fires the host onFeatureClick and closes the popover', async ({ page }) => {
+  test('clicking a member row fires the host onFeatureClick and closes the popover', async ({
+    page,
+  }) => {
     const s = await scenario(page);
     const cluster = s.locator('.vv-clinvar-mark.is-cluster').first();
     await cluster.click();
@@ -45,9 +47,7 @@ test.describe('Slice 21 — ClinVar density-clustered track', () => {
     expect(featureId).toBeTruthy();
     await firstRow.click();
     await expect(popover).toHaveCount(0);
-    await expect(s.locator('[data-testid="clinvar-last-clicked"] strong')).toHaveText(
-      featureId!,
-    );
+    await expect(s.locator('[data-testid="clinvar-last-clicked"] strong')).toHaveText(featureId!);
   });
 
   test('clicking the backdrop dismisses the popover', async ({ page }) => {

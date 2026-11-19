@@ -27,7 +27,11 @@ const midGene: Transcript = {
   ],
 };
 
-function setup(transcript: Transcript, mode: 'genome' | 'transcript' | 'protein' = 'genome', width = 600) {
+function setup(
+  transcript: Transcript,
+  mode: 'genome' | 'transcript' | 'protein' = 'genome',
+  width = 600,
+) {
   const mapper = createCoordinateMapper(transcript);
   const viewport = new ViewportController({ mapper, width, mode });
   const painter = createSvgPainter({ mode: 'screen' });
@@ -110,7 +114,12 @@ describe('aaTrack', () => {
   it('renders one letter per visible aa in CDS mode', async () => {
     const { mapper, viewport, painter, interaction } = setup(tinyGene);
     const t = aaTrack({ nucleotideSource: 'ATGGCCTGA' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     // 9 bp → 3 codons (M, A, *).
     expect(data.sequence).toBe('MA*');
 
@@ -144,7 +153,12 @@ describe('aaTrack', () => {
     };
     const { mapper, viewport, painter, interaction } = setup(proteinGene, 'protein');
     const t = aaTrack({ proteinSource: 'MAVLIFWSTNQDKRHCGPYE' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -174,7 +188,12 @@ describe('aaTrack', () => {
     };
     const { mapper, viewport, painter, interaction } = setup(longGene);
     const t = aaTrack({ nucleotideSource: 'A'.repeat(600) });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -195,7 +214,12 @@ describe('aaTrack', () => {
     // 60 bp → 20 codons. Codon 10's centre is bp 29 (exon 0); codon
     // 11's centre is bp 32 (exon 1).
     const t = aaTrack({ nucleotideSource: 'A'.repeat(60) });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const { container } = render(
       <svg>
         {t.render({
@@ -224,7 +248,12 @@ describe('aaTrack', () => {
     const { mapper, viewport } = setup(tinyGene);
     // 11 bp → 3 whole codons, last 2 bp dropped.
     const t = aaTrack({ nucleotideSource: 'ATGGCCTGAAT' });
-    const data = await t.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(data.sequence).toBe('MA*');
   });
 });

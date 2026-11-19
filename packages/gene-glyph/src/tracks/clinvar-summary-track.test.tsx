@@ -19,7 +19,11 @@ const transcript: Transcript = {
   ],
 };
 
-function makeRecord(id: string, pos: number, significance: ClinVarRecord['significance']): ClinVarRecord {
+function makeRecord(
+  id: string,
+  pos: number,
+  significance: ClinVarRecord['significance'],
+): ClinVarRecord {
   return {
     id,
     label: id,
@@ -55,14 +59,12 @@ describe('clinVarSummaryTrack', () => {
 
     // Single-significance (per-sig subgroup case) stays compact.
     const singleSig: ClinVarRecord[] = [makeRecord('s1', 1010, 'pathogenic')];
-    expect(
-      track.height({ data: { records: singleSig }, viewport, hint: { maxPx: 100 } }).px,
-    ).toBe(18);
+    expect(track.height({ data: { records: singleSig }, viewport, hint: { maxPx: 100 } }).px).toBe(
+      18,
+    );
 
     // Multi-significance (butterfly aggregate) grows to 3x for breathing room.
-    expect(
-      track.height({ data: { records }, viewport, hint: { maxPx: 100 } }).px,
-    ).toBe(54);
+    expect(track.height({ data: { records }, viewport, hint: { maxPx: 100 } }).px).toBe(54);
   });
 
   it('emits one heat-strip cell per occupied screen-pixel bin', () => {
@@ -86,9 +88,7 @@ describe('clinVarSummaryTrack', () => {
     const cells = container.querySelectorAll('.vv-clinvar-summary-cell');
     expect(cells.length).toBeGreaterThan(0);
     // Cells carry their bin count + dominant significance.
-    const sigs = new Set(
-      [...cells].map((c) => c.getAttribute('data-vv-significance')),
-    );
+    const sigs = new Set([...cells].map((c) => c.getAttribute('data-vv-significance')));
     // At fit-gene the exon-1 cluster collapses into one bin and its
     // pathogenic record dominates over the LP / VUS members.
     expect(sigs).toContain('pathogenic');
@@ -154,9 +154,7 @@ describe('clinVarSummaryTrack', () => {
     // Directional cells: pathogenic and benign. VUS is absorbed into them
     // via the local-prior attribution, so no separate neutral strip.
     const cells = container.querySelectorAll('.vv-clinvar-summary-cell');
-    const sigs = new Set(
-      [...cells].map((c) => c.getAttribute('data-vv-significance')),
-    );
+    const sigs = new Set([...cells].map((c) => c.getAttribute('data-vv-significance')));
     expect(sigs).toEqual(new Set(['pathogenic', 'benign']));
     expect(container.querySelector('.vv-clinvar-summary-neutral')).toBeNull();
 

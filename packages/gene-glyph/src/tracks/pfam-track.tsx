@@ -87,9 +87,7 @@ export function fitText(text: string, maxW: number, fontSize: number): string {
   return text.slice(0, Math.max(1, maxChars - 1)) + '…';
 }
 
-export function pfamTrack(
-  config: PfamTrackConfig = {},
-): Track<PfamTrackConfig, PfamTrackData> {
+export function pfamTrack(config: PfamTrackConfig = {}): Track<PfamTrackConfig, PfamTrackData> {
   const id = config.id ?? 'pfam-track';
   const trackHeight = config.height ?? DEFAULT_HEIGHT;
   const rectHalf = config.rectHalfHeight ?? DEFAULT_HALF;
@@ -133,7 +131,8 @@ export function pfamTrack(
       // inside the inter-exon group would be too SHORT in display
       // whenever zoomScale > 1, because flank baseline-px scales with
       // zoom but the bulk doesn't.
-      const flanksByIntron = baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
+      const flanksByIntron =
+        baseline.flanksByIntron ?? new Map<number, { donor: number; acceptor: number }>();
 
       const placed = data.domains
         .map((d) => placeDomain(d, viewport))
@@ -193,18 +192,13 @@ export function pfamTrack(
           painter.placeInInterExon(
             exonIdxA,
             exonIdxB,
-            <Fragment key={`pfam-linkers-${exonIdxA}-${exonIdxB}`}>
-              {nodes}
-            </Fragment>,
+            <Fragment key={`pfam-linkers-${exonIdxA}-${exonIdxB}`}>{nodes}</Fragment>,
           ),
         );
       }
 
       const exonGroups: ReactNode[] = [];
-      const exonIdxs = new Set<number>([
-        ...rectsByExon.keys(),
-        ...labelsByExon.keys(),
-      ]);
+      const exonIdxs = new Set<number>([...rectsByExon.keys(), ...labelsByExon.keys()]);
       for (const idx of exonIdxs) {
         const rects = rectsByExon.get(idx) ?? [];
         const labels = labelsByExon.get(idx) ?? [];
@@ -286,10 +280,7 @@ interface EmitArgs {
   painter: Painter;
   rectsByExon: Map<number, ReactNode[]>;
   labelsByExon: Map<number, ReactNode[]>;
-  linkersByGap: Map<
-    string,
-    { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }
-  >;
+  linkersByGap: Map<string, { exonIdxA: number; exonIdxB: number; nodes: ReactNode[] }>;
 }
 
 function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -412,10 +403,7 @@ function emitDomain(args: EmitArgs): void {
 
     // Bulk piece — inside the inter-exon `<g>`. Spans the bulk
     // baseline width (= the bulk's fixed display budget at fit zoom).
-    const bulkWidth = Math.max(
-      0,
-      (b.xStart - a.xEnd) - flanks.donor - flanks.acceptor,
-    );
+    const bulkWidth = Math.max(0, b.xStart - a.xEnd - flanks.donor - flanks.acceptor);
     if (bulkWidth > 0) {
       const gapKey = `${a.exonIdx}:${b.exonIdx}`;
       let bucket = linkersByGap.get(gapKey);
