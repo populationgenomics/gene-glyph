@@ -9,14 +9,7 @@ import type { VariantCategory, ViewerVariant } from './types.js';
  * legend lookup per variant.
  */
 export type GlyphShape =
-  | 'circle'
-  | 'square'
-  | 'triangle-up'
-  | 'triangle-down'
-  | 'diamond'
-  | 'pentagon'
-  | 'cross'
-  | 'bar';
+  'circle' | 'square' | 'triangle-up' | 'triangle-down' | 'diamond' | 'pentagon' | 'cross' | 'bar';
 
 /**
  * Host-supplied encoding from a feature object to glyph attributes. `lane`
@@ -262,11 +255,7 @@ export const defaultClinVarSymbolEncoding: SymbolEncoding<ClinVarRecord> = {
  *  bucket for anything outside coding-effect space (UTR / intronic /
  *  regulatory / non-coding). */
 export type DecipherConsequenceBucket =
-  | 'lof'
-  | 'protein-changing'
-  | 'splice-region'
-  | 'synonymous'
-  | 'other';
+  'lof' | 'protein-changing' | 'splice-region' | 'synonymous' | 'other';
 
 const DECIPHER_LOF = new Set([
   'stop_gained',

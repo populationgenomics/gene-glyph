@@ -27,6 +27,16 @@ async function getFigure(page: Page): Promise<Locator> {
   return figure;
 }
 
+/** Move the pointer to the figure's centre and return that position. The figure sits near the
+ *  bottom of a 720 px viewport, where taller fonts push its centre below the fold; hover()
+ *  scrolls it into view first, so the box is measured where the pointer can reach it. */
+async function figureCentre(figure: Locator): Promise<{ x: number; y: number }> {
+  await figure.hover();
+  const box = await figure.boundingBox();
+  if (!box) throw new Error('figure not visible');
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
 test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
   test('keyboard right-arrow pans the range to the right', async ({ page }) => {
     await page.goto('/');
@@ -75,9 +85,7 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     await page.goto('/');
     const figure = await getFigure(page);
     const before = await readRange(page);
-    const box = await figure.boundingBox();
-    if (!box) throw new Error('figure not visible');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await figureCentre(figure);
     await page.mouse.wheel(120, 0);
     // mouse.wheel resolves without waiting for the page to handle the event.
     await expect
@@ -98,10 +106,7 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     await page.keyboard.press('+');
     const before = await readRange(page);
     const figure = await getFigure(page);
-    const box = await figure.boundingBox();
-    if (!box) throw new Error('figure not visible');
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
+    const { x: cx, y: cy } = await figureCentre(figure);
     // Plain drag now means box-zoom (RD-1106, Adobe Hand-tool pattern);
     // Space holds the pan modifier.
     await page.keyboard.down('Space');
@@ -123,9 +128,7 @@ test.describe('Slice 9 — pan / zoom interactions (RD-1070)', () => {
     await scenario.getByLabel('Interaction mode').selectOption('embed');
     const figure = await getFigure(page);
     const before = await readRange(page);
-    const box = await figure.boundingBox();
-    if (!box) throw new Error('figure not visible');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await figureCentre(figure);
     // Synthesise a Cmd+wheel zoom; in embed mode the listener returns
     // without preventing default, so the viewer range stays put.
     await figure.evaluate((el, dy) => {

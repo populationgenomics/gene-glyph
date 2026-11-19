@@ -18,12 +18,7 @@
  *  (light green, highest obs/exp); plus `not-significant` for regions
  *  whose `p_value > 0.001`. */
 export type RmcCategory =
-  | 'intol-1'
-  | 'intol-2'
-  | 'intol-3'
-  | 'intol-4'
-  | 'intol-5'
-  | 'not-significant';
+  'intol-1' | 'intol-2' | 'intol-3' | 'intol-4' | 'intol-5' | 'not-significant';
 
 const THREE_LETTER_CODES: ReadonlySet<string> = new Set([
   // 20 canonical amino acids
