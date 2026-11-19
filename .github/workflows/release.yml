@@ -6,6 +6,11 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+env:
+  # Artifact Registry npm repository in aasgard-dev: anyone can read; only the publisher
+  # service account can write, reached through Workload Identity Federation.
+  REGISTRY: https://australia-southeast1-npm.pkg.dev/aasgard-dev/npm/
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -18,11 +23,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - id: gcp
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/244378007039/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: gene-glyph-publisher@aasgard-dev.iam.gserviceaccount.com
+          token_format: access_token
+
+      # Writes an .npmrc mapping @populationgenomics to the registry, authenticated by NODE_AUTH_TOKEN.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          registry-url: https://registry.npmjs.org
+          registry-url: ${{ env.REGISTRY }}
+          scope: '@populationgenomics'
 
       - run: npm ci
 
@@ -38,4 +52,4 @@ jobs:
           title: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ steps.gcp.outputs.access_token }}
