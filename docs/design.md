@@ -11,6 +11,7 @@ Extracted from lit-manager's `frontend/src/components/GeneSchematic.tsx` but reb
 **Single-transcript, multi-coordinate-aligned annotation viewer.**
 
 In scope:
+
 - One transcript per viewer instance
 - Three biology axes aligned and convertible: genomic, CDS, protein
 - Exon/intron structure with collapsed-intron and spliced/protein views
@@ -20,6 +21,7 @@ In scope:
 - Camera-ready vector + raster export
 
 Out of scope:
+
 - Multi-gene or genome-browser views (IGV.js exists for that)
 - Intergenic data, contigs, BAM/VCF tile loading
 - Data outside the chosen transcript's window
@@ -110,8 +112,8 @@ Two objects own the conversions:
 interface CoordinateMapper {
   genomicToCds(chr: string, pos: number): { cPos: number; offset: number } | null;
   cdsToGenomic(cPos: number, offset: number): { chr: string; pos: number } | null;
-  cdsToProtein(cPos: number): number | null;        // null if UTR
-  proteinToCds(aa: number): number;                 // first base of codon
+  cdsToProtein(cPos: number): number | null; // null if UTR
+  proteinToCds(aa: number): number; // first base of codon
 }
 ```
 
@@ -122,8 +124,8 @@ Constructed by the data adapter from the transcript record. Stable across viewpo
 ```ts
 interface Viewport {
   readonly mode: 'cds-with-introns' | 'cds-spliced' | 'protein';
-  readonly intronScale: number;                     // 0..1, interpolatable
-  readonly range: [number, number];                 // window over the active ruler
+  readonly intronScale: number; // 0..1, interpolatable
+  readonly range: [number, number]; // window over the active ruler
 
   // Point projections (return null when out-of-view in current mode)
   cdsToScreen(cPos: number, offset: number): number | null;
@@ -169,11 +171,11 @@ interface Track<TConfig = unknown, TData = unknown> {
 
   load(args: { viewport: Viewport; mapper: CoordinateMapper; signal: AbortSignal }): Promise<TData>;
 
-  height(args: {
-    data: TData | null;
-    viewport: Viewport;
-    hint: { maxPx: number };
-  }): { px: number; didTruncate: boolean; droppedCount?: number };
+  height(args: { data: TData | null; viewport: Viewport; hint: { maxPx: number } }): {
+    px: number;
+    didTruncate: boolean;
+    droppedCount?: number;
+  };
 
   render(args: {
     data: TData;
@@ -184,7 +186,11 @@ interface Track<TConfig = unknown, TData = unknown> {
     painter: Painter;
   }): React.ReactNode;
 
-  resolveAnchor?(data: TData, anchorId: string, viewport: Viewport): { x: number; y: number } | null;
+  resolveAnchor?(
+    data: TData,
+    anchorId: string,
+    viewport: Viewport,
+  ): { x: number; y: number } | null;
 
   toJSON(): TConfig;
 }
@@ -209,6 +215,7 @@ interface TrackGroup {
 ```
 
 Public prop on `<GeneGlyph>`:
+
 ```ts
 tracks: Array<Track | TrackGroup>;
 ```
@@ -221,17 +228,17 @@ tracks: Array<Track | TrackGroup>;
 
 ### Layout cascade rules
 
-| Event | Y-stack changes? | Animation |
-|---|---|---|
-| Zoom (fixed tracks) | No | Free |
-| Zoom (zoom-dependent track) | That track's height, smooth | Per-frame interpolation, paid per opted-in track |
-| Expand/collapse user click | One track, big jump | Spring-curve transition, anchored to click target |
-| Track add/remove | Y-stack reflows | FLIP-style transition |
-| Mode change (CDS↔protein) | No (heights independent of x-projection) | Free |
+| Event                       | Y-stack changes?                         | Animation                                         |
+| --------------------------- | ---------------------------------------- | ------------------------------------------------- |
+| Zoom (fixed tracks)         | No                                       | Free                                              |
+| Zoom (zoom-dependent track) | That track's height, smooth              | Per-frame interpolation, paid per opted-in track  |
+| Expand/collapse user click  | One track, big jump                      | Spring-curve transition, anchored to click target |
+| Track add/remove            | Y-stack reflows                          | FLIP-style transition                             |
+| Mode change (CDS↔protein)   | No (heights independent of x-projection) | Free                                              |
 
 ### Overlays
 
-Separate floating z-layer above the track stack. Overlays may deliberately overlap tracks (hover tooltips, brush rectangles, "you are here" markers). They are *positioned in screen-space* relative to viewport-resolved targets:
+Separate floating z-layer above the track stack. Overlays may deliberately overlap tracks (hover tooltips, brush rectangles, "you are here" markers). They are _positioned in screen-space_ relative to viewport-resolved targets:
 
 ```ts
 interface AnchorTarget {
@@ -250,12 +257,12 @@ Overlays are not tracks. They don't compete for vertical budget. They are stripp
 
 Three classes of feature-disappearance, each with distinct motion:
 
-| Cause | Behaviour | Duration |
-|---|---|---|
-| Geometric vanish (intron collapses; range fragments at exon boundary) | Opacity tied to `intronScale`; co-animates with geometry | ~400ms |
-| Pan-out-of-frame | Hard clip at viewport edge, no fade | n/a |
-| Semantic filter (user toggled off) | Fade with slight delay | ~250ms |
-| Emergence (label revealed by zoom; cluster member uncovered) | Fade in | ~150ms |
+| Cause                                                                 | Behaviour                                                | Duration |
+| --------------------------------------------------------------------- | -------------------------------------------------------- | -------- |
+| Geometric vanish (intron collapses; range fragments at exon boundary) | Opacity tied to `intronScale`; co-animates with geometry | ~400ms   |
+| Pan-out-of-frame                                                      | Hard clip at viewport edge, no fade                      | n/a      |
+| Semantic filter (user toggled off)                                    | Fade with slight delay                                   | ~250ms   |
+| Emergence (label revealed by zoom; cluster member uncovered)          | Fade in                                                  | ~150ms   |
 
 **Hidden-feature indicators are data marks, not chrome.** Tracks that care surface them however makes sense for their data (small marks on dashed-gap polyline, header counters, popovers). The viewport provides `droppedIntronicCount` etc.; tracks decide what to do. The viewer never imposes a hidden-features UI.
 
@@ -312,6 +319,7 @@ interface DataSource<TQuery, TResult> {
 ```
 
 Why this shape:
+
 - Adapters know their protocols (gnomAD has rate limits and bulk endpoints; ClinVar is a download; MAVE is per-protein). No useful generic data layer; each adapter is its own beast.
 - Tracks stay pure — they don't know if the source is network or in-memory.
 - Two tracks sharing an adapter instance share the cache automatically.
@@ -320,6 +328,7 @@ Why this shape:
 ### Viewer-level orchestration
 
 The viewer:
+
 1. **Debounces viewport changes** (~120ms) before calling `track.load()`. Stale data shows with a subtle desaturation during the debounce.
 2. **Per-track AbortController** — viewport change again, abort in-flight, restart.
 3. **Loading state** per track via `onTrackStateChange?: (id, state) => void`. The viewer renders a default subtle shimmer over the track's y-range; never blocks the whole viewer.
@@ -343,19 +352,19 @@ The viewport internally tracks zoom as `{ ruler: 'cds' | 'protein', range: [star
 
 ### Default interaction bindings
 
-| Gesture | Action |
-|---|---|
-| Wheel over viewer | Pan horizontally; falls through to page when at pan limit |
-| Cmd/Ctrl + wheel | Zoom, cursor-anchored |
-| Pinch | Zoom, cursor-anchored |
-| Drag | Box-zoom: snap viewport to the dragged screen-x interval (Esc cancels) |
-| Space+drag | Pan, `cursor: grabbing` (Adobe Hand-tool pattern; touch / pen pan without modifier) |
-| Shift+drag or right-click drag | Brush-select a range |
-| Double-click feature | Fit feature |
-| Double-click empty | Zoom out one step (or fit gene on second tap) |
-| `+ / -` | Zoom centred |
-| `←/→` | Pan one step |
-| `1 / 2 / f` | Fit gene / selection / feature-under-cursor |
+| Gesture                        | Action                                                                              |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| Wheel over viewer              | Pan horizontally; falls through to page when at pan limit                           |
+| Cmd/Ctrl + wheel               | Zoom, cursor-anchored                                                               |
+| Pinch                          | Zoom, cursor-anchored                                                               |
+| Drag                           | Box-zoom: snap viewport to the dragged screen-x interval (Esc cancels)              |
+| Space+drag                     | Pan, `cursor: grabbing` (Adobe Hand-tool pattern; touch / pen pan without modifier) |
+| Shift+drag or right-click drag | Brush-select a range                                                                |
+| Double-click feature           | Fit feature                                                                         |
+| Double-click empty             | Zoom out one step (or fit gene on second tap)                                       |
+| `+ / -`                        | Zoom centred                                                                        |
+| `←/→`                          | Pan one step                                                                        |
+| `1 / 2 / f`                    | Fit gene / selection / feature-under-cursor                                         |
 
 Configurable via `interactionMode: 'standard' | 'embed' | 'fullscreen'`.
 
@@ -368,6 +377,7 @@ Distinct concepts. Brush sets `viewport.brushRange`, delivered to tracks via `in
 ```
 gapWidth = clamp(MIN_GAP_PX, exonAvgWidth × 0.08, MAX_GAP_PX)
 ```
+
 with `MIN_GAP_PX = 4`, `MAX_GAP_PX = 32`. Tweak by eye during implementation.
 
 ---
@@ -379,6 +389,7 @@ The viewer's continuous state is expressed as **CSS custom properties on the SVG
 ### CSS-variable contract
 
 On the figure SVG root:
+
 - `--vv-zoom` — current zoom scalar
 - `--vv-pan-x` — pan offset in px
 - `--vv-intron-scale` — 0..1, interpolatable
@@ -389,6 +400,7 @@ On the figure SVG root:
 ### Structural rule
 
 Every exon's features live inside a per-exon `<g>` group:
+
 ```svg
 <g class="vv-exon-group" style="transform: translateX(var(--vv-exon-x-0))">
   <!-- exon 0 contents: rectangles, variant ticks, domain segments -->
@@ -406,17 +418,18 @@ Between-exon decorations (dashed gap polylines, intronic features) live in `<g c
 
 ### Easing palette
 
-| Animation | Curve | Duration |
-|---|---|---|
-| Viewport via fit/keyboard | `cubic-bezier(0.22, 1, 0.36, 1)` (ease-out-quart) | 350ms |
-| Mode transition | `cubic-bezier(0.77, 0, 0.175, 1)` (ease-in-out-quart) | 450ms |
-| Track collapse/expand | `cubic-bezier(0.34, 1.56, 0.64, 1)` (slight overshoot) | 250ms |
-| Variant hover lift | `ease-out` | 120ms |
-| Overlay fade in / out | `ease-out` | 100ms / 200ms |
+| Animation                 | Curve                                                  | Duration      |
+| ------------------------- | ------------------------------------------------------ | ------------- |
+| Viewport via fit/keyboard | `cubic-bezier(0.22, 1, 0.36, 1)` (ease-out-quart)      | 350ms         |
+| Mode transition           | `cubic-bezier(0.77, 0, 0.175, 1)` (ease-in-out-quart)  | 450ms         |
+| Track collapse/expand     | `cubic-bezier(0.34, 1.56, 0.64, 1)` (slight overshoot) | 250ms         |
+| Variant hover lift        | `ease-out`                                             | 120ms         |
+| Overlay fade in / out     | `ease-out`                                             | 100ms / 200ms |
 
 ### FLIP for layout transitions
 
 When tracks reorder, collapse, expand, or get added/removed:
+
 1. Capture old `{yTop, yBottom}` per `track.id`.
 2. Render new layout.
 3. For each track whose y changed, set `transform: translateY(deltaY)` (no transition).
@@ -505,10 +518,15 @@ Each with a matching `default*` prop for uncontrolled use and a matching `on*Cha
 
 ```ts
 interface GeneGlyphRef {
-  fitTo(target: { kind: 'gene' } | { kind: 'feature'; trackId: string; featureId: string }
-        | { kind: 'selection' } | { kind: 'range'; range: [number, number] }): void;
+  fitTo(
+    target:
+      | { kind: 'gene' }
+      | { kind: 'feature'; trackId: string; featureId: string }
+      | { kind: 'selection' }
+      | { kind: 'range'; range: [number, number] },
+  ): void;
   zoomBy(factor: number): void;
-  getViewportInfo(): { mode, range, zoom, layout };
+  getViewportInfo(): { mode; range; zoom; layout };
   exportSVG(args?: ExportArgs): Promise<string>;
   exportPNG(args?: ExportArgs & { widthPx: number }): Promise<Blob>;
 }
@@ -578,6 +596,7 @@ Mid-animation export resolves to **target** state, not in-progress frame. Implem
 ### PNG resolution
 
 `widthPx` is the primary control. Sensible defaults:
+
 - 1800px for 6-inch figure @ 300dpi
 - 2400px for 8-inch figure @ 300dpi
 
@@ -586,13 +605,14 @@ DPI is derived from `widthPx / figureWidthInches`. Not exposed as a separate par
 ### SVG cleanup at export
 
 Painter's export mode strips:
+
 - `data-*` attributes used for hit-testing
 - `style="cursor: pointer"` and hover-state CSS
 - Event handlers (defensive — shouldn't be in serialised DOM)
 - Empty `<g>` elements
-Inlines:
+  Inlines:
 - All `var(--vv-*)` → resolved concrete values per theme choice
-Adds:
+  Adds:
 - XML namespace declaration
 - `<title>` / `<desc>` for accessibility (gene name, transcript ID, view mode)
 - Embedded font `@import` if running in self-rendering mode
@@ -611,7 +631,20 @@ interface Painter {
   placeAbsolute(x: number, y: number, content: React.ReactNode): React.ReactNode;
 
   // Drawing primitives (return React.ReactNode for SVG; mutate context for Canvas)
-  drawRect(args: { x; y; width; height; rx?; ry?; fill?; stroke?; strokeWidth?; vectorEffect?; className?; onClick? }): React.ReactNode;
+  drawRect(args: {
+    x;
+    y;
+    width;
+    height;
+    rx?;
+    ry?;
+    fill?;
+    stroke?;
+    strokeWidth?;
+    vectorEffect?;
+    className?;
+    onClick?;
+  }): React.ReactNode;
   drawLine(args: { x1; y1; x2; y2; stroke?; strokeWidth?; className? }): React.ReactNode;
   drawText(args: { x; y; text; fontSize?; fill?; textAnchor?; dominantBaseline? }): React.ReactNode;
   drawPath(args: { d; fill?; stroke?; strokeWidth? }): React.ReactNode;
@@ -629,6 +662,7 @@ interface Painter {
 ```
 
 Two implementations:
+
 - **`svg-painter.ts`** — returns React.ReactElement using SVG JSX.
 - **`canvas-painter.ts`** — future, returns null and mutates a Canvas context. Tracks written against the Painter interface work in both.
 
@@ -643,7 +677,14 @@ interface Transcript {
   isManeSelect?: boolean;
   cdsLength: number;
   strand: '+' | '-';
-  exons: Array<{ number: number; cdsStart: number; cdsEnd: number; genomicStart: number; genomicEnd: number; chr: string }>;
+  exons: Array<{
+    number: number;
+    cdsStart: number;
+    cdsEnd: number;
+    genomicStart: number;
+    genomicEnd: number;
+    chr: string;
+  }>;
 }
 
 interface ProteinAnnotations {
@@ -657,7 +698,16 @@ interface ProteinAnnotations {
     sourceId: string;
     shortName: string;
     description: string;
-    entryType: 'domain' | 'family' | 'repeat' | 'homologous_superfamily' | 'conserved_site' | 'active_site' | 'binding_site' | 'ptm' | 'unspecified';
+    entryType:
+      | 'domain'
+      | 'family'
+      | 'repeat'
+      | 'homologous_superfamily'
+      | 'conserved_site'
+      | 'active_site'
+      | 'binding_site'
+      | 'ptm'
+      | 'unspecified';
   }>;
 }
 
@@ -668,10 +718,22 @@ interface ViewerVariant {
     | { kind: 'cds'; cPos: number; offset: number }
     | { kind: 'protein'; aa: number }
     | { kind: 'genomic'; chr: string; pos: number };
-  category: 'missense' | 'nonsense' | 'synonymous' | 'frameshift' | 'inframe_indel'
-          | 'splice' | 'start_lost' | 'stop_lost' | 'regulatory' | 'utr'
-          | 'intronic' | 'structural' | 'other' | 'unknown';
-  meta?: Record<string, unknown>;                   // arbitrary per-variant data; tracks may render from this
+  category:
+    | 'missense'
+    | 'nonsense'
+    | 'synonymous'
+    | 'frameshift'
+    | 'inframe_indel'
+    | 'splice'
+    | 'start_lost'
+    | 'stop_lost'
+    | 'regulatory'
+    | 'utr'
+    | 'intronic'
+    | 'structural'
+    | 'other'
+    | 'unknown';
+  meta?: Record<string, unknown>; // arbitrary per-variant data; tracks may render from this
 }
 ```
 

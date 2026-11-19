@@ -91,9 +91,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
     });
 
     it('falls through to the page (no preventDefault) once the range hits the pan limit', async () => {
-      const { container } = render(
-        <GeneGlyph transcript={transcript} tracks={[exonTrack({})]} />,
-      );
+      const { container } = render(<GeneGlyph transcript={transcript} tracks={[exonTrack({})]} />);
       await flushTrackLoads();
       const svg = stubFigureRect(container, 1000);
       // First wheel-left does pan (into the 5% padding) and consumes the
@@ -109,17 +107,12 @@ describe('GeneGlyph — Slice 9 interactions', () => {
     it('Cmd+wheel zooms cursor-anchored', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
-        <GeneGlyph
-          ref={ref}
-          transcript={transcript}
-          tracks={[exonTrack({})]}
-          mode="transcript"
-        />,
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} mode="transcript" />,
       );
       await flushTrackLoads();
       const svg = stubFigureRect(container, 1000);
-      const beforeLen = ref.current!.getViewportInfo().range[1] -
-        ref.current!.getViewportInfo().range[0];
+      const beforeLen =
+        ref.current!.getViewportInfo().range[1] - ref.current!.getViewportInfo().range[0];
       dispatchWheel(svg, { deltaY: -100, ctrlKey: true, clientX: 250 });
       const after = ref.current!.getViewportInfo().range;
       const afterLen = after[1] - after[0];
@@ -206,11 +199,10 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       // bug (panByPx used to overshoot by the zoom factor, "skating on ice").
       const startCursorX = 500;
       const dxCss = -120;
-      const cposUnderCursorBefore = ref.current!
-        .getViewportInfo()
+      const cposUnderCursorBefore =
         // Reach through the screen at the cursor's start. Use the same
         // ruler-at-screen math the brush gesture relies on.
-        .range;
+        ref.current!.getViewportInfo().range;
       const startRange = cposUnderCursorBefore as readonly [number, number];
       const startSpan = startRange[1] - startRange[0];
       fireEvent.keyDown(window, { key: ' ', code: 'Space' });
@@ -230,18 +222,13 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       const expectedShift = startSpan * (-dxCss / 1000);
       expect(Math.abs(observedShift - expectedShift)).toBeLessThan(startSpan * 0.25);
     });
-
   });
 
   describe('brush selection', () => {
     it('shift+drag emits a non-null brush range and shift-click clears it', async () => {
       const onBrush = vi.fn();
       const { container } = render(
-        <GeneGlyph
-          transcript={transcript}
-          tracks={[exonTrack({})]}
-          onBrushChange={onBrush}
-        />,
+        <GeneGlyph transcript={transcript} tracks={[exonTrack({})]} onBrushChange={onBrush} />,
       );
       await flushTrackLoads();
       const svg = stubFigureRect(container, 1000);
@@ -265,9 +252,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       expect(range[1]).toBeLessThan(transcript.cdsLength + 1);
 
       // Brush rect renders inside the figure SVG.
-      expect(
-        container.querySelector('svg.vv-figure .vv-brush-overlay'),
-      ).not.toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-brush-overlay')).not.toBeNull();
 
       // A shift-click with no drag clears the brush.
       onBrush.mockClear();
@@ -331,14 +316,10 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       });
       fireEvent.pointerMove(window, { pointerId: 9, clientX: 750 });
       // Preview rect renders inside the SVG while dragging.
-      expect(
-        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
-      ).not.toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-box-zoom-rect')).not.toBeNull();
       fireEvent.pointerUp(window, { pointerId: 9, clientX: 750 });
       // Preview clears on release.
-      expect(
-        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
-      ).toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-box-zoom-rect')).toBeNull();
       const range = ref.current!.getViewportInfo().range;
       // Selected interval should be a strict subset of the natural range and
       // markedly smaller than fit-gene.
@@ -362,13 +343,9 @@ describe('GeneGlyph — Slice 9 interactions', () => {
         button: 0,
       });
       fireEvent.pointerMove(window, { pointerId: 10, clientX: 600 });
-      expect(
-        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
-      ).not.toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-box-zoom-rect')).not.toBeNull();
       fireEvent.keyDown(window, { key: 'Escape' });
-      expect(
-        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
-      ).toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-box-zoom-rect')).toBeNull();
       // A subsequent pointerup is a no-op for the viewport.
       fireEvent.pointerUp(window, { pointerId: 10, clientX: 600 });
       const after = ref.current!.getViewportInfo().range;
@@ -414,9 +391,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
       fireEvent.pointerDown(svg, { pointerId: 13, clientX: 500, button: 0 });
       fireEvent.pointerMove(window, { pointerId: 13, clientX: 400 });
       // No preview rect — the gesture became a pan.
-      expect(
-        container.querySelector('svg.vv-figure .vv-box-zoom-rect'),
-      ).toBeNull();
+      expect(container.querySelector('svg.vv-figure .vv-box-zoom-rect')).toBeNull();
       fireEvent.pointerUp(window, { pointerId: 13, clientX: 400 });
       fireEvent.keyUp(window, { key: ' ', code: 'Space' });
       const after = ref.current!.getViewportInfo().range;
@@ -428,11 +403,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
     it('leaves the brush state untouched (does not double-fire the brush)', async () => {
       const onBrush = vi.fn();
       const { container } = render(
-        <GeneGlyph
-          transcript={transcript}
-          tracks={[exonTrack({})]}
-          onBrushChange={onBrush}
-        />,
+        <GeneGlyph transcript={transcript} tracks={[exonTrack({})]} onBrushChange={onBrush} />,
       );
       await flushTrackLoads();
       const svg = stubFigureRect(container, 1000);
@@ -543,12 +514,7 @@ describe('GeneGlyph — Slice 9 interactions', () => {
     it('zooms bite at the configured maxZoom', async () => {
       const ref = createRef<GeneGlyphRef>();
       const { container } = render(
-        <GeneGlyph
-          ref={ref}
-          transcript={transcript}
-          tracks={[exonTrack({})]}
-          maxZoom={4}
-        />,
+        <GeneGlyph ref={ref} transcript={transcript} tracks={[exonTrack({})]} maxZoom={4} />,
       );
       await flushTrackLoads();
       const svg = stubFigureRect(container, 1000);

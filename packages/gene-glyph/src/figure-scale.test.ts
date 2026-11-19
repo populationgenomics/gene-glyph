@@ -118,9 +118,7 @@ describe('FigureScale — layout is invariant under pan (no recomputation)', () 
     const offsetA = 0;
     const offsetB = 30;
     expect(displayToFigure(L, 50 + offsetA)).toBeCloseTo(displayToFigure(L, 50 + offsetA));
-    expect(displayToFigure(L, 50 + offsetB)).toBeCloseTo(
-      displayToFigure(L, 50 + offsetB),
-    );
+    expect(displayToFigure(L, 50 + offsetB)).toBeCloseTo(displayToFigure(L, 50 + offsetB));
     // Same layout object — extents haven't moved.
     expect(L.displayBounds[0]).toEqual({ start: 0, end: 200 });
     expect(L.displayBounds[1]).toEqual({ start: 200, end: 210 });

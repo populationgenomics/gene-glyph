@@ -1,0 +1,3 @@
+# Generated: npm writes the lockfile, Changesets writes the changelogs.
+package-lock.json
+CHANGELOG.md

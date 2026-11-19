@@ -29,12 +29,19 @@ export function PaperReportScenario() {
     <section className="scenario" aria-labelledby="scenario-paper-report">
       <h2 id="scenario-paper-report">Paper report — TP53</h2>
       <p className="scenario-blurb">
-        Slice 4 acceptance bar: variants render at correct positions, hover on
-        a row lifts the matching tick (controlled prop), click toggles
-        selection (ring), and variants that don&apos;t project (intronic
-        offsets, out-of-bounds) appear in the unplaced row below the figure.
+        Slice 4 acceptance bar: variants render at correct positions, hover on a row lifts the
+        matching tick (controlled prop), click toggles selection (ring), and variants that
+        don&apos;t project (intronic offsets, out-of-bounds) appear in the unplaced row below the
+        figure.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 24, alignItems: 'start' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) 320px',
+          gap: 24,
+          alignItems: 'start',
+        }}
+      >
         <GeneGlyph
           transcript={TP53_TRANSCRIPT}
           protein={TP53_PROTEIN}
@@ -92,11 +99,7 @@ function VariantTable({ variants, hovered, selected, onHover, onClick }: Variant
               onMouseLeave={() => onHover(null)}
               onClick={() => onClick(v.id)}
               style={{
-                background: isHovered
-                  ? '#e2e8f0'
-                  : isSelected
-                  ? '#f1f5f9'
-                  : 'transparent',
+                background: isHovered ? '#e2e8f0' : isSelected ? '#f1f5f9' : 'transparent',
                 cursor: 'pointer',
                 borderBottom: '1px solid #e2e8f0',
               }}

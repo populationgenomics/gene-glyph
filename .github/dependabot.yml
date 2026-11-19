@@ -1,0 +1,28 @@
+# Every cooldown mirrors min-release-age in .npmrc, which Dependabot does not read.
+# The catch-all groups take minor and patch updates only, so each major version arrives as a PR of its own.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      # Must match the Playwright container image in .github/workflows/ci.yml; bumped together with it.
+      - dependency-name: '@playwright/test'
+    groups:
+      npm:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']
+        update-types: ['minor', 'patch']

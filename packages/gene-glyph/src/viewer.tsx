@@ -41,16 +41,9 @@ import {
   type ViewportChangeReason,
 } from './types.js';
 import { defaultCollapsedRegions } from './coordinate-mapper.js';
-import {
-  DEFAULT_MAX_ZOOM,
-  ViewportController,
-} from './viewport.js';
+import { DEFAULT_MAX_ZOOM, ViewportController } from './viewport.js';
 import { useViewportInteractions } from './use-viewport-interactions.js';
-import {
-  exportSvgString,
-  exportPngBlob,
-  type ExportArgs,
-} from './export.js';
+import { exportSvgString, exportPngBlob, type ExportArgs } from './export.js';
 
 export interface GeneGlyphProps {
   transcript: Transcript;
@@ -125,10 +118,7 @@ export interface GeneGlyphProps {
   /** Fires after every committed range mutation (gesture or imperative). The
    *  `reason` tag lets hosts distinguish user gestures from programmatic
    *  changes. */
-  onViewportChange?: (
-    range: readonly [number, number],
-    reason: ViewportChangeReason,
-  ) => void;
+  onViewportChange?: (range: readonly [number, number], reason: ViewportChangeReason) => void;
   /** Most zoomed-out state. Defaults to fit-gene + ~5% padding. */
   minZoom?: number;
   /** Most zoomed-in state. Defaults to `DEFAULT_MAX_ZOOM` (200×). */
@@ -361,10 +351,7 @@ export interface GeneGlyphRef {
   getCollapsedGroupIds(): ReadonlySet<string>;
 }
 
-function flattenTracks(
-  items: TrackOrGroup[],
-  collapsedGroupIds: ReadonlySet<string>,
-): Track[] {
+function flattenTracks(items: TrackOrGroup[], collapsedGroupIds: ReadonlySet<string>): Track[] {
   const out: Track[] = [];
   const walk = (entries: TrackOrGroup[]) => {
     for (const entry of entries) {
@@ -386,7 +373,9 @@ function flattenTracks(
   return out;
 }
 
-function toReadonlySet(ids: ReadonlySet<string> | Iterable<string> | undefined): ReadonlySet<string> {
+function toReadonlySet(
+  ids: ReadonlySet<string> | Iterable<string> | undefined,
+): ReadonlySet<string> {
   if (!ids) return EMPTY_SET;
   if (ids instanceof Set) return ids;
   return new Set(ids);
@@ -401,10 +390,7 @@ const EMPTY_SET: ReadonlySet<string> = new Set<string>();
  *  content regardless of which tracks the host stacks in. */
 const OVERFLOW_BRUSH_HEIGHT = 100000;
 
-function findSlot<P>(
-  children: ReactNode,
-  component: ComponentType<P>,
-): ReactElement<P> | null {
+function findSlot<P>(children: ReactNode, component: ComponentType<P>): ReactElement<P> | null {
   let match: ReactElement<P> | null = null;
   Children.forEach(children, (child) => {
     if (match) return;
@@ -465,7 +451,10 @@ function GeneGlyphInner(
     onFeatureClick,
     renderTooltip,
     onTrackStateChange,
-    loadDebounceMs = typeof globalThis !== 'undefined' && (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === 'test' ? 0 : 120,
+    loadDebounceMs = typeof globalThis !== 'undefined' &&
+    (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === 'test'
+      ? 0
+      : 120,
     interactionMode = 'standard',
     viewportRange,
     defaultViewportRange,
@@ -483,15 +472,13 @@ function GeneGlyphInner(
 ) {
   const controlled = viewportRange !== undefined;
   const brushControlled = controlledBrushRange !== undefined;
-  const [uncontrolledMode] = useState<ViewMode>(
-    () => defaultMode ?? 'genome',
-  );
+  const [uncontrolledMode] = useState<ViewMode>(() => defaultMode ?? 'genome');
   const mode = controlledMode ?? uncontrolledMode;
-  const [uncontrolledBrush, setUncontrolledBrush] = useState<
-    readonly [number, number] | null
-  >(() => defaultBrushRange ?? null);
+  const [uncontrolledBrush, setUncontrolledBrush] = useState<readonly [number, number] | null>(
+    () => defaultBrushRange ?? null,
+  );
   const brush: readonly [number, number] | null = brushControlled
-    ? controlledBrushRange ?? null
+    ? (controlledBrushRange ?? null)
     : uncontrolledBrush;
   const trackList = useMemo<TrackOrGroup[]>(
     () => (tracks && tracks.length > 0 ? tracks : [exonTrack({})]),
@@ -504,8 +491,8 @@ function GeneGlyphInner(
   // `onCollapsedGroupChange` after every commit so hosts can mirror the set
   // into URL state or persistence.
   const collapsedControlled = controlledCollapsedGroupIds !== undefined;
-  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState<ReadonlySet<string>>(
-    () => toReadonlySet(defaultCollapsedGroupIds),
+  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState<ReadonlySet<string>>(() =>
+    toReadonlySet(defaultCollapsedGroupIds),
   );
   const collapsedGroupIds: ReadonlySet<string> = collapsedControlled
     ? toReadonlySet(controlledCollapsedGroupIds)
@@ -614,16 +601,13 @@ function GeneGlyphInner(
     onModeChange?.(mode);
   }, [mode, viewport, onModeChange]);
 
-
   // Per-track data + state. The viewer fans loads out per track (rather than
   // one shared Promise.all) so a slow async source doesn't block fast tracks
   // from rendering. Each track owns its own AbortController so viewport-
   // driven re-loads cancel just that track's in-flight request rather than
   // bouncing the whole stack. Slice 18.
   const [trackData, setTrackData] = useState<Map<string, unknown>>(() => new Map());
-  const [trackStates, setTrackStates] = useState<Map<string, TrackLoadState>>(
-    () => new Map(),
-  );
+  const [trackStates, setTrackStates] = useState<Map<string, TrackLoadState>>(() => new Map());
   const [stale, setStale] = useState(false);
   const trackControllersRef = useRef<Map<string, AbortController>>(new Map());
   const onTrackStateChangeRef = useRef(onTrackStateChange);
@@ -671,18 +655,29 @@ function GeneGlyphInner(
     setTrackData((prev) => {
       let changed = false;
       const m = new Map(prev);
-      for (const k of m.keys()) if (!live.has(k)) { m.delete(k); changed = true; }
+      for (const k of m.keys())
+        if (!live.has(k)) {
+          m.delete(k);
+          changed = true;
+        }
       return changed ? m : prev;
     });
     setTrackStates((prev) => {
       let changed = false;
       const m = new Map(prev);
-      for (const k of m.keys()) if (!live.has(k)) { m.delete(k); changed = true; }
+      for (const k of m.keys())
+        if (!live.has(k)) {
+          m.delete(k);
+          changed = true;
+        }
       return changed ? m : prev;
     });
     const controllers = trackControllersRef.current;
     for (const [id, ac] of controllers) {
-      if (!live.has(id)) { ac.abort(); controllers.delete(id); }
+      if (!live.has(id)) {
+        ac.abort();
+        controllers.delete(id);
+      }
     }
   }, [trackIdsKey]);
 
@@ -745,18 +740,22 @@ function GeneGlyphInner(
   // `loadDebounceMs` re-fires `track.load()` for each track. DataSources whose
   // cacheKey hasn't moved short-circuit through the cache; sources keyed on
   // the visible window genuinely refetch.
-  const rangeKey = controlled && viewportRange
-    ? `${mode}|${viewportRange[0]}|${viewportRange[1]}`
-    : viewportVersion;
+  const rangeKey =
+    controlled && viewportRange
+      ? `${mode}|${viewportRange[0]}|${viewportRange[1]}`
+      : viewportVersion;
   const rangeKeyRef = useRef(rangeKey);
   useEffect(() => {
     if (rangeKeyRef.current === rangeKey) return;
     rangeKeyRef.current = rangeKey;
     setStale(true);
-    const timer = setTimeout(() => {
-      setStale(false);
-      for (const t of flatTracksRef.current) loadTrack(t);
-    }, Math.max(0, loadDebounceMs));
+    const timer = setTimeout(
+      () => {
+        setStale(false);
+        for (const t of flatTracksRef.current) loadTrack(t);
+      },
+      Math.max(0, loadDebounceMs),
+    );
     return () => clearTimeout(timer);
   }, [rangeKey, trackIdsKey, loadDebounceMs, loadTrack]);
 
@@ -774,7 +773,15 @@ function GeneGlyphInner(
     // hosts drive layout without going through the subscription (the
     // prop-sync useMemo above writes it into `viewport` first).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [trackList, viewport, trackData, trackHeightBudget, viewportVersion, viewportRange, collapsedGroupIds],
+    [
+      trackList,
+      viewport,
+      trackData,
+      trackHeightBudget,
+      viewportVersion,
+      viewportRange,
+      collapsedGroupIds,
+    ],
   );
 
   const totalHeight = Math.max(1, layout.totalHeight);
@@ -873,10 +880,13 @@ function GeneGlyphInner(
       exitTimerRef.current = null;
     }
   }, []);
-  useEffect(() => () => {
-    clearEnterTimer();
-    clearExitTimer();
-  }, [clearEnterTimer, clearExitTimer]);
+  useEffect(
+    () => () => {
+      clearEnterTimer();
+      clearExitTimer();
+    },
+    [clearEnterTimer, clearExitTimer],
+  );
 
   const commitHover = useCallback(
     (next: { trackId: string; featureId: string } | null, leavingTrackId?: string) => {
@@ -953,7 +963,7 @@ function GeneGlyphInner(
   );
 
   const handleFigurePointerMove = useCallback((e: ReactPointerEvent) => {
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const prev = pointerVelocityRef.current;
     if (!prev) {
       pointerVelocityRef.current = { x: e.clientX, y: e.clientY, t: now, vel: 0 };
@@ -995,9 +1005,7 @@ function GeneGlyphInner(
     [viewport, onViewportChange],
   );
 
-  const [boxZoomPreview, setBoxZoomPreview] = useState<
-    readonly [number, number] | null
-  >(null);
+  const [boxZoomPreview, setBoxZoomPreview] = useState<readonly [number, number] | null>(null);
 
   const interactions = useViewportInteractions({
     viewport,
@@ -1024,8 +1032,7 @@ function GeneGlyphInner(
         return;
       }
       if (target.kind === 'range' || target.kind === 'selection') {
-        const range =
-          target.kind === 'range' ? target.range : brush;
+        const range = target.kind === 'range' ? target.range : brush;
         if (!range) return;
         const natural = viewport.naturalRange();
         const lo = Math.max(natural[0], Math.min(range[0], range[1]));
@@ -1164,10 +1171,7 @@ function GeneGlyphInner(
     [aria, exportDescription, effectiveWidth, totalHeight],
   );
 
-  const subscribe = useCallback(
-    (listener: () => void) => viewport.subscribe(listener),
-    [viewport],
-  );
+  const subscribe = useCallback((listener: () => void) => viewport.subscribe(listener), [viewport]);
 
   const panByDisplayPx = useCallback(
     (deltaPx: number) => viewport.panByDisplayPx(deltaPx),
@@ -1267,9 +1271,10 @@ function GeneGlyphInner(
         const key = `${b.exonIdxA}:${b.exonIdxB}`;
         const prev = merged.get(key);
         if (prev) {
-          const mergedIds = prev.featureIds ?? b.featureIds
-            ? [...(prev.featureIds ?? []), ...(b.featureIds ?? [])]
-            : undefined;
+          const mergedIds =
+            (prev.featureIds ?? b.featureIds)
+              ? [...(prev.featureIds ?? []), ...(b.featureIds ?? [])]
+              : undefined;
           merged.set(key, {
             exonIdxA: b.exonIdxA,
             exonIdxB: b.exonIdxB,
@@ -1489,7 +1494,9 @@ function GeneGlyphInner(
     const track = flatTracks.find((t) => t.id === tooltipTarget.trackId);
     const data = track ? trackData.get(track.id) : undefined;
     if (!track || data === undefined) return null;
-    const feature = track.resolveFeature ? track.resolveFeature(data, tooltipTarget.featureId) : undefined;
+    const feature = track.resolveFeature
+      ? track.resolveFeature(data, tooltipTarget.featureId)
+      : undefined;
     let content: ReactNode = null;
     if (renderTooltip) {
       content = renderTooltip({
@@ -1622,15 +1629,13 @@ function GeneGlyphInner(
           )}
           {loadingShimmer}
         </svg>
-        <div
-          className="vv-overlay-layer"
-          data-testid="gene-glyph-overlay-layer"
-          aria-hidden
-        >
+        <div className="vv-overlay-layer" data-testid="gene-glyph-overlay-layer" aria-hidden>
           {tooltipNode}
         </div>
       </div>
-      {rightGutter ? renderGutter('right', rightGutter.props.width, rightGutter.props.children) : null}
+      {rightGutter
+        ? renderGutter('right', rightGutter.props.width, rightGutter.props.children)
+        : null}
     </div>
   );
 
@@ -1681,13 +1686,14 @@ function GeneGlyphInner(
   );
 }
 
-export const GeneGlyph = forwardRef<GeneGlyphRef, GeneGlyphProps>(GeneGlyphInner) as
-  ForwardRefExoticComponent<GeneGlyphProps & RefAttributes<GeneGlyphRef>> & {
-    LeftGutter: typeof LeftGutter;
-    RightGutter: typeof RightGutter;
-    Header: typeof Header;
-    Footer: typeof Footer;
-  };
+export const GeneGlyph = forwardRef<GeneGlyphRef, GeneGlyphProps>(
+  GeneGlyphInner,
+) as ForwardRefExoticComponent<GeneGlyphProps & RefAttributes<GeneGlyphRef>> & {
+  LeftGutter: typeof LeftGutter;
+  RightGutter: typeof RightGutter;
+  Header: typeof Header;
+  Footer: typeof Footer;
+};
 GeneGlyph.displayName = 'GeneGlyph';
 GeneGlyph.LeftGutter = LeftGutter;
 GeneGlyph.RightGutter = RightGutter;

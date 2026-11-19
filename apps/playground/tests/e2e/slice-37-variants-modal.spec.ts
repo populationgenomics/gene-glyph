@@ -100,9 +100,9 @@ test.describe('Slice 37 — variant-entry modal', () => {
     await textarea.fill('17:7674215C>T\n17:7674225G>A');
     await expect(errs).toHaveCount(0);
     await page.getByTestId('embed-variants-modal-submit').click();
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(2);
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      2,
+    );
   });
 
   test('Clear button empties the textarea but figure / URL stay intact until submit', async ({
@@ -115,14 +115,14 @@ test.describe('Slice 37 — variant-entry modal', () => {
     await page.getByTestId('embed-variants-modal-clear').click();
     await expect(page.getByTestId('embed-variants-modal-textarea')).toHaveValue('');
     // Figure is untouched while the modal is open.
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(1);
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      1,
+    );
     // Submitting the empty value drops the variants track entirely.
     await page.getByTestId('embed-variants-modal-submit').click();
-    await expect(
-      page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark'),
-    ).toHaveCount(0);
+    await expect(page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark')).toHaveCount(
+      0,
+    );
     await expect(page.url()).not.toContain('variants=');
   });
 

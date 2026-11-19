@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Slice 8 — imperative ref + fitTo / zoomBy (RD-1068)', () => {
-  test('zoom buttons in the slot-system toolbar drive the figure and update the live readout', async ({ page }) => {
+  test('zoom buttons in the slot-system toolbar drive the figure and update the live readout', async ({
+    page,
+  }) => {
     await page.goto('/');
     const scenario = page.locator('section[aria-labelledby="scenario-slots"]');
     const header = scenario.locator('[data-testid="gene-glyph-header-slot"]');
@@ -15,16 +17,26 @@ test.describe('Slice 8 — imperative ref + fitTo / zoomBy (RD-1068)', () => {
     expect(fitZoom).toMatch(/\d\.\d+×/);
 
     await header.getByTitle('Zoom in').click();
-    await expect.poll(async () => {
-      const t = (await readout.textContent())?.trim() ?? '';
-      return parseFloat(t);
-    }, { timeout: 2_000 }).toBeGreaterThan(1.5);
+    await expect
+      .poll(
+        async () => {
+          const t = (await readout.textContent())?.trim() ?? '';
+          return parseFloat(t);
+        },
+        { timeout: 2_000 },
+      )
+      .toBeGreaterThan(1.5);
 
     await header.getByTitle('Fit gene').click();
-    await expect.poll(async () => {
-      const t = (await readout.textContent())?.trim() ?? '';
-      return parseFloat(t);
-    }, { timeout: 2_000 }).toBeLessThan(1.1);
+    await expect
+      .poll(
+        async () => {
+          const t = (await readout.textContent())?.trim() ?? '';
+          return parseFloat(t);
+        },
+        { timeout: 2_000 },
+      )
+      .toBeLessThan(1.1);
   });
 
   test('fit-variant button zooms onto the chosen variant', async ({ page }) => {
@@ -37,9 +49,14 @@ test.describe('Slice 8 — imperative ref + fitTo / zoomBy (RD-1068)', () => {
     // The fit-variant button's title is dynamic (`Fit <variant label>`); the
     // visible button text is always "Variant", so match by text instead.
     await header.getByRole('button', { name: 'Variant' }).click();
-    await expect.poll(async () => {
-      const t = (await readout.textContent())?.trim() ?? '';
-      return parseFloat(t);
-    }, { timeout: 2_000 }).toBeGreaterThan(2);
+    await expect
+      .poll(
+        async () => {
+          const t = (await readout.textContent())?.trim() ?? '';
+          return parseFloat(t);
+        },
+        { timeout: 2_000 },
+      )
+      .toBeGreaterThan(2);
   });
 });

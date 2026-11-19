@@ -305,11 +305,7 @@ describe('ViewportController — pan preserves zoom; point under cursor stays pu
    *  exactly `dxViewbox` screen px — whatever the user "grabs" stays
    *  under their pointer regardless of whether the cursor sits in an
    *  exon, a gap, or padding. */
-  function panByPx(
-    vp: ViewportController,
-    deltaViewboxPx: number,
-    cursorViewboxX: number,
-  ): void {
+  function panByPx(vp: ViewportController, deltaViewboxPx: number, cursorViewboxX: number): void {
     const [sLo, sHi] = vp.baselineWindow();
     const localScale = vp.localScreenScaleAt(cursorViewboxX);
     const baselineDelta = deltaViewboxPx / localScale;
@@ -345,11 +341,9 @@ describe('ViewportController — pan preserves zoom; point under cursor stays pu
     const vp = fitGene('genome');
     vp.setRange([50, 150]);
     const cursorViewboxX = 360; // middle of the figure
-    const beforeSpan =
-      vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
+    const beforeSpan = vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
     panByPx(vp, 50, cursorViewboxX);
-    const afterSpan =
-      vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
+    const afterSpan = vp.screenToBaselineX(vp.width) - vp.screenToBaselineX(0);
     expect(afterSpan).toBeCloseTo(beforeSpan, 4);
   });
 
@@ -483,10 +477,7 @@ describe('ViewportController — Position-based projection', () => {
     const cds = fitGene('transcript');
     const cdsGeom = cds.baselineGeometry();
     // Adjacent bp centres are pxPerBp apart anywhere inside an exon body.
-    expect(cds.cdsToBaselineX(50) - cds.cdsToBaselineX(49)).toBeCloseTo(
-      cdsGeom.pxPerBp,
-      5,
-    );
+    expect(cds.cdsToBaselineX(50) - cds.cdsToBaselineX(49)).toBeCloseTo(cdsGeom.pxPerBp, 5);
     // First / last bp centre is half a cell from the figure edge.
     expect(cds.cdsToBaselineX(1)).toBeCloseTo(0.5 * cdsGeom.pxPerBp, 5);
     // Cell EDGES align with exon rect endpoints.
@@ -497,10 +488,7 @@ describe('ViewportController — Position-based projection', () => {
     const pGeom = protein.baselineGeometry();
     // pGeom.pxPerBp is `pxPerAa` in protein mode (the underlying frame
     // reuses the field for both unit kinds).
-    expect(protein.cdsToBaselineX(50) - protein.cdsToBaselineX(49)).toBeCloseTo(
-      pGeom.pxPerBp,
-      5,
-    );
+    expect(protein.cdsToBaselineX(50) - protein.cdsToBaselineX(49)).toBeCloseTo(pGeom.pxPerBp, 5);
     expect(protein.cdsToBaselineX(1)).toBeCloseTo(0.5 * pGeom.pxPerBp, 5);
     expect(protein.cdsToBaselineX(120)).toBeCloseTo(720 - 0.5 * pGeom.pxPerBp, 5);
   });
@@ -558,7 +546,10 @@ describe('ViewportController — Position-based projection', () => {
 
   it('screenToPosition round-trips toScreen for each Position kind in CDS modes', () => {
     const vp = fitGene('transcript');
-    const cases: Array<{ kind: 'cds' | 'protein' | 'genomic'; build: () => import('./types.js').Position }> = [
+    const cases: Array<{
+      kind: 'cds' | 'protein' | 'genomic';
+      build: () => import('./types.js').Position;
+    }> = [
       { kind: 'cds', build: () => ({ kind: 'cds', cPos: 31, offset: 0 }) },
       { kind: 'protein', build: () => ({ kind: 'protein', aa: 11 }) },
       { kind: 'genomic', build: () => ({ kind: 'genomic', chr: 'chr1', pos: 1030 }) },
@@ -598,12 +589,11 @@ describe('ViewportController — Position-based projection', () => {
       cPos: 14,
       offset: 0,
     });
-    expect(
-      mapper.resolveCds({ kind: 'genomic', chr: 'chr1', pos: 1003 }),
-    ).toEqual({ cPos: 4, offset: 0 });
-    expect(
-      mapper.resolveCds({ kind: 'genomic', chr: 'chrX', pos: 9999 }),
-    ).toBeNull();
+    expect(mapper.resolveCds({ kind: 'genomic', chr: 'chr1', pos: 1003 })).toEqual({
+      cPos: 4,
+      offset: 0,
+    });
+    expect(mapper.resolveCds({ kind: 'genomic', chr: 'chrX', pos: 9999 })).toBeNull();
   });
 });
 
@@ -622,18 +612,12 @@ describe('ViewportController — Phase 3 soft-collapse spec', () => {
     });
     const baseline = vp.baselineGeometry();
     expect(baseline.flanks).toBeDefined();
-    const donor = baseline.flanks!.find(
-      (f) => f.intronIdx === 0 && f.side === 'donor',
-    );
-    const acceptor = baseline.flanks!.find(
-      (f) => f.intronIdx === 0 && f.side === 'acceptor',
-    );
+    const donor = baseline.flanks!.find((f) => f.intronIdx === 0 && f.side === 'donor');
+    const acceptor = baseline.flanks!.find((f) => f.intronIdx === 0 && f.side === 'acceptor');
     expect(donor?.bp).toBe(10);
     expect(acceptor?.bp).toBe(10);
     // Second intron has no spec — no flanks emitted for it.
-    expect(
-      baseline.flanks!.filter((f) => f.intronIdx === 1),
-    ).toHaveLength(0);
+    expect(baseline.flanks!.filter((f) => f.intronIdx === 1)).toHaveLength(0);
   });
 
   it('omits flanks entirely with an empty spec (legacy pre-Phase-3 layout)', () => {
@@ -650,7 +634,7 @@ describe('ViewportController — Phase 3 soft-collapse spec', () => {
     expect(baseline.gaps).toHaveLength(2);
   });
 
-  it("gap.width covers the whole intron (donor flank + bulk + acceptor flank); flanks listed in baseline.flanks", () => {
+  it('gap.width covers the whole intron (donor flank + bulk + acceptor flank); flanks listed in baseline.flanks', () => {
     const mapper = createCoordinateMapper(transcript);
     const vp = new ViewportController({
       mapper,
@@ -690,9 +674,7 @@ describe('ViewportController — Phase 3 soft-collapse spec', () => {
       mapper,
       width: 1000,
       mode: 'transcript',
-      collapsedRegions: [
-        { start: { cPos: 100, offset: 11 }, end: { cPos: 101, offset: -11 } },
-      ],
+      collapsedRegions: [{ start: { cPos: 100, offset: 11 }, end: { cPos: 101, offset: -11 } }],
     });
     const baseline = vp.baselineGeometry();
     // Transcript mode hard-collapses every intron, so the spec is

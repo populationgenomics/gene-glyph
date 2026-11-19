@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Slice 3 — exon track first render (RD-1062)', () => {
-  test('paper-report renders the TP53 schematic with per-exon groups and intron decorations', async ({ page }) => {
+  test('paper-report renders the TP53 schematic with per-exon groups and intron decorations', async ({
+    page,
+  }) => {
     await page.goto('/');
     const figure = page.locator('section[aria-labelledby="scenario-paper-report"] svg.vv-figure');
     await expect(figure).toBeVisible();
@@ -16,7 +18,9 @@ test.describe('Slice 3 — exon track first render (RD-1062)', () => {
     await expect(figure.locator('polyline.vv-intron-polyline')).toHaveCount(9);
     // The header is wired through the default `<GeneGlyphHeader>` and must
     // surface the gene symbol + transcript ID + MANE badge.
-    const header = page.locator('section[aria-labelledby="scenario-paper-report"] [data-testid="gene-glyph-header"]');
+    const header = page.locator(
+      'section[aria-labelledby="scenario-paper-report"] [data-testid="gene-glyph-header"]',
+    );
     await expect(header).toContainText('TP53');
     await expect(header).toContainText('NM_000546');
     await expect(header).toContainText('MANE Select');

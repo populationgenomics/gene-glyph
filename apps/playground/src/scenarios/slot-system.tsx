@@ -73,16 +73,15 @@ export function SlotSystemScenario() {
     <section className="scenario" aria-labelledby="scenario-slots">
       <h2 id="scenario-slots">Slot system — TP53</h2>
       <p className="scenario-blurb">
-        Fit-gene, fit-variant, and zoom buttons drive the viewport via{' '}
-        <code>GeneGlyphRef</code>; the right-hand readout pulls live state from{' '}
-        <code>getViewportInfo()</code>. The mode dropdown is now live — switching
-        cross-fades intron decorations and slides exons onto the new ruler.
+        Fit-gene, fit-variant, and zoom buttons drive the viewport via <code>GeneGlyphRef</code>;
+        the right-hand readout pulls live state from <code>getViewportInfo()</code>. The mode
+        dropdown is now live — switching cross-fades intron decorations and slides exons onto the
+        new ruler.
       </p>
       <p className="scenario-blurb">
-        <strong>Try it:</strong> drag across the figure to box-zoom into that
-        interval; <kbd>Esc</kbd> cancels mid-drag. To pan instead, hold{' '}
-        <kbd>Space</kbd> while dragging (Adobe Hand-tool pattern).{' '}
-        <kbd>Shift</kbd>+drag still emits the persistent brush range shown in
+        <strong>Try it:</strong> drag across the figure to box-zoom into that interval;{' '}
+        <kbd>Esc</kbd> cancels mid-drag. To pan instead, hold <kbd>Space</kbd> while dragging (Adobe
+        Hand-tool pattern). <kbd>Shift</kbd>+drag still emits the persistent brush range shown in
         the footer.
       </p>
       <GeneGlyph
@@ -227,10 +226,7 @@ export function SlotSystemScenario() {
         </GeneGlyph.RightGutter>
 
         <GeneGlyph.Footer height={28}>
-          <span>
-            Placeholder footer — minimap lands in Slice 18; scale bar in a later
-            slice.
-          </span>
+          <span>Placeholder footer — minimap lands in Slice 18; scale bar in a later slice.</span>
           {brush && (
             <span
               data-testid="brush-readout"

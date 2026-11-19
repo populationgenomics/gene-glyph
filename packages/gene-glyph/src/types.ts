@@ -158,13 +158,7 @@ export type InteractionMode = 'standard' | 'embed' | 'fullscreen';
 /** Tag passed to `onViewportChange` so hosts can distinguish user gestures
  *  from programmatic updates (e.g. for telemetry or undo stacks). */
 export type ViewportChangeReason =
-  | 'drag'
-  | 'wheel'
-  | 'wheel-zoom'
-  | 'pinch'
-  | 'keyboard'
-  | 'imperative'
-  | 'box-zoom';
+  'drag' | 'wheel' | 'wheel-zoom' | 'pinch' | 'keyboard' | 'imperative' | 'box-zoom';
 
 export type CoordSystem = 'genomic' | 'cds' | 'protein';
 
@@ -210,8 +204,7 @@ export interface RangeSegment {
  *  track that aggregates hidden-feature counts (Slice 15) can index by intron
  *  gap; `out-of-bounds` carries no extra detail. */
 export type DroppedRange =
-  | { kind: 'intronic'; exonIdxA: number; exonIdxB: number }
-  | { kind: 'out-of-bounds' };
+  { kind: 'intronic'; exonIdxA: number; exonIdxB: number } | { kind: 'out-of-bounds' };
 
 export interface RangeProjection {
   segments: RangeSegment[];

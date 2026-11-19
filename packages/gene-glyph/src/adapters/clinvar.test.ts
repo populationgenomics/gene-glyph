@@ -8,7 +8,14 @@ const transcript: Transcript = {
   cdsLength: 1182,
   strand: '-',
   exons: [
-    { number: 2, cdsStart: 1, cdsEnd: 140, genomicStart: 7676521, genomicEnd: 7676660, chr: 'chr17' },
+    {
+      number: 2,
+      cdsStart: 1,
+      cdsEnd: 140,
+      genomicStart: 7676521,
+      genomicEnd: 7676660,
+      chr: 'chr17',
+    },
   ],
 };
 
@@ -135,7 +142,10 @@ describe('createClinVarDataSource', () => {
       },
     };
     const { fetch } = makeFakeFetch({
-      pages: [{ ids: ['111'], total: 1 }, { ids: [], total: 1 }],
+      pages: [
+        { ids: ['111'], total: 1 },
+        { ids: [], total: 1 },
+      ],
       summaries,
     });
     const spy = vi.fn(fetch);
@@ -173,7 +183,10 @@ describe('createClinVarDataSource', () => {
       },
     };
     const { fetch } = makeFakeFetch({
-      pages: [{ ids: ['111'], total: 1 }, { ids: [], total: 1 }],
+      pages: [
+        { ids: ['111'], total: 1 },
+        { ids: [], total: 1 },
+      ],
       summaries,
     });
     const ds = createClinVarDataSource({

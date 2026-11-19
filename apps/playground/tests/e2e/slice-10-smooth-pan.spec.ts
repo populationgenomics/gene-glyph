@@ -15,9 +15,9 @@ test.describe('Slice 10 — smooth pan internals (RD-1084)', () => {
     // attribute regardless of pan. Prior to Slice 10, edge exons shrank
     // continuously during drag as their CDS range got clipped — the "edge
     // popping" symptom.
-    const before = await figure.locator('.vv-exon-rect').evaluateAll((rs) =>
-      rs.map((r) => r.getAttribute('width')),
-    );
+    const before = await figure
+      .locator('.vv-exon-rect')
+      .evaluateAll((rs) => rs.map((r) => r.getAttribute('width')));
 
     const box = await figure.boundingBox();
     if (!box) throw new Error('figure not visible');
@@ -31,17 +31,17 @@ test.describe('Slice 10 — smooth pan internals (RD-1084)', () => {
     await page.keyboard.press('+');
     await page.keyboard.press('+');
 
-    const afterZoom = await figure.locator('.vv-exon-rect').evaluateAll((rs) =>
-      rs.map((r) => r.getAttribute('width')),
-    );
+    const afterZoom = await figure
+      .locator('.vv-exon-rect')
+      .evaluateAll((rs) => rs.map((r) => r.getAttribute('width')));
     expect(afterZoom).toEqual(before);
 
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx - 150, cy, { steps: 8 });
-    const midDrag = await figure.locator('.vv-exon-rect').evaluateAll((rs) =>
-      rs.map((r) => r.getAttribute('width')),
-    );
+    const midDrag = await figure
+      .locator('.vv-exon-rect')
+      .evaluateAll((rs) => rs.map((r) => r.getAttribute('width')));
     await page.mouse.up();
     expect(midDrag).toEqual(before);
   });
@@ -81,7 +81,9 @@ test.describe('Slice 10 — smooth pan internals (RD-1084)', () => {
     expect(anyOffFigure).toBe(true);
   });
 
-  test('keyboard pan never adds the legacy vv-no-transition class (Slice 33 retired the animation system)', async ({ page }) => {
+  test('keyboard pan never adds the legacy vv-no-transition class (Slice 33 retired the animation system)', async ({
+    page,
+  }) => {
     await page.goto('/');
     const container = page.locator(
       'section[aria-labelledby="scenario-interactions"] [data-testid="gene-glyph"]',

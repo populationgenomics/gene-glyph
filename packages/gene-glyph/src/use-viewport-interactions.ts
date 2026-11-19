@@ -61,10 +61,7 @@ export interface UseViewportInteractionsArgs {
   /** Called for every committed range mutation. In uncontrolled mode the
    *  viewport has already been updated; in controlled mode the callback is
    *  the only effect of the gesture. */
-  onChange: (
-    range: readonly [number, number],
-    reason: ViewportChangeReason,
-  ) => void;
+  onChange: (range: readonly [number, number], reason: ViewportChangeReason) => void;
   /** Called when a shift+drag (or right-button drag) brush gesture starts,
    *  updates, or ends. `null` clears the brush (a shift-click with no drag).
    *  Slice 16: viewers wire this onto their brush state (controlled or local)
@@ -177,11 +174,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
   );
 
   const panByPx = useCallback(
-    (
-      deltaViewboxPx: number,
-      _cursorViewboxX: number,
-      reason: ViewportChangeReason,
-    ) => {
+    (deltaViewboxPx: number, _cursorViewboxX: number, reason: ViewportChangeReason) => {
       if (deltaViewboxPx === 0 || !Number.isFinite(deltaViewboxPx)) return;
       if (viewport.width <= 0) return;
       // Pan = pure display-space translation. The static figure layout is
@@ -209,10 +202,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
         // at viewport-x appliedDelta / (width + appliedDelta) BEFORE.
         const lo = f.screenToBaselineX(0 + appliedDelta);
         const hi = f.screenToBaselineX(f.width + appliedDelta);
-        return [
-          f.baselineXToRuler(lo) + 0.5,
-          f.baselineXToRuler(hi) - 0.5,
-        ];
+        return [f.baselineXToRuler(lo) + 0.5, f.baselineXToRuler(hi) - 0.5];
       })();
       if (!controlled) viewport.panByDisplayPx(appliedDelta);
       onChange(newRange, reason);
@@ -489,11 +479,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       // input by ignoring repeat events from editable targets.
       if (ev.key === ' ' || ev.code === 'Space') {
         const target = ev.target;
-        if (
-          target &&
-          target instanceof Element &&
-          isEditableTarget(target)
-        ) {
+        if (target && target instanceof Element && isEditableTarget(target)) {
           return;
         }
         spaceHeldRef.current = true;
@@ -602,10 +588,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       // (touch / pen, which has no Space modifier) — to pan instead. This is
       // the Adobe "Hand tool" pattern: Space arms the pan, plain drag picks
       // the primary "make a selection" affordance.
-      const wantsPan =
-        spaceHeldRef.current ||
-        e.pointerType === 'touch' ||
-        e.pointerType === 'pen';
+      const wantsPan = spaceHeldRef.current || e.pointerType === 'touch' || e.pointerType === 'pen';
       if (!wantsPan) {
         const vx = clientXToViewbox(e.clientX);
         if (vx === null) return;
@@ -663,15 +646,7 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
       const c = containerRef.current;
       if (c) c.classList.add('vv-dragging');
     },
-    [
-      viewport,
-      svgRef,
-      containerRef,
-      clientXToRuler,
-      clientXToViewbox,
-      endDrag,
-      endBrush,
-    ],
+    [viewport, svgRef, containerRef, clientXToRuler, clientXToViewbox, endDrag, endBrush],
   );
 
   const onKeyDown = useCallback(
@@ -726,15 +701,12 @@ export function useViewportInteractions(args: UseViewportInteractionsArgs): {
     [viewport, applyRange, panByPx, zoomAtX],
   );
 
-  const onContextMenu = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      // Suppress the native context menu so right-button-drag is usable as
-      // a brush gesture. Shift+right-click still opens the menu in browsers
-      // that bypass contextmenu (rare); shift+drag is the documented binding.
-      if (brushRef.current) e.preventDefault();
-    },
-    [],
-  );
+  const onContextMenu = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    // Suppress the native context menu so right-button-drag is usable as
+    // a brush gesture. Shift+right-click still opens the menu in browsers
+    // that bypass contextmenu (rare); shift+drag is the documented binding.
+    if (brushRef.current) e.preventDefault();
+  }, []);
 
   return { onPointerDown, onKeyDown, onContextMenu };
 }

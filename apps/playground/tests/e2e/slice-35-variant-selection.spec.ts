@@ -17,9 +17,7 @@ const TX_FIXTURE = {
     symbol: 'TESTGENE',
     canonical_transcript_id: 'ENST_TEST',
   },
-  exons: [
-    { feature_type: 'CDS', start: 7674200, stop: 7674300 },
-  ],
+  exons: [{ feature_type: 'CDS', start: 7674200, stop: 7674300 }],
   clinvar_variants: [],
 };
 
@@ -53,7 +51,9 @@ function fnv1a32Hex(s: string): string {
 }
 
 test.describe('Slice 35 — variant selection + drop-line range overlay', () => {
-  test('clicking a user-variants mark draws the SNV drop-line; clicking again dismisses', async ({ page }) => {
+  test('clicking a user-variants mark draws the SNV drop-line; clicking again dismisses', async ({
+    page,
+  }) => {
     await stubEmbedNetwork(page);
     await page.goto('/embed.html?transcript=ENST_TEST&variants=17:7674210C>T');
     const mark = page.locator('[data-vv-track-id="user-variants"] .vv-clinvar-mark').first();
@@ -91,9 +91,7 @@ test.describe('Slice 35 — variant selection + drop-line range overlay', () => 
   test('pre-hash `?selected=<canonical>` still resolves (backward compat)', async ({ page }) => {
     await stubEmbedNetwork(page);
     const variant = '17-7674210-C-T';
-    await page.goto(
-      `/embed.html?transcript=ENST_TEST&variants=17:7674210C>T&selected=${variant}`,
-    );
+    await page.goto(`/embed.html?transcript=ENST_TEST&variants=17:7674210C>T&selected=${variant}`);
     await expect(page.getByTestId('embed-selected-user-variant')).toBeVisible();
     // After load the URL should be rewritten to the hash form.
     await page.waitForTimeout(150);

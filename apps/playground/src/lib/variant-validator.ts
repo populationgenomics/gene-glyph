@@ -231,11 +231,7 @@ export async function resolveVariantsViaVV(
         return { raw, result };
       } catch (err) {
         const message =
-          err instanceof VVError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : String(err);
+          err instanceof VVError ? err.message : err instanceof Error ? err.message : String(err);
         return { raw, error: message };
       }
     }),

@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  GeneGlyph,
-  exonTrack,
-  interProTrack,
-  variantTrack,
-} from '@populationgenomics/gene-glyph';
+import { GeneGlyph, exonTrack, interProTrack, variantTrack } from '@populationgenomics/gene-glyph';
 import type {
   GeneGlyphRef,
   InteractionMode,
@@ -49,8 +44,8 @@ export function InteractionDemoScenario() {
     <section className="scenario" aria-labelledby="scenario-interactions">
       <h2 id="scenario-interactions">Pan, zoom & keyboard — TP53</h2>
       <p className="scenario-blurb">
-        Click the figure to focus it, then drag, wheel, pinch, or use{' '}
-        <code>+ − ← → 1 f</code>. Cmd/Ctrl + wheel zooms on the cursor.
+        Click the figure to focus it, then drag, wheel, pinch, or use <code>+ − ← → 1 f</code>.
+        Cmd/Ctrl + wheel zooms on the cursor.
       </p>
       <div
         style={{

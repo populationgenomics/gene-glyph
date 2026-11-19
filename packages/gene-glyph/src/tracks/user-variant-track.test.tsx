@@ -43,7 +43,12 @@ describe('userVariantTrack', () => {
   it('loads via the eager-array source path and renders one row per record', async () => {
     const { viewport, mapper, painter, interaction } = setup();
     const track = userVariantTrack({ source: records, markRadius: 4 });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(data.records).toHaveLength(2);
     // The stacked layout packs both records into the same lane block;
     // they sit far apart so they fit in row 0.
@@ -70,10 +75,15 @@ describe('userVariantTrack', () => {
   it('resolveFeature / featureLabel hand back the host-shaped record (no synthetic significance)', async () => {
     const { viewport, mapper } = setup();
     const track = userVariantTrack({ source: records });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const r = track.resolveFeature!(data, '1-1009-C-A');
     expect(r).toMatchObject({ id: '1-1009-C-A', chr: 'chr1', pos: 1009 });
-    expect((r as object)).not.toHaveProperty('significance');
+    expect(r as object).not.toHaveProperty('significance');
     expect(track.featureLabel!(data, '1-1009-C-A')).toBe('1-1009-C-A');
   });
 
@@ -82,7 +92,12 @@ describe('userVariantTrack', () => {
     const track = userVariantTrack({
       source: [{ id: '1-1010-AAAA-A', chr: 'chr1', pos: 1010, refLen: 4 }],
     });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const ui = track.render({
       data,
       rect: { yTop: 0, yBottom: 28 },
@@ -108,7 +123,12 @@ describe('userVariantTrack', () => {
         },
       },
     });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(calls).toBe(1);
     expect(data.records).toHaveLength(1);
     expect(data.records[0]!.id).toBe('1-1009-C-A');
@@ -123,7 +143,12 @@ describe('userVariantTrack', () => {
         { id: '1-1009-C-A', chr: 'chr1', pos: 1009 }, // on exon 1
       ],
     });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     const ui = track.render({
       data,
       rect: { yTop: 0, yBottom: 28 },
@@ -147,7 +172,12 @@ describe('userVariantTrack', () => {
       meta: { raw: '1-1009-C-A' },
     };
     const track = userVariantTrack({ source: [original] });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     expect(data.records[0]).toBeDefined();
     const recovered = userVariantFromRecord(data.records[0]!);
     expect(recovered).toEqual(original);
@@ -158,7 +188,12 @@ describe('userVariantTrack', () => {
   it('keeps rendering after a viewport zoom', async () => {
     const { viewport, mapper, painter, interaction } = setup();
     const track = userVariantTrack({ source: records });
-    const data = await track.load({ viewport, mapper, signal: new AbortController().signal, protein: null });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
     act(() => {
       viewport.setMode('transcript');
     });

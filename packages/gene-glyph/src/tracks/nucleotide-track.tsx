@@ -17,9 +17,7 @@ import {
  *  position 1 of the string corresponds to CDS bp 1. Pass a plain
  *  string to skip the adapter ceremony when the host already has the
  *  sequence in hand. */
-export type NucleotideSource =
-  | string
-  | DataSource<{ transcriptId: string }, string>;
+export type NucleotideSource = string | DataSource<{ transcriptId: string }, string>;
 
 export type NucleotideLetter = 'A' | 'C' | 'G' | 'T' | 'N' | 'U';
 
@@ -41,8 +39,7 @@ export interface IntronicFlankBases {
  *  ribbons so the visible sequence reads continuously across the
  *  splice junctions. */
 export type IntronicFlankSource =
-  | IntronicFlankBases[]
-  | DataSource<{ transcriptId: string }, IntronicFlankBases[]>;
+  IntronicFlankBases[] | DataSource<{ transcriptId: string }, IntronicFlankBases[]>;
 
 export interface NucleotideTrackConfig {
   id?: string;
@@ -129,11 +126,7 @@ export function nucleotideTrack(
         { transcriptId: mapper.transcript.transcriptId },
         signal,
       );
-      const flanks = await resolveFlanks(
-        flankSource,
-        mapper.transcript.transcriptId,
-        signal,
-      );
+      const flanks = await resolveFlanks(flankSource, mapper.transcript.transcriptId, signal);
       return { sequence: seq.toUpperCase(), flanks };
     },
 
@@ -239,18 +232,15 @@ export function nucleotideTrack(
           if (flank.xEnd <= sLo || flank.xStart >= sHi) continue;
           const flankBases = data.flanks.get(flank.intronIdx);
           if (!flankBases) continue;
-          const baseString =
-            flank.side === 'donor' ? flankBases.donor : flankBases.acceptor;
-          const hostExonIdx =
-            flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
+          const baseString = flank.side === 'donor' ? flankBases.donor : flankBases.acceptor;
+          const hostExonIdx = flank.side === 'donor' ? flank.intronIdx : flank.intronIdx + 1;
           const hostEb = exonByIdx.get(hostExonIdx);
           if (!hostEb) continue;
           // Donor cells sit in upstream-exon-local x starting at eb.width;
           // acceptor cells sit in downstream-exon-local x starting at
           // -flank.width. Either way, bp k of the flank string occupies
           // the local-x interval `[base + k*pxPerBp, base + (k+1)*pxPerBp]`.
-          const baseLocalX =
-            flank.side === 'donor' ? hostEb.width : -flank.width;
+          const baseLocalX = flank.side === 'donor' ? hostEb.width : -flank.width;
           const arr = lettersByExon.get(hostExonIdx) ?? [];
           for (let k = 0; k < flank.bp; k++) {
             const cellLeft = baseLocalX + k * baseline.pxPerBp;
@@ -389,4 +379,3 @@ function letterAt(seq: string, cdsPos: number): NucleotideLetter {
   }
   return 'N';
 }
-

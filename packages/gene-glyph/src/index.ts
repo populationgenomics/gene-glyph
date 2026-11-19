@@ -84,18 +84,10 @@ export type { LeashedRafOptions } from './debug-leash.js';
 export { exportSvgString, exportPngBlob } from './export.js';
 export type { ExportArgs, PrepareExportInput } from './export.js';
 
-export {
-  fnv1a32Hex,
-  buildFeatureIdHashMap,
-  resolveSelectedId,
-} from './feature-id-hash.js';
+export { fnv1a32Hex, buildFeatureIdHashMap, resolveSelectedId } from './feature-id-hash.js';
 
 export { createCoordinateMapper } from './coordinate-mapper.js';
-export {
-  ViewportController,
-  DEFAULT_MAX_ZOOM,
-  VIEWPORT_PAN_PADDING,
-} from './viewport.js';
+export { ViewportController, DEFAULT_MAX_ZOOM, VIEWPORT_PAN_PADDING } from './viewport.js';
 export type { ViewportControllerInit } from './viewport.js';
 export { layoutTracks } from './layout-engine.js';
 export type { LayoutEngineArgs, LayoutItem, LayoutResult } from './layout-engine.js';
@@ -160,10 +152,7 @@ export type {
 export { pfamTrack, domainHue, fitText } from './tracks/pfam-track.js';
 export type { PfamTrackConfig, PfamTrackData } from './tracks/pfam-track.js';
 export { interProTrack, interProEntryTypeLabel } from './tracks/interpro-track.js';
-export type {
-  InterProTrackConfig,
-  InterProSubTrackData,
-} from './tracks/interpro-track.js';
+export type { InterProTrackConfig, InterProSubTrackData } from './tracks/interpro-track.js';
 export {
   clinVarTrack,
   clusterClinVar,
@@ -188,23 +177,14 @@ export { createClinVarDataSource } from './adapters/clinvar.js';
 export type { CreateClinVarDataSourceOptions } from './adapters/clinvar.js';
 export { parseAaStart, rmcCategoryFor } from './adapters/rmc.js';
 export type { RmcCategory } from './adapters/rmc.js';
-export {
-  userVariantTrack,
-  userVariantFromRecord,
-} from './tracks/user-variant-track.js';
+export { userVariantTrack, userVariantFromRecord } from './tracks/user-variant-track.js';
 export type {
   UserVariantTrackConfig,
   UserVariantRecord,
   UserVariantSource,
 } from './tracks/user-variant-track.js';
-export {
-  parseUserVariant,
-  parseUserVariants,
-} from './tracks/parse-user-variants.js';
-export type {
-  ParsedUserVariant,
-  ParseUserVariantsResult,
-} from './tracks/parse-user-variants.js';
+export { parseUserVariant, parseUserVariants } from './tracks/parse-user-variants.js';
+export type { ParsedUserVariant, ParseUserVariantsResult } from './tracks/parse-user-variants.js';
 export { variantSummaryTrack } from './tracks/variant-summary-track.js';
 export type {
   VariantSummaryTrackConfig,
@@ -228,11 +208,7 @@ export {
   decipherShapeFor,
   decipherBucketColor,
 } from './symbol-encoding.js';
-export type {
-  GlyphShape,
-  SymbolEncoding,
-  DecipherConsequenceBucket,
-} from './symbol-encoding.js';
+export type { GlyphShape, SymbolEncoding, DecipherConsequenceBucket } from './symbol-encoding.js';
 export { segmentBandTrack } from './tracks/segment-band-track.js';
 export type {
   SegmentBandTrackConfig,

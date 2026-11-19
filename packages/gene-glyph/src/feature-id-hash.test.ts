@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildFeatureIdHashMap,
-  fnv1a32Hex,
-  resolveSelectedId,
-} from './feature-id-hash.js';
+import { buildFeatureIdHashMap, fnv1a32Hex, resolveSelectedId } from './feature-id-hash.js';
 
 describe('fnv1a32Hex', () => {
   it('is deterministic — same input maps to same 8-hex digest', () => {

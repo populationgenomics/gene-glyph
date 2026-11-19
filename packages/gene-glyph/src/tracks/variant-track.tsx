@@ -18,9 +18,7 @@ import {
   type ViewportQuery,
 } from '../types.js';
 
-export type VariantSource =
-  | ViewerVariant[]
-  | DataSource<ViewportQuery, ViewerVariant[]>;
+export type VariantSource = ViewerVariant[] | DataSource<ViewportQuery, ViewerVariant[]>;
 
 export interface VariantTrackConfig {
   id?: string;
@@ -345,16 +343,16 @@ export function variantTrack(
     height({ data }: TrackHeightArgs<VariantTrackData>): TrackHeightResult {
       if (stackedEncoding) {
         const rows = data?.stackLayout?.rowCount ?? 0;
-        const px = Math.max(
-          trackHeight,
-          stackTopPad + rows * stackLanePx + stackBottomPad,
-        );
+        const px = Math.max(trackHeight, stackTopPad + rows * stackLanePx + stackBottomPad);
         return { px, didTruncate: false };
       }
       return { px: trackHeight, didTruncate: false };
     },
 
-    hiddenFeaturesByIntron({ data, mapper }: HiddenFeaturesArgs<VariantTrackData>): HiddenFeatureBucket[] {
+    hiddenFeaturesByIntron({
+      data,
+      mapper,
+    }: HiddenFeaturesArgs<VariantTrackData>): HiddenFeatureBucket[] {
       // Intronic variants — those whose CDS offset is non-zero, or whose
       // genomic position lies between exons — are never placed on an exon
       // ribbon, regardless of mode. The exon track folds these counts onto
@@ -377,7 +375,8 @@ export function variantTrack(
     },
 
     render(args: TrackRenderArgs<VariantTrackData>): ReactNode {
-      const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } = args;
+      const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } =
+        args;
       const brush = interaction.brushRange;
       const inBrushIds = new Set<string>();
       if (brush) {
@@ -469,14 +468,8 @@ export function variantTrack(
       const partition = partitionVariants(data.variants, viewport, mapper);
       if (partition.unplaced.length === 0) return null;
       return (
-        <div
-          className="vv-unplaced-variants"
-          data-vv-track-id={id}
-          data-testid={`${id}-unplaced`}
-        >
-          <span className="vv-unplaced-label">
-            Unplaced ({partition.unplaced.length})
-          </span>
+        <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
+          <span className="vv-unplaced-label">Unplaced ({partition.unplaced.length})</span>
           <ul className="vv-unplaced-list">
             {partition.unplaced.map((v) => {
               const isHovered = interaction.hoveredFeatureId === v.id;
@@ -518,11 +511,19 @@ export function variantTrack(
       if (!v) return null;
       switch (v.coord.kind) {
         case 'cds':
-          return viewport.resolveAnchor({ kind: 'cds-pos', cPos: v.coord.cPos, offset: v.coord.offset });
+          return viewport.resolveAnchor({
+            kind: 'cds-pos',
+            cPos: v.coord.cPos,
+            offset: v.coord.offset,
+          });
         case 'protein':
           return viewport.resolveAnchor({ kind: 'protein-aa', aa: v.coord.aa });
         case 'genomic':
-          return viewport.resolveAnchor({ kind: 'genomic-pos', chr: v.coord.chr, pos: v.coord.pos });
+          return viewport.resolveAnchor({
+            kind: 'genomic-pos',
+            chr: v.coord.chr,
+            pos: v.coord.pos,
+          });
       }
     },
 
@@ -697,7 +698,17 @@ interface RenderVariantArgs {
 }
 
 function renderVariant(args: RenderVariantArgs): ReactNode {
-  const { placement, dotCy, tickTop, tickBottom, dotRadius, interaction, inBrush, onFeatureHover, onFeatureClick } = args;
+  const {
+    placement,
+    dotCy,
+    tickTop,
+    tickBottom,
+    dotRadius,
+    interaction,
+    inBrush,
+    onFeatureHover,
+    onFeatureClick,
+  } = args;
   const v = placement.variant;
   const isHovered = interaction.hoveredFeatureId === v.id;
   const isSelected = interaction.selectedFeatureIds.has(v.id);
@@ -744,10 +755,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
           strokeWidth={1.5}
           vectorEffect="non-scaling-stroke"
         />
-        <g
-          className="vv-variant-shape"
-          style={{ transform: counterScale, transformOrigin: '0 0' }}
-        >
+        <g className="vv-variant-shape" style={{ transform: counterScale, transformOrigin: '0 0' }}>
           <circle
             className="vv-variant-ring"
             cx={0}

@@ -9,9 +9,7 @@ async function getFirstVariantRow(page: Page): Promise<Locator> {
 }
 
 async function getFigure(page: Page): Promise<Locator> {
-  const figure = page.locator(
-    'section[aria-labelledby="scenario-paper-report"] svg.vv-figure',
-  );
+  const figure = page.locator('section[aria-labelledby="scenario-paper-report"] svg.vv-figure');
   await expect(figure).toBeVisible();
   return figure;
 }
@@ -74,20 +72,14 @@ test.describe('Slice 12 — CSS-driven hover lift + selection feedback', () => {
 
     const inner = figure.locator('.vv-variant-inner').first();
     const ring = figure.locator('.vv-variant-ring').first();
-    const innerDur = await inner.evaluate((el) =>
-      getComputedStyle(el).transitionDuration,
-    );
-    const ringDur = await ring.evaluate((el) =>
-      getComputedStyle(el).transitionDuration,
-    );
+    const innerDur = await inner.evaluate((el) => getComputedStyle(el).transitionDuration);
+    const ringDur = await ring.evaluate((el) => getComputedStyle(el).transitionDuration);
     // `transition: none` expands to `all 0s ease 0s` in computed style.
     expect(innerDur).toBe('0s');
     expect(ringDur).toBe('0s');
 
     const exonGroup = figure.locator('.vv-exon-group').first();
-    const exonDur = await exonGroup.evaluate((el) =>
-      getComputedStyle(el).transitionDuration,
-    );
+    const exonDur = await exonGroup.evaluate((el) => getComputedStyle(el).transitionDuration);
     expect(exonDur).toBe('0s');
   });
 

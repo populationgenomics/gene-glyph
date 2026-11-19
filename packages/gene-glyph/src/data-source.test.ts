@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCachedDataSource } from './data-source.js';
 
-interface Q { window: string }
+interface Q {
+  window: string;
+}
 
 describe('createCachedDataSource', () => {
   it('shares fetched values across callers with the same cacheKey', async () => {
@@ -42,7 +44,9 @@ describe('createCachedDataSource', () => {
         return 'ok';
       },
     });
-    await expect(source.query({ window: 'A' }, new AbortController().signal)).rejects.toThrow('boom');
+    await expect(source.query({ window: 'A' }, new AbortController().signal)).rejects.toThrow(
+      'boom',
+    );
     await expect(source.query({ window: 'A' }, new AbortController().signal)).resolves.toBe('ok');
     expect(attempts).toBe(2);
   });
@@ -52,7 +56,10 @@ describe('createCachedDataSource', () => {
     const source = createCachedDataSource<Q, string>({
       id: 's',
       cacheKey: (q) => q.window,
-      query: () => new Promise<string>((res) => { resolveInner = res; }),
+      query: () =>
+        new Promise<string>((res) => {
+          resolveInner = res;
+        }),
     });
     const ac1 = new AbortController();
     const ac2 = new AbortController();
@@ -75,9 +82,9 @@ describe('createCachedDataSource', () => {
     const sig = new AbortController().signal;
     await source.query({ window: 'A' }, sig);
     await source.query({ window: 'B' }, sig);
-    await source.query({ window: 'A' }, sig);   // touches A → B is now LRU
-    await source.query({ window: 'C' }, sig);   // evicts B
-    await source.query({ window: 'B' }, sig);   // re-fetches B
-    expect(query).toHaveBeenCalledTimes(4);     // A, B, C, B-again
+    await source.query({ window: 'A' }, sig); // touches A → B is now LRU
+    await source.query({ window: 'C' }, sig); // evicts B
+    await source.query({ window: 'B' }, sig); // re-fetches B
+    expect(query).toHaveBeenCalledTimes(4); // A, B, C, B-again
   });
 });

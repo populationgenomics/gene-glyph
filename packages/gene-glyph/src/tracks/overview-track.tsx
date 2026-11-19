@@ -173,9 +173,7 @@ function OverviewTrackImpl({
   // Mirror the live viewer's committed range / natural range into state via
   // the imperative subscribe() hook. Re-fires on every committed mutation so
   // the bounds rectangle stays in step with whatever the figure shows.
-  const [liveRange, setLiveRange] = useState<readonly [number, number]>(
-    () => viewport.range,
-  );
+  const [liveRange, setLiveRange] = useState<readonly [number, number]>(() => viewport.range);
   const [naturalRange, setNaturalRange] = useState<readonly [number, number]>(
     () => viewport.naturalRange?.() ?? viewport.range,
   );
@@ -244,17 +242,12 @@ function OverviewTrackImpl({
   const figureBaseGeom = viewport.baselineGeometry();
   const figureBaselineSpan = Math.max(
     1e-6,
-    viewport.cdsToBaselineX(liveRange[1]) -
-      viewport.cdsToBaselineX(liveRange[0]),
+    viewport.cdsToBaselineX(liveRange[1]) - viewport.cdsToBaselineX(liveRange[0]),
   );
   const figureZoom = viewport.width / figureBaselineSpan;
-  const sumExonBaselineWidth = figureBaseGeom.exons.reduce(
-    (s, e) => s + e.width,
-    0,
-  );
+  const sumExonBaselineWidth = figureBaseGeom.exons.reduce((s, e) => s + e.width, 0);
   const nGaps = Math.max(0, figureBaseGeom.exons.length - 1);
-  const fullWidthAtZoom =
-    sumExonBaselineWidth * figureZoom + nGaps * figureBaseGeom.gapPx;
+  const fullWidthAtZoom = sumExonBaselineWidth * figureZoom + nGaps * figureBaseGeom.gapPx;
   const compress = fullWidthAtZoom > 0 ? width / fullWidthAtZoom : 1;
   const scaledGapPx = figureBaseGeom.gapPx * compress;
   const scaledPxPerBp = figureBaseGeom.pxPerBp * figureZoom * compress;
@@ -477,20 +470,19 @@ function OverviewTrackImpl({
   }, [onPointerMove, onPointerUp]);
 
   const beginDrag = useCallback(
-    (kind: DragState['kind']) =>
-      (e: ReactPointerEvent<SVGRectElement>) => {
-        if (e.button !== 0 && e.pointerType === 'mouse') return;
-        e.preventDefault();
-        e.stopPropagation();
-        const svg = e.currentTarget.ownerSVGElement as SVGSVGElement | null;
-        dragRef.current = {
-          kind,
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startRange: viewport.range,
-          svg,
-        };
-      },
+    (kind: DragState['kind']) => (e: ReactPointerEvent<SVGRectElement>) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const svg = e.currentTarget.ownerSVGElement as SVGSVGElement | null;
+      dragRef.current = {
+        kind,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startRange: viewport.range,
+        svg,
+      };
+    },
     [viewport],
   );
 

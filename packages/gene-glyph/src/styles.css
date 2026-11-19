@@ -17,7 +17,12 @@
   /* Layout shell — host pages can override fonts via cascade. */
   display: flex;
   flex-direction: column;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   color: var(--vv-color-text-primary, #0f172a);
 
   /* Viewport state — overridden inline on the figure SVG by the controller. */
@@ -466,7 +471,7 @@
  * visibility. Hosts override the palette via the two custom
  * properties (parallel to the brush). */
 .gene-glyph {
-  --vv-selection-range-fill: rgba(124, 58, 237, 0.10);
+  --vv-selection-range-fill: rgba(124, 58, 237, 0.1);
   --vv-selection-range-stroke: rgba(124, 58, 237, 0.85);
 }
 
@@ -629,7 +634,9 @@ body.vv-gg-box-zooming * {
   background: var(--vv-color-bg-surface, transparent);
   color: var(--vv-color-text-primary);
   cursor: pointer;
-  transition: background-color 100ms ease-out, transform 100ms ease-out;
+  transition:
+    background-color 100ms ease-out,
+    transform 100ms ease-out;
 }
 
 .gene-glyph .vv-unplaced-chip.is-hovered,
@@ -762,8 +769,12 @@ body.vv-gg-box-zooming * {
 }
 
 @keyframes vv-tooltip-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Slice 18: per-track loading shimmer + stale-data desaturation.
@@ -787,11 +798,21 @@ body.vv-gg-box-zooming * {
 }
 
 @keyframes vv-loading-shimmer {
-  0%   { opacity: 0; }
-  10%  { opacity: 1; }
-  50%  { opacity: 0.35; }
-  90%  { opacity: 1; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .gene-glyph[data-vv-stale] .vv-variant,
@@ -800,7 +821,9 @@ body.vv-gg-box-zooming * {
 .gene-glyph[data-vv-stale] .vv-unplaced-chip {
   filter: saturate(0.5);
   opacity: 0.75;
-  transition: filter 120ms ease-out, opacity 120ms ease-out;
+  transition:
+    filter 120ms ease-out,
+    opacity 120ms ease-out;
 }
 
 /* Print theme — applied via the offscreen wrapper that exportSVG mounts the

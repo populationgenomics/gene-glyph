@@ -18,21 +18,34 @@
  *  (light green, highest obs/exp); plus `not-significant` for regions
  *  whose `p_value > 0.001`. */
 export type RmcCategory =
-  | 'intol-1'
-  | 'intol-2'
-  | 'intol-3'
-  | 'intol-4'
-  | 'intol-5'
-  | 'not-significant';
+  'intol-1' | 'intol-2' | 'intol-3' | 'intol-4' | 'intol-5' | 'not-significant';
 
 const THREE_LETTER_CODES: ReadonlySet<string> = new Set([
   // 20 canonical amino acids
-  'Ala', 'Arg', 'Asn', 'Asp', 'Cys',
-  'Glu', 'Gln', 'Gly', 'His', 'Ile',
-  'Leu', 'Lys', 'Met', 'Phe', 'Pro',
-  'Ser', 'Thr', 'Trp', 'Tyr', 'Val',
+  'Ala',
+  'Arg',
+  'Asn',
+  'Asp',
+  'Cys',
+  'Glu',
+  'Gln',
+  'Gly',
+  'His',
+  'Ile',
+  'Leu',
+  'Lys',
+  'Met',
+  'Phe',
+  'Pro',
+  'Ser',
+  'Thr',
+  'Trp',
+  'Tyr',
+  'Val',
   // Termination + the two genetically encoded special cases.
-  'Ter', 'Sec', 'Pyl',
+  'Ter',
+  'Sec',
+  'Pyl',
 ]);
 
 /** Parse a gnomAD RMC `aa_start` / `aa_stop` string (e.g. `"Lys2009"`)

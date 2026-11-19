@@ -17,16 +17,12 @@ import { livePxPerUnit } from './nucleotide-track.js';
  *  IUPAC single-letter amino-acid string (1-indexed: position 1 is the
  *  first residue). Pass a plain string to skip the adapter ceremony
  *  when the host already has the sequence. */
-export type ProteinSequenceSource =
-  | string
-  | DataSource<{ transcriptId: string }, string>;
+export type ProteinSequenceSource = string | DataSource<{ transcriptId: string }, string>;
 
 /** Nucleotide source consumed for aa derivation. The aa track
  *  translates the CDS via the standard codon table when no protein
  *  source is supplied. */
-export type NucleotideForAaSource =
-  | string
-  | DataSource<{ transcriptId: string }, string>;
+export type NucleotideForAaSource = string | DataSource<{ transcriptId: string }, string>;
 
 export interface AaTrackConfig {
   id?: string;
@@ -67,11 +63,23 @@ const DEFAULT_TOP_PAD = 2;
 // aromatic / cysteine / glycine / proline / stop / unknown. Hosts
 // override per-letter via `palette`.
 const DEFAULT_AA_PALETTE: Record<string, string> = {
-  A: '#4caf50', V: '#4caf50', L: '#4caf50', I: '#4caf50', M: '#4caf50', // hydrophobic
-  F: '#7b1fa2', W: '#7b1fa2', Y: '#7b1fa2', // aromatic
-  S: '#0288d1', T: '#0288d1', N: '#0288d1', Q: '#0288d1', // polar
-  D: '#c62828', E: '#c62828', // acidic
-  K: '#1565c0', R: '#1565c0', H: '#1565c0', // basic
+  A: '#4caf50',
+  V: '#4caf50',
+  L: '#4caf50',
+  I: '#4caf50',
+  M: '#4caf50', // hydrophobic
+  F: '#7b1fa2',
+  W: '#7b1fa2',
+  Y: '#7b1fa2', // aromatic
+  S: '#0288d1',
+  T: '#0288d1',
+  N: '#0288d1',
+  Q: '#0288d1', // polar
+  D: '#c62828',
+  E: '#c62828', // acidic
+  K: '#1565c0',
+  R: '#1565c0',
+  H: '#1565c0', // basic
   C: '#f9a825', // cysteine
   G: '#616161', // glycine
   P: '#8d6e63', // proline
@@ -114,9 +122,7 @@ const CODON_TABLE: Record<string, string> = (() => {
  * translates the CDS via the standard codon table (frame-offset
  * configurable), truncating any trailing partial codon.
  */
-export function aaTrack(
-  config: AaTrackConfig,
-): Track<AaTrackConfig, AaTrackData> {
+export function aaTrack(config: AaTrackConfig): Track<AaTrackConfig, AaTrackData> {
   const id = config.id ?? 'aa-track';
   const minPxPerAa = config.minPxPerAa ?? DEFAULT_MIN_PX_PER_AA;
   const letterFontPx = config.letterFontPx ?? DEFAULT_LETTER_FONT_PX;
@@ -125,9 +131,7 @@ export function aaTrack(
   const palette = { ...DEFAULT_AA_PALETTE, ...(config.palette ?? {}) };
 
   if (!config.proteinSource && !config.nucleotideSource) {
-    throw new Error(
-      'aaTrack: pass at least one of `proteinSource` or `nucleotideSource`',
-    );
+    throw new Error('aaTrack: pass at least one of `proteinSource` or `nucleotideSource`');
   }
 
   return {
@@ -166,8 +170,7 @@ export function aaTrack(
       // Each aa spans 3 CDS bp in CDS modes, or 1 aa-cell in protein mode.
       // Baseline `pxPerBp` is per-bp in CDS modes and per-aa in protein
       // mode, so the multiplier flips with the mode.
-      const aaCellWidth =
-        viewport.mode === 'protein' ? baseline.pxPerBp : 3 * baseline.pxPerBp;
+      const aaCellWidth = viewport.mode === 'protein' ? baseline.pxPerBp : 3 * baseline.pxPerBp;
       const aaCellHalfWidth = aaCellWidth / 2;
 
       const placements = collectAaPlacements(data.sequence, viewport, mapper);
@@ -331,4 +334,3 @@ export function translate(nt: string, frame: 0 | 1 | 2 = 0): string {
   }
   return out.join('');
 }
-

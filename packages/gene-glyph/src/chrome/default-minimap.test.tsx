@@ -74,8 +74,12 @@ describe('DefaultMinimap', () => {
       </GeneGlyph>,
     );
     await flush();
-    expect(container.querySelector('[data-testid="gene-glyph-minimap-handle-left"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="gene-glyph-minimap-handle-right"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="gene-glyph-minimap-handle-left"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="gene-glyph-minimap-handle-right"]'),
+    ).not.toBeNull();
   });
 
   it('brush slides by exactly the layout-pixel delta under panByDisplayPx, with no rescaling', async () => {
@@ -140,9 +144,7 @@ describe('DefaultMinimap', () => {
     });
     await flush();
     const rangeBefore = ref.current!.getViewportInfo().range;
-    const bg = container.querySelector<SVGRectElement>(
-      '[data-testid="gene-glyph-minimap-bg"]',
-    )!;
+    const bg = container.querySelector<SVGRectElement>('[data-testid="gene-glyph-minimap-bg"]')!;
     // JSDOM's getBoundingClientRect for SVG elements returns zeros, which
     // makes clientX→baseline-x math collapse to zero; assert that the
     // background pointerdown is wired and triggers a viewport mutation via
