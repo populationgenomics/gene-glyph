@@ -18,6 +18,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "registry": "https://australia-southeast1-npm.pkg.dev/aasgard-dev/npm/"
+  },
   "sideEffects": [
     "*.css"
   ],
