@@ -3,6 +3,7 @@ import { fitText } from './pfam-track.js';
 import type {
   CoordSystem,
   ExonBaseline,
+  RangeProjection,
   RangeSegment,
   Track,
   TrackHeightArgs,
@@ -30,20 +31,28 @@ export interface SegmentBandDatum<C extends string = string> {
   label?: string;
 }
 
-export type SegmentBandSource<C extends string = string> =
-  | ReadonlyArray<SegmentBandDatum<C>>
-  | ((args: { signal: AbortSignal }) => Promise<ReadonlyArray<SegmentBandDatum<C>>>);
+/** A band datum in genomic coordinates. `[start, end]` are 1-based
+ *  inclusive positions on `chr`, in genomic order (`start <= end`) on
+ *  either strand. `chr` names the chromosome the way the transcript's
+ *  `Exon.chr` does; a span on any other chromosome draws nothing. */
+export interface GenomicSegmentBandDatum<C extends string = string> extends SegmentBandDatum<C> {
+  chr: string;
+}
 
-export interface SegmentBandTrackConfig<C extends string = string> {
+export type SegmentBandSource<
+  C extends string = string,
+  D extends SegmentBandDatum<C> = SegmentBandDatum<C>,
+> = ReadonlyArray<D> | ((args: { signal: AbortSignal }) => Promise<ReadonlyArray<D>>);
+
+/** Options shared by every {@link SegmentBandTrackConfig} variant. */
+export interface SegmentBandTrackOptions<
+  C extends string = string,
+  D extends SegmentBandDatum<C> = SegmentBandDatum<C>,
+> {
   id?: string;
   /** Eager array or async loader. Each datum's `[start, end]` is in the
-   *  track's declared `coordSystem` units (1-indexed CDS bp or aa,
-   *  inclusive). */
-  source: SegmentBandSource<C>;
-  /** `'cds'` (positions = CDS bp) or `'protein'` (positions = aa). The
-   *  track maps endpoints to baseline-x via the active viewport so it
-   *  stays correctly aligned in every mode. */
-  coordSystem: 'cds' | 'protein';
+   *  track's declared `coordSystem` units (1-indexed, inclusive). */
+  source: SegmentBandSource<C, D>;
   /** Category → CSS colour. Compile-time exhaustiveness comes from the
    *  source datum's literal-union `category` field — passing a record
    *  keyed on the same literal union makes an unknown category a
@@ -66,8 +75,31 @@ export interface SegmentBandTrackConfig<C extends string = string> {
    *  treated as a host data error — the track keeps rendering (every
    *  segment still paints) but surfaces the offending pair so the host
    *  can log / repair upstream. */
-  onOverlapWarning?: (a: SegmentBandDatum<C>, b: SegmentBandDatum<C>) => void;
+  onOverlapWarning?: (a: D, b: D) => void;
 }
+
+/** Band track over CDS bp (`'cds'`) or amino acids (`'protein'`). The
+ *  track maps endpoints to baseline-x via the active viewport so it
+ *  stays correctly aligned in every mode. */
+export interface CodingSegmentBandTrackConfig<
+  C extends string = string,
+> extends SegmentBandTrackOptions<C, SegmentBandDatum<C>> {
+  coordSystem: 'cds' | 'protein';
+}
+
+/** Band track over genomic positions ({@link GenomicSegmentBandDatum}).
+ *  A span draws over the coding exon bases it covers, one piece per
+ *  exon, in every view mode. Its intronic parts, and any part outside
+ *  the transcript's coding exons (UTR, flanking sequence), are not
+ *  drawn; a span with no coding exon base draws nothing. */
+export interface GenomicSegmentBandTrackConfig<
+  C extends string = string,
+> extends SegmentBandTrackOptions<C, GenomicSegmentBandDatum<C>> {
+  coordSystem: 'genomic';
+}
+
+export type SegmentBandTrackConfig<C extends string = string> =
+  CodingSegmentBandTrackConfig<C> | GenomicSegmentBandTrackConfig<C>;
 
 export interface SegmentBandTrackData<C extends string = string> {
   segments: ReadonlyArray<SegmentBandDatum<C>>;
@@ -78,15 +110,51 @@ const DEFAULT_MIN_LABEL_WIDTH = 28;
 const DEFAULT_LABEL_FONT = 10;
 const LABEL_PADDING_PX = 3;
 
+/** How one datum type sits on the track's coordinate axis. */
+interface BandAxis<D> {
+  /** Data with different keys never overlap (genomic: the chromosome). */
+  key(d: D): string;
+  project(d: D, viewport: Viewport): RangeProjection;
+  /** Span text for the default tooltip. */
+  span(d: D): string;
+}
+
+interface LoadedBands<D> {
+  segments: ReadonlyArray<D>;
+}
+
 /** Build a {@link Track} that renders a non-overlapping series of
  *  categorical intervals as full-height colour bands. */
 export function segmentBandTrack<C extends string = string>(
   config: SegmentBandTrackConfig<C>,
 ): Track<SegmentBandTrackConfig<C>, SegmentBandTrackData<C>> {
+  if (config.coordSystem === 'genomic') {
+    return buildSegmentBandTrack(config, config, {
+      key: (d) => d.chr,
+      project: (d, viewport) => viewport.projectGenomicRange(d.chr, d.start, d.end),
+      span: (d) => `${d.chr}:${d.start}–${d.end}`,
+    });
+  }
+  const project =
+    config.coordSystem === 'protein'
+      ? (d: SegmentBandDatum<C>, viewport: Viewport) => viewport.projectProteinRange(d.start, d.end)
+      : (d: SegmentBandDatum<C>, viewport: Viewport) => viewport.projectCdsRange(d.start, d.end);
+  return buildSegmentBandTrack(config, config, {
+    key: () => '',
+    project,
+    span: (d) => `${d.start}–${d.end}`,
+  });
+}
+
+function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
+  config: SegmentBandTrackOptions<C, D> & { coordSystem: CoordSystem },
+  original: SegmentBandTrackConfig<C>,
+  axis: BandAxis<D>,
+): Track<SegmentBandTrackConfig<C>, LoadedBands<D>> {
   const id = config.id ?? 'segment-band-track';
   const trackHeight = config.heightPx ?? DEFAULT_HEIGHT;
   const palette = config.palette;
-  const coordSystem: CoordSystem = config.coordSystem;
+  const coordSystem = config.coordSystem;
   const showLabels = config.showLabels ?? false;
   const minLabelWidth = config.minLabelWidthPx ?? DEFAULT_MIN_LABEL_WIDTH;
   const labelFont = config.labelFontSize ?? DEFAULT_LABEL_FONT;
@@ -98,7 +166,7 @@ export function segmentBandTrack<C extends string = string>(
     heightPolicy: 'fixed',
     gapAbove: config.gapAbove,
 
-    async load({ signal }: TrackLoadArgs): Promise<SegmentBandTrackData<C>> {
+    async load({ signal }: TrackLoadArgs): Promise<LoadedBands<D>> {
       const raw =
         typeof config.source === 'function' ? await config.source({ signal }) : config.source;
       // Sort + overlap-check once at load time so render() can assume a
@@ -107,22 +175,24 @@ export function segmentBandTrack<C extends string = string>(
       // viewer just no longer guarantees a one-row stack.
       const sorted = [...raw].sort((a, b) => a.start - b.start);
       if (onOverlapWarning) {
-        for (let i = 1; i < sorted.length; i++) {
-          const prev = sorted[i - 1]!;
-          const curr = sorted[i]!;
-          if (curr.start <= prev.end) {
+        const prevByKey = new Map<string, D>();
+        for (const curr of sorted) {
+          const key = axis.key(curr);
+          const prev = prevByKey.get(key);
+          if (prev && curr.start <= prev.end) {
             onOverlapWarning(prev, curr);
           }
+          prevByKey.set(key, curr);
         }
       }
       return { segments: sorted };
     },
 
-    height(_args: TrackHeightArgs<SegmentBandTrackData<C>>): TrackHeightResult {
+    height(_args: TrackHeightArgs<LoadedBands<D>>): TrackHeightResult {
       return { px: trackHeight, didTruncate: false };
     },
 
-    render(args: TrackRenderArgs<SegmentBandTrackData<C>>): ReactNode {
+    render(args: TrackRenderArgs<LoadedBands<D>>): ReactNode {
       const { data, rect, viewport, painter } = args;
       if (data.segments.length === 0) return null;
 
@@ -138,7 +208,7 @@ export function segmentBandTrack<C extends string = string>(
       for (const seg of data.segments) {
         const fill = palette[seg.category];
         if (!fill) continue;
-        const projection = projectSegment(seg, coordSystem, viewport);
+        const projection = axis.project(seg, viewport);
         if (projection.segments.length === 0) continue;
         const featureId = seg.id ?? `${seg.start}-${seg.end}-${seg.category}`;
         for (const piece of projection.segments) {
@@ -243,35 +313,22 @@ export function segmentBandTrack<C extends string = string>(
         (s) => (s.id ?? `${s.start}-${s.end}-${s.category}`) === featureId,
       );
       if (!seg) return null;
-      const span = `${seg.start}–${seg.end}`;
+      const span = axis.span(seg);
       return seg.label ? `${seg.label} (${span})` : `${seg.category} (${span})`;
     },
 
-    toJSON() {
+    toJSON(): SegmentBandTrackConfig<C> {
+      const { onOverlapWarning: _callback, ...serialisable } = original;
       return {
+        ...serialisable,
         id,
-        source: config.source,
-        coordSystem,
-        palette,
         heightPx: trackHeight,
         showLabels,
         minLabelWidthPx: minLabelWidth,
         labelFontSize: labelFont,
-        gapAbove: config.gapAbove,
       };
     },
   };
-}
-
-function projectSegment<C extends string>(
-  seg: SegmentBandDatum<C>,
-  coordSystem: 'cds' | 'protein',
-  viewport: Viewport,
-): { segments: RangeSegment[] } {
-  if (coordSystem === 'protein') {
-    return viewport.projectProteinRange(seg.start, seg.end);
-  }
-  return viewport.projectCdsRange(seg.start, seg.end);
 }
 
 function pickLabelPiece(segments: RangeSegment[]): RangeSegment | null {
