@@ -1,5 +1,11 @@
 # @populationgenomics/gene-glyph
 
+## 1.1.1
+
+### Patch Changes
+
+- 7065bff: Publish to the public npm registry (npmjs.org) via trusted publishing, with provenance. Consumers that mapped `@populationgenomics` to CPG's Artifact Registry in `.npmrc` can drop that mapping.
+
 ## 1.1.0
 
 ### Minor Changes
