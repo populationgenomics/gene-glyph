@@ -44,7 +44,15 @@ We use [Changesets](https://github.com/changesets/changesets).
 1. For any user-facing change, run `npm run changeset` and describe the change.
 2. Commit the generated `.changeset/*.md` file alongside the code change.
 3. On merge to `main`, the release workflow opens a "Version Packages" PR.
-4. Merging that PR publishes to npm.
+4. Merging that PR publishes to npmjs.org as
+   [`@populationgenomics/gene-glyph`](https://www.npmjs.com/package/@populationgenomics/gene-glyph).
+
+Publishing uses npm [trusted publishing](https://docs.npmjs.com/trusted-publishers):
+the release workflow authenticates via GitHub OIDC, so there is no npm token
+to rotate. The trusted publisher is configured under the package's
+Settings → Trusted publishing on npmjs.com (repo `populationgenomics/gene-glyph`,
+workflow `release.yml`, `npm publish` allowed). Until November 2026 releases were
+published only to CPG's Artifact Registry (`aasgard-dev`).
 
 Versioning:
 
