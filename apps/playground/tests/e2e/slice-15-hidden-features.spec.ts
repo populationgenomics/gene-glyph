@@ -10,7 +10,7 @@ test.describe('Slice 15 — hidden-feature indicators', () => {
     const s = await scenario(page);
     await s.locator('select').first().selectOption('protein');
 
-    // TP53 fixture contributes one intronic variant (c.560-2A>G) so exactly
+    // TP53 fixture contributes one intronic variant (c.1059+2T>C) so exactly
     // one indicator should render. Its anchor id encodes the bracketing exon
     // pair; the slice spec pins the format `__hidden_intron_{A}_{B}`.
     const mark = s.locator('.vv-hidden-feature-mark');
@@ -28,7 +28,7 @@ test.describe('Slice 15 — hidden-feature indicators', () => {
       const s = await scenario(page);
       await s.locator('select').first().selectOption(mode);
       await expect(s.locator('.vv-hidden-feature-mark')).toHaveCount(0);
-      await expect(s.locator('.vv-variant[data-vv-intron-side="acceptor"]')).toHaveCount(1);
+      await expect(s.locator('.vv-variant[data-vv-intron-side="donor"]')).toHaveCount(1);
     });
   }
 

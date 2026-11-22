@@ -233,8 +233,8 @@ export const TP53_VARIANTS: ViewerVariant[] = [
   },
   {
     id: 'tp53-splice-int4',
-    label: 'c.560-2A>G (intron 5 acceptor)',
-    coord: { kind: 'cds', cPos: 560, offset: -2 },
+    label: 'c.1059+2T>C (intron 9 donor)',
+    coord: { kind: 'cds', cPos: 1059, offset: 2 },
     category: 'splice',
   },
   {
