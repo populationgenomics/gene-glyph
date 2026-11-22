@@ -639,3 +639,52 @@ describe('segmentBandTrack — a span wholly inside an intron', () => {
     expect(document.querySelectorAll('.vv-segment-band-rect')).toHaveLength(1);
   });
 });
+
+describe('segmentBandTrack — outlines', () => {
+  async function strokeOf(outline?: string | null): Promise<string | null> {
+    const track = segmentBandTrack<RmcCategory>({
+      source: [
+        { start: 10, end: 20, category: 'high' },
+        { start: 21, end: 30, category: 'high' },
+      ],
+      coordSystem: 'cds',
+      palette,
+      ...(outline === undefined ? {} : { outline }),
+    });
+    const mapper = createCoordinateMapper(transcript);
+    const viewport = new ViewportController({ mapper, width: 600, mode: 'transcript' });
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const { container } = render(
+      <svg>
+        {track.render({
+          data,
+          rect: { yTop: 0, yBottom: 14 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+        })}
+      </svg>,
+    );
+    const rects = [...container.querySelectorAll('.vv-segment-band-rect')];
+    expect(rects).toHaveLength(2);
+    return rects[0]!.getAttribute('stroke');
+  }
+
+  it('outlines touching bands by default, themable through a CSS variable', async () => {
+    expect(await strokeOf()).toBe('var(--vv-segment-band-outline, rgba(15, 23, 42, 0.45))');
+  });
+
+  it('takes a host outline colour', async () => {
+    expect(await strokeOf('#123456')).toBe('#123456');
+  });
+
+  it('draws no outline when outline is null', async () => {
+    expect(await strokeOf(null)).toBeNull();
+  });
+});

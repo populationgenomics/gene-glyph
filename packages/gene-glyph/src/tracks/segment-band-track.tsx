@@ -71,6 +71,11 @@ export interface SegmentBandTrackOptions<
   palette: Record<C, string>;
   /** Band height in pixels. Default 14. */
   heightPx?: number;
+  /** Colour of the 1 px outline around each band, so touching bands with
+   *  the same fill read as two. Default: the `--vv-segment-band-outline`
+   *  CSS variable, else a translucent dark edge that darkens any fill.
+   *  `null` draws no outline. */
+  outline?: string | null;
   /** Show inline labels centred inside each segment when the segment is
    *  wider than {@link minLabelWidthPx}. Default `false`. */
   showLabels?: boolean;
@@ -127,6 +132,7 @@ export interface SegmentBandTrackData<
 }
 
 const DEFAULT_HEIGHT = 14;
+const DEFAULT_OUTLINE = 'rgba(15, 23, 42, 0.45)';
 const DEFAULT_MIN_LABEL_WIDTH = 28;
 const DEFAULT_LABEL_FONT = 10;
 const LABEL_PADDING_PX = 3;
@@ -263,6 +269,10 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       const labelsByExon = new Map<number, ReactNode[]>();
 
       const rectH = rect.yBottom - rect.yTop;
+      const outline =
+        config.outline === undefined
+          ? painter.color('vv-segment-band-outline', DEFAULT_OUTLINE)
+          : config.outline;
 
       for (const seg of data.segments) {
         const fill = palette[seg.category];
@@ -333,6 +343,9 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                 width,
                 height: rectH,
                 fill,
+                stroke: outline ?? undefined,
+                strokeWidth: outline ? 1 : undefined,
+                vectorEffect: outline ? 'non-scaling-stroke' : undefined,
                 className: 'vv-segment-band-rect',
               })}
             </g>,
