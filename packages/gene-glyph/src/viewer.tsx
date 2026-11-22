@@ -90,6 +90,11 @@ export interface GeneGlyphProps {
   onHover?: (featureId: string | null, trackId: string) => void;
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
+  /** Which features can be clicked. Only those get the pointer cursor,
+   *  `role="button"`, a tab stop and activation on click, Enter and Space;
+   *  the rest stay hoverable. Omitted, every feature is clickable when
+   *  `onFeatureClick` is given, and none is otherwise. */
+  isFeatureClickable?: (featureId: string, trackId: string) => boolean;
   /** Host-supplied tooltip content. When provided, the viewer shows its
    *  tooltip box anchored to the hovered surface with the host's content.
    *  When omitted, the box shows {@link TooltipRenderArgs.label}. Return
@@ -459,6 +464,7 @@ function GeneGlyphInner(
     onBrushChange,
     onHover,
     onFeatureClick,
+    isFeatureClickable,
     renderTooltip,
     renderTooltipPanel,
     onTrackStateChange,
@@ -1023,6 +1029,12 @@ function GeneGlyphInner(
     else clearExitTimer();
   }, [clearEnterTimer, clearExitTimer, commitHover]);
 
+  const isClickable = useCallback(
+    (trackId: string, featureId: string) =>
+      onFeatureClick !== undefined && (isFeatureClickable?.(featureId, trackId) ?? true),
+    [onFeatureClick, isFeatureClickable],
+  );
+
   const handleClick = useCallback(
     (trackId: string, featureId: string) => {
       onFeatureClick?.(featureId, trackId);
@@ -1340,6 +1352,7 @@ function GeneGlyphInner(
       onFeatureHover: (featureId: string | null, anchorEl?: Element) =>
         handleHover(t.id, featureId, anchorEl),
       onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
+      isFeatureClickable: (featureId: string) => isClickable(t.id, featureId),
     };
   };
 
@@ -1747,7 +1760,14 @@ function GeneGlyphInner(
   return (
     <div
       ref={containerRef}
-      className={['gene-glyph', tooltipTarget ? 'vv-hover-active' : null, className]
+      className={[
+        'gene-glyph',
+        tooltipTarget ? 'vv-hover-active' : null,
+        tooltipTarget && isClickable(tooltipTarget.trackId, tooltipTarget.featureId)
+          ? 'vv-hover-clickable'
+          : null,
+        className,
+      ]
         .filter(Boolean)
         .join(' ')}
       data-testid="gene-glyph"

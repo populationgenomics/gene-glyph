@@ -1,4 +1,5 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import { clickAttrs, featureClickProps } from './feature-click.js';
 import type {
   MinimapRenderArgs,
   Track,
@@ -60,7 +61,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
     },
 
     render(args: TrackRenderArgs<ExonTrackData>): ReactNode {
-      const { rect, viewport, mapper, painter, hiddenByIntron, onFeatureClick } = args;
+      const { rect, viewport, mapper, painter, hiddenByIntron } = args;
       const geom = viewport.baselineGeometry();
       const exons = mapper.transcript.exons;
       // Exons wholly in a UTR are drawn in the first / last exon's cap.
@@ -266,7 +267,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         const featureId = `__hidden_intron_${gap.exonIdxA}_${gap.exonIdxB}`;
         const w = hiddenHalfW * 2;
         const y0 = intronY - hiddenHalfW;
-        const handler = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
+        const click = featureClickProps(featureId, args);
         const wrapperStyle: CSSProperties = {
           transform:
             `translateX(calc(var(--vv-intron-x-${gap.exonIdxA}, 0px)` +
@@ -279,15 +280,15 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         hiddenMarks.push(
           <g
             key={`hidden-${gap.exonIdxA}-${gap.exonIdxB}`}
-            className="vv-hidden-feature-mark"
+            className={
+              click.clickable ? 'vv-hidden-feature-mark is-clickable' : 'vv-hidden-feature-mark'
+            }
             data-vv-feature-id={featureId}
             data-vv-hidden-count={bucket.count}
             data-vv-intron-from={gap.exonIdxA}
             data-vv-intron-to={gap.exonIdxB}
             style={wrapperStyle}
-            onClick={handler}
-            role={handler ? 'button' : undefined}
-            tabIndex={handler ? 0 : undefined}
+            {...clickAttrs(click)}
             aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${gap.exonIdxA + 1} and exon ${gap.exonIdxB + 1}`}
           >
             <rect

@@ -701,6 +701,11 @@ export interface TrackRenderArgs<TData> {
   /** Fires when a feature in this track is clicked. The viewer maps it onto
    *  the host's `onFeatureClick` prop. */
   onFeatureClick?: (featureId: string) => void;
+  /** Whether the host lets feature `featureId` be clicked. Only a clickable
+   *  feature gets the pointer cursor, `role="button"`, a tab stop and
+   *  activation on click, Enter and Space; every feature stays hoverable.
+   *  Set by the viewer from {@link GeneGlyphProps.isFeatureClickable}. */
+  isFeatureClickable?: (featureId: string) => boolean;
 }
 
 export interface HiddenFeaturesArgs<TData> {

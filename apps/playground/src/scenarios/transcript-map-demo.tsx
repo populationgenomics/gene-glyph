@@ -72,13 +72,15 @@ const REGIONS = [
 
 export function TranscriptMapDemoScenario() {
   const [mode, setMode] = useState<ViewMode>('transcript');
+  const [clicked, setClicked] = useState<string | null>(null);
   return (
     <section className="scenario" aria-labelledby="scenario-transcript-map">
       <h2 id="scenario-transcript-map">Transcript map — UTRs and introns</h2>
       <p className="scenario-blurb">
         UTR variants draw in the UTR caps, exon 1 (wholly 5' UTR) included; intronic variants draw
         on the nearer exon edge with a marker pointing into the intron. Only features off the
-        transcript are listed as unplaced, under the name of their track.
+        transcript are listed as unplaced, under the name of their track. Only the literature
+        variants are clickable.
       </p>
       <label style={{ fontSize: '0.85rem', color: '#475569' }}>
         Mode{' '}
@@ -97,6 +99,8 @@ export function TranscriptMapDemoScenario() {
         transcript={TRANSCRIPT}
         mode={mode}
         interactionMode="embed"
+        onFeatureClick={(featureId) => setClicked(featureId)}
+        isFeatureClickable={(_featureId, trackId) => trackId === 'literature'}
         tracks={[
           exonTrack({}),
           variantTrack({ id: 'case', label: 'This case', source: CASE_VARIANTS }),
@@ -112,6 +116,7 @@ export function TranscriptMapDemoScenario() {
           }),
         ]}
       />
+      <p data-testid="transcript-map-clicked">Clicked: {clicked ?? 'nothing'}</p>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { intronMarkPath } from './exon-edge.js';
+import { clickAttrs, featureClickProps } from './feature-click.js';
 import { fitText } from './pfam-track.js';
 import type {
   CdsPosition,
@@ -250,7 +251,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     render(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode {
-      const { data, rect, viewport, painter, onFeatureHover, onFeatureClick } = args;
+      const { data, rect, viewport, painter, onFeatureHover } = args;
       if (data.segments.length === 0) return null;
 
       const baseline = viewport.baselineGeometry();
@@ -267,7 +268,8 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         if (!fill) continue;
         const projection = binding.project(seg, viewport);
         const featureId = featureIdOf(seg);
-        const click = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
+        const click = featureClickProps(featureId, args);
+        const clickClass = click.clickable ? ' is-clickable' : '';
         const dock = projection.segments.length === 0 ? dockOf(data, seg, viewport) : null;
         if (dock?.intronSide) {
           pushTo(
@@ -275,16 +277,14 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
             dock.exonIdx,
             painter.group({
               key: `band-${featureId}-intron`,
-              className: 'vv-segment-band-feature is-intronic',
+              className: `vv-segment-band-feature is-intronic${clickClass}`,
               featureId,
               attributes: { 'data-vv-intron-side': dock.intronSide },
               onMouseEnter: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
               onMouseLeave: onFeatureHover ? () => onFeatureHover(null) : undefined,
               onFocus: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
               onBlur: onFeatureHover ? () => onFeatureHover(null) : undefined,
-              onClick: click,
-              role: click ? 'button' : undefined,
-              tabIndex: click ? 0 : undefined,
+              ...clickAttrs(click),
               ariaLabel: labelOf(seg),
               style: {
                 transform:
@@ -317,15 +317,13 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
             piece.exonIdx,
             <g
               key={`band-${featureId}-${piece.exonIdx}`}
-              className="vv-segment-band-feature"
+              className={`vv-segment-band-feature${clickClass}`}
               data-vv-feature-id={featureId}
               onMouseEnter={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
               onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
               onFocus={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
               onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-              onClick={click}
-              role={click ? 'button' : undefined}
-              tabIndex={click ? 0 : undefined}
+              {...clickAttrs(click)}
               aria-label={labelOf(seg)}
             >
               {painter.drawRect({
@@ -411,7 +409,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     renderBelow(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode | null {
-      const { data, viewport, interaction, onFeatureHover, onFeatureClick } = args;
+      const { data, viewport, interaction, onFeatureHover } = args;
       const unplaced = data.segments.filter(
         (s) =>
           palette[s.category] &&
@@ -425,8 +423,10 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
           <ul className="vv-unplaced-list">
             {unplaced.map((s) => {
               const featureId = featureIdOf(s);
+              const click = featureClickProps(featureId, args);
               const cls = [
                 'vv-unplaced-chip',
+                click.clickable && 'is-clickable',
                 interaction.hoveredFeatureId === featureId && 'is-hovered',
                 interaction.selectedFeatureIds.has(featureId) && 'is-selected',
               ]
@@ -446,7 +446,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onFocus={(e) => onFeatureHover?.(featureId, e.currentTarget)}
                   onBlur={() => onFeatureHover?.(null)}
-                  onClick={() => onFeatureClick?.(featureId)}
+                  {...clickAttrs(click)}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{label}</span>

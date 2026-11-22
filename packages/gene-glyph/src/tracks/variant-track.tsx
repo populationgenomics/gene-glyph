@@ -3,6 +3,7 @@ import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import { formatCdsPosition } from '../coordinate-mapper.js';
 import { resolveSourceData } from '../data-source.js';
 import { intronMarkPath } from './exon-edge.js';
+import { clickAttrs, featureClickProps, type FeatureClickProps } from './feature-click.js';
 import { packLanes } from '../pack-lanes.js';
 import {
   type CdsPosition,
@@ -366,8 +367,8 @@ export function variantTrack(
     },
 
     render(args: TrackRenderArgs<VariantTrackData>): ReactNode {
-      const { data, rect, viewport, mapper, interaction, painter, onFeatureHover, onFeatureClick } =
-        args;
+      const { data, rect, viewport, mapper, interaction, painter, onFeatureHover } = args;
+      const clickFor = (featureId: string) => featureClickProps(featureId, args);
       const brush = interaction.brushRange;
       const inBrushIds = new Set<string>();
       if (brush) {
@@ -407,7 +408,7 @@ export function variantTrack(
           inBrushIds,
           labelOf: (v) => labelOf(data, v),
           onFeatureHover,
-          onFeatureClick,
+          clickFor,
           painter,
         });
       }
@@ -442,7 +443,7 @@ export function variantTrack(
             label: labelOf(data, p.variant),
             painter,
             onFeatureHover,
-            onFeatureClick,
+            click: clickFor(p.variant.id),
           }),
         );
         groups.push(
@@ -461,7 +462,7 @@ export function variantTrack(
     },
 
     renderBelow(args: TrackRenderArgs<VariantTrackData>): ReactNode | null {
-      const { data, viewport, mapper, interaction, onFeatureHover, onFeatureClick } = args;
+      const { data, viewport, mapper, interaction, onFeatureHover } = args;
       const partition = partitionVariants(data.variants, viewport, mapper);
       if (partition.unplaced.length === 0) return null;
       return (
@@ -471,8 +472,10 @@ export function variantTrack(
             {partition.unplaced.map((v) => {
               const isHovered = interaction.hoveredFeatureId === v.id;
               const isSelected = interaction.selectedFeatureIds.has(v.id);
+              const click = featureClickProps(v.id, args);
               const cls = [
                 'vv-unplaced-chip',
+                click.clickable && 'is-clickable',
                 isHovered && 'is-hovered',
                 isSelected && 'is-selected',
               ]
@@ -492,7 +495,7 @@ export function variantTrack(
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onFocus={(e) => onFeatureHover?.(v.id, e.currentTarget)}
                   onBlur={() => onFeatureHover?.(null)}
-                  onClick={() => onFeatureClick?.(v.id)}
+                  {...clickAttrs(click)}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{v.label}</span>
@@ -551,7 +554,7 @@ interface RenderStackedArgs {
   inBrushIds: ReadonlySet<string>;
   labelOf: (v: ViewerVariant) => string;
   onFeatureHover?: (featureId: string | null) => void;
-  onFeatureClick?: (featureId: string) => void;
+  clickFor: (featureId: string) => FeatureClickProps;
   painter: TrackRenderArgs<VariantTrackData>['painter'];
 }
 
@@ -568,7 +571,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
     inBrushIds,
     labelOf,
     onFeatureHover,
-    onFeatureClick,
+    clickFor,
     painter,
   } = args;
   const byExon = new Map<number, StackedVariantPlacement[]>();
@@ -596,12 +599,13 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
       const isHovered = interaction.hoveredFeatureId === v.id;
       const isSelected = interaction.selectedFeatureIds.has(v.id);
       const inBrush = inBrushIds.has(v.id);
+      const click = clickFor(v.id);
       const cls = [
         'vv-variant',
         'vv-variant-stacked',
         `vv-variant-${v.category}`,
         p.intronSide && 'is-intronic',
-        onFeatureClick && 'is-clickable',
+        click.clickable && 'is-clickable',
         isHovered && 'is-hovered',
         isSelected && 'is-selected',
         inBrush && 'is-in-brush',
@@ -624,9 +628,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
           onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-          onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
-          tabIndex={0}
-          role="button"
+          {...clickAttrs(click)}
           aria-label={labelOf(v)}
         >
           <g className="vv-variant-inner">
@@ -699,7 +701,7 @@ interface RenderVariantArgs {
   label: string;
   painter: TrackRenderArgs<VariantTrackData>['painter'];
   onFeatureHover?: (featureId: string | null) => void;
-  onFeatureClick?: (featureId: string) => void;
+  click: FeatureClickProps;
 }
 
 function renderVariant(args: RenderVariantArgs): ReactNode {
@@ -714,7 +716,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     label,
     painter,
     onFeatureHover,
-    onFeatureClick,
+    click,
   } = args;
   const v = placement.variant;
   const isHovered = interaction.hoveredFeatureId === v.id;
@@ -723,7 +725,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     'vv-variant',
     `vv-variant-${v.category}`,
     placement.intronSide && 'is-intronic',
-    onFeatureClick && 'is-clickable',
+    click.clickable && 'is-clickable',
     isHovered && 'is-hovered',
     isSelected && 'is-selected',
     inBrush && 'is-in-brush',
@@ -750,9 +752,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
       onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-      onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
-      tabIndex={0}
-      role="button"
+      {...clickAttrs(click)}
       aria-label={label}
     >
       <g className="vv-variant-inner">

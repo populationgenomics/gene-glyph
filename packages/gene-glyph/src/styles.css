@@ -362,13 +362,19 @@
   overflow: hidden;
 }
 
-/* RD-1109: while a feature hover is committed (debounced), force the figure
- * cursor to `pointer` so crossing the 1–2 px gaps between adjacent glyphs
+/* RD-1109: while a hover on a clickable feature is committed (debounced),
+ * force the figure cursor to `pointer` so crossing the 1–2 px gaps between adjacent glyphs
  * doesn't flicker the cursor between crosshair and pointer. The glyph's own
  * inline `cursor: pointer` still wins on the glyph itself; this rule only
  * affects the inter-glyph gaps. Guarded with `:not(.vv-dragging)` so an
  * active drag continues to show the grabbing cursor. */
-.gene-glyph.vv-hover-active:not(.vv-dragging) .vv-figure {
+.gene-glyph.vv-hover-clickable:not(.vv-dragging) .vv-figure {
+  cursor: pointer;
+}
+
+.gene-glyph .vv-segment-band-feature.is-clickable,
+.gene-glyph .vv-unplaced-chip.is-clickable,
+.gene-glyph .vv-hidden-feature-mark.is-clickable {
   cursor: pointer;
 }
 
@@ -421,7 +427,6 @@
 .gene-glyph .vv-hidden-feature-mark {
   transform-box: view-box;
   transform-origin: 0 0;
-  cursor: pointer;
 }
 
 /* Phase 3: splice-site flanks sit inside the adjacent exon group and ride
@@ -645,7 +650,6 @@ body.vv-gg-box-zooming * {
   border-radius: 999px;
   background: var(--vv-color-bg-surface, transparent);
   color: var(--vv-color-text-primary);
-  cursor: pointer;
   transition:
     background-color 100ms ease-out,
     transform 100ms ease-out;
