@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { intronMarkPath } from './exon-edge.js';
 import { featureClickProps, focusableFeatureAttrs } from './feature-click.js';
 import { unplacedChipControl } from './unplaced-chip.js';
+import { packLanes, type LaneInput } from '../pack-lanes.js';
 import { fitText } from './pfam-track.js';
 import type {
   CdsPosition,
@@ -69,7 +70,9 @@ export interface SegmentBandTrackOptions<
    *  keyed on the same literal union makes an unknown category a
    *  compile error rather than a render fallback. */
   palette: Record<C, string>;
-  /** Band height in pixels. Default 14. */
+  /** Height of one row of bands in pixels. Default 14. Overlapping bands
+   *  stack in rows `heightPx` tall, 2 px apart, and the track grows to fit
+   *  them. */
   heightPx?: number;
   /** Colour of the 1 px outline around each band, so touching bands with
    *  the same fill read as two. Default: the `--vv-segment-band-outline`
@@ -87,10 +90,10 @@ export interface SegmentBandTrackOptions<
   labelFontSize?: number;
   /** Vertical pixels reserved above this track during layout. */
   gapAbove?: number;
-  /** Fires when the input contains overlapping segments. Overlaps are
-   *  treated as a host data error — the track keeps rendering (every
-   *  segment still paints) but surfaces the offending pair so the host
-   *  can log / repair upstream. */
+  /** Fires once per overlapping pair of segments. Overlapping segments
+   *  are drawn in stacked rows (see {@link SegmentBandTrackData.rows}),
+   *  so each stays visible and clickable; a host whose data should never
+   *  overlap can use this to log or repair it upstream. */
   onOverlapWarning?: (a: D, b: D) => void;
 }
 
@@ -129,9 +132,16 @@ export interface SegmentBandTrackData<
   /** Spans wholly inside an intron, by feature id: the c. position of the
    *  end nearer an exon, where the span is drawn. */
   intronic?: ReadonlyMap<string, CdsPosition>;
+  /** Row of each band, by feature id: overlapping spans go to separate
+   *  rows, packed from row 0 at the top of the track in span order. Absent
+   *  ids, and absent `rows`, draw in row 0. */
+  rows?: ReadonlyMap<string, number>;
+  /** Number of rows `rows` uses; 1 when absent. */
+  rowCount?: number;
 }
 
 const DEFAULT_HEIGHT = 14;
+const ROW_GAP_PX = 2;
 const DEFAULT_OUTLINE = 'rgba(15, 23, 42, 0.45)';
 const DEFAULT_MIN_LABEL_WIDTH = 28;
 const DEFAULT_LABEL_FONT = 10;
@@ -219,16 +229,14 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     id,
     label: config.label,
     coordSystem: config.coordSystem,
-    heightPolicy: 'fixed',
+    heightPolicy: 'data-dependent',
     gapAbove: config.gapAbove,
 
     async load({ signal, viewport, mapper }: TrackLoadArgs): Promise<SegmentBandTrackData<C, D>> {
       const { source } = binding;
       const raw = typeof source === 'function' ? await source({ signal }) : source;
-      // Sort + overlap-check once at load time so render() can assume a
-      // clean input. Overlaps are a host data error: report via the
-      // callback and keep rendering — every segment still paints, the
-      // viewer just no longer guarantees a one-row stack.
+      // Sort, report overlaps and pack overlapping spans into rows once at
+      // load time.
       const sorted = [...raw].sort((a, b) => orderedStart(a) - orderedStart(b));
       if (onOverlapWarning) {
         // Per group, the span reaching furthest so far: a short span
@@ -250,11 +258,29 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         const anchor = binding.intronAnchor(d, viewport, mapper);
         if (anchor) intronic.set(featureIdOf(d), anchor);
       }
-      return { segments: sorted, intronic };
+      // Spans in different overlap groups never share a position, so each
+      // group packs on its own and the track takes the most rows any needs.
+      const byGroup = new Map<string, LaneInput<D>[]>();
+      for (const d of sorted) {
+        const group = binding.overlapGroup(d);
+        const inputs = byGroup.get(group) ?? [];
+        // Half-open so spans ending and starting on adjacent bases share a row.
+        inputs.push({ item: d, xStart: orderedStart(d), xEnd: orderedEnd(d) + 1 });
+        byGroup.set(group, inputs);
+      }
+      const rows = new Map<string, number>();
+      let rowCount = 1;
+      for (const inputs of byGroup.values()) {
+        const packed = packLanes(inputs);
+        for (const p of packed.items) rows.set(featureIdOf(p.item), p.lane);
+        rowCount = Math.max(rowCount, packed.laneCount);
+      }
+      return { segments: sorted, intronic, rows, rowCount };
     },
 
-    height(_args: TrackHeightArgs<SegmentBandTrackData<C, D>>): TrackHeightResult {
-      return { px: trackHeight, didTruncate: false };
+    height({ data }: TrackHeightArgs<SegmentBandTrackData<C, D>>): TrackHeightResult {
+      const rowCount = data?.rowCount ?? 1;
+      return { px: rowCount * trackHeight + (rowCount - 1) * ROW_GAP_PX, didTruncate: false };
     },
 
     render(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode {
@@ -268,7 +294,9 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       const rectsByExon = new Map<number, ReactNode[]>();
       const labelsByExon = new Map<number, ReactNode[]>();
 
-      const rectH = rect.yBottom - rect.yTop;
+      const rectH = trackHeight;
+      const rowTop = (d: D) =>
+        rect.yTop + (data.rows?.get(featureIdOf(d)) ?? 0) * (trackHeight + ROW_GAP_PX);
       const outline =
         config.outline === undefined
           ? painter.color('vv-segment-band-outline', DEFAULT_OUTLINE)
@@ -279,6 +307,8 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         if (!fill) continue;
         const projection = binding.project(seg, viewport);
         const featureId = featureIdOf(seg);
+        const top = rowTop(seg);
+        const bottom = top + rectH;
         const click = featureClickProps(featureId, args);
         const clickClass = click.clickable ? ' is-clickable' : '';
         const dock = projection.segments.length === 0 ? dockOf(data, seg, viewport) : null;
@@ -305,9 +335,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               },
               children: painter.drawPath({
                 className: 'vv-segment-band-intron-mark',
-                d:
-                  `M0 ${rect.yTop}V${rect.yBottom}` +
-                  intronMarkPath(dock.intronSide, 0, rect.yTop, rect.yBottom),
+                d: `M0 ${top}V${bottom}` + intronMarkPath(dock.intronSide, 0, top, bottom),
                 fill: 'none',
                 stroke: fill,
                 strokeWidth: 2,
@@ -339,7 +367,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
             >
               {painter.drawRect({
                 x: localX,
-                y: rect.yTop,
+                y: top,
                 width,
                 height: rectH,
                 fill,
@@ -366,7 +394,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                 if (fitted) {
                   const midX = (labelPiece.xStart + labelPiece.xEnd) / 2;
                   const localMid = midX - labelExon.xStart;
-                  const midY = rect.yTop + rectH / 2;
+                  const midY = top + rectH / 2;
                   pushTo(
                     labelsByExon,
                     labelPiece.exonIdx,

@@ -68,6 +68,23 @@ const REGIONS = [
     category: 'duplicated' as const,
     label: 'Intron 3 duplication',
   },
+  // Two overlapping regions over exons 5 and 6: drawn in two rows.
+  {
+    id: 'del-ex5-6',
+    chr: 'chr17',
+    start: 7673500,
+    end: 7673900,
+    category: 'deleted' as const,
+    label: 'Exons 5–6 deletion',
+  },
+  {
+    id: 'dup-ex6',
+    chr: 'chr17',
+    start: 7673400,
+    end: 7673650,
+    category: 'duplicated' as const,
+    label: 'Exon 6 duplication',
+  },
 ];
 
 export function TranscriptMapDemoScenario() {

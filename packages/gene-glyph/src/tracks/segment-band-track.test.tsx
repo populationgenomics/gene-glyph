@@ -698,3 +698,99 @@ describe('segmentBandTrack — outlines', () => {
     expect(track.toJSON()).toHaveProperty('outline', null);
   });
 });
+
+describe('segmentBandTrack — overlapping bands', () => {
+  const ctx = () => {
+    const mapper = createCoordinateMapper(transcript);
+    const viewport = new ViewportController({ mapper, width: 600, mode: 'transcript' });
+    return { mapper, viewport };
+  };
+
+  async function loadBands(
+    source: SegmentBandDatum<RmcCategory>[],
+    onOverlapWarning?: (a: SegmentBandDatum<RmcCategory>, b: SegmentBandDatum<RmcCategory>) => void,
+  ) {
+    const track = segmentBandTrack<RmcCategory>({
+      source,
+      coordSystem: 'cds',
+      palette,
+      heightPx: 14,
+      onOverlapWarning,
+    });
+    const { mapper, viewport } = ctx();
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    return { track, data, mapper, viewport };
+  }
+
+  it('stacks overlapping bands in rows and grows the track to fit', async () => {
+    const { track, data, mapper, viewport } = await loadBands([
+      { id: 'a', start: 10, end: 50, category: 'high' },
+      { id: 'b', start: 40, end: 80, category: 'low' },
+      { id: 'c', start: 60, end: 90, category: 'high' },
+    ]);
+    expect(Object.fromEntries(data.rows!)).toEqual({ a: 0, b: 1, c: 0 });
+    expect(track.height({ data, viewport, hint: { maxPx: 200 } }).px).toBe(30);
+    const { container } = render(
+      <svg>
+        {track.render({
+          data,
+          rect: { yTop: 100, yBottom: 130 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+        })}
+      </svg>,
+    );
+    const yOf = (id: string) =>
+      container
+        .querySelector(`[data-vv-feature-id="${id}"] .vv-segment-band-rect`)!
+        .getAttribute('y');
+    expect([yOf('a'), yOf('b'), yOf('c')]).toEqual(['100', '116', '100']);
+  });
+
+  it('keeps bands on adjacent bases in one row', async () => {
+    const { track, data, viewport } = await loadBands([
+      { id: 'a', start: 10, end: 20, category: 'high' },
+      { id: 'b', start: 21, end: 30, category: 'high' },
+    ]);
+    expect(data.rowCount).toBe(1);
+    expect(track.height({ data, viewport, hint: { maxPx: 200 } }).px).toBe(14);
+  });
+
+  it('still reports each overlapping pair', async () => {
+    const onOverlapWarning = vi.fn();
+    await loadBands(
+      [
+        { id: 'a', start: 10, end: 50, category: 'high' },
+        { id: 'b', start: 40, end: 80, category: 'low' },
+      ],
+      onOverlapWarning,
+    );
+    expect(onOverlapWarning).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not stack genomic bands on different chromosomes', async () => {
+    const track = segmentBandTrack<RmcCategory>({
+      source: [
+        { id: 'a', chr: 'chr1', start: 1010, end: 1050, category: 'high' },
+        { id: 'b', chr: 'chr2', start: 1020, end: 1040, category: 'high' },
+      ],
+      coordSystem: 'genomic',
+      palette,
+    });
+    const { mapper, viewport } = ctx();
+    const data = await track.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    expect(data.rowCount).toBe(1);
+  });
+});
