@@ -35,14 +35,36 @@ export interface Exon {
   blocks?: AlignmentBlock[];
   /** 5' UTR length (bp) within this exon — typically non-zero only on the
    *  first CDS-containing exon. Optional; defaults to 0. The viewport
-   *  allocates display width for UTR bp at the same `pxPerBp` as CDS bp,
-   *  visually compressing the CDS to make room. */
+   *  allocates display width for UTR bp at a quarter of the width of a
+   *  CDS bp, visually compressing the CDS to make room. On `exons[0]` the
+   *  UTR part lies on the genome right next to the coding part, so the
+   *  mapper places genomic positions in it at c.-1 to c.-utr5Bp. */
   utr5Bp?: number;
   /** 3' UTR length (bp) within this exon — typically non-zero only on the
-   *  last CDS-containing exon. */
+   *  last CDS-containing exon. On the last exon the mapper places genomic
+   *  positions in it at c.*1 to c.*utr3Bp. */
   utr3Bp?: number;
 }
 
+/** An exon wholly in a UTR. It has no coding part, so it carries only
+ *  where it lies on the genome; its c. positions follow from its place in
+ *  the transcript. */
+export interface UtrExon {
+  number: number;
+  chr: string;
+  genomicStart: number;
+  genomicEnd: number;
+}
+
+/** A transcript. `exons` are the exons with a coding part, each described
+ *  by that part (`genomicStart..genomicEnd` covers its coding bases only);
+ *  exons wholly in a UTR go in `utr5Exons` and `utr3Exons`.
+ *
+ *  UTR positions sit on the same c. ruler as the CDS: c.-N is `cPos`
+ *  `1 - N` and c.*N is `cPos` `cdsLength + N`. The 5' UTR counts back
+ *  from c.-1 through `exons[0].utr5Bp` and then the bases of `utr5Exons`
+ *  from the last to the first; the 3' UTR counts on from c.*1 through the
+ *  last exon's `utr3Bp` and then `utr3Exons` in order. */
 export interface Transcript {
   geneSymbol: string;
   transcriptId: string;
@@ -50,6 +72,12 @@ export interface Transcript {
   cdsLength: number;
   strand: '+' | '-';
   exons: Exon[];
+  /** Exons wholly in the 5' UTR, in transcript order, all upstream of
+   *  `exons[0]`. Drawn in the first exon's 5' UTR cap. */
+  utr5Exons?: UtrExon[];
+  /** Exons wholly in the 3' UTR, in transcript order, all downstream of
+   *  the last of `exons`. Drawn in the last exon's 3' UTR cap. */
+  utr3Exons?: UtrExon[];
 }
 
 export type ProteinDomainEntryType =
@@ -284,24 +312,33 @@ export interface AlignedRun {
   length: number;
 }
 
-/** An exon as the coordinate mapper sees it: its span in genomic and c.
- *  coordinates, and the runs that align the two. `exonIdx` indexes
- *  `transcript.exons`. */
+/** An exon as the coordinate mapper sees it: its whole transcribed span
+ *  (UTR part included) in genomic and c. coordinates, and the runs that
+ *  align the two. */
 export interface MappedExon {
+  /** `coding` for an entry of `transcript.exons`; `utr5` / `utr3` for an
+   *  exon wholly in a UTR ({@link Transcript.utr5Exons} /
+   *  {@link Transcript.utr3Exons}). */
+  kind: 'coding' | 'utr5' | 'utr3';
+  number: number;
+  /** Index into `transcript.exons` of the exon drawn with this one: itself
+   *  when coding, else the first (5') or last (3') coding exon, in whose
+   *  UTR cap a UTR-only exon is drawn. */
   exonIdx: number;
   chr: string;
   genomicStart: number;
   genomicEnd: number;
   cdsStart: number;
   cdsEnd: number;
-  /** Runs in transcript order: the exon's {@link Exon.blocks}, or one run
-   *  over its whole coding part. */
+  /** Runs in transcript order: a UTR part, then the exon's
+   *  {@link Exon.blocks} or one run over its whole coding part. */
   runs: readonly AlignedRun[];
 }
 
 export interface CoordinateMapper {
   readonly transcript: Transcript;
-  /** The transcript's exons in transcript order, each with the runs that
+  /** Every exon in transcript order (exons wholly in the 5' UTR, the
+   *  coding exons, exons wholly in the 3' UTR), each with the runs that
    *  align it to the genome. Computed once per mapper. */
   readonly mappedExons: readonly MappedExon[];
   /** `null` off the transcript, and for a base inside an exon that the
@@ -335,12 +372,14 @@ export interface ExonBaseline {
   xEnd: number;
   /** CDS-portion width: `xEnd - xStart`. */
   width: number;
-  /** Display width allocated to this exon's 5' UTR (bp × pxPerBp). The
-   *  cap sits at `[xStart - utr5Px, xStart]`. Zero when the exon has no
+  /** Display width allocated to this exon's 5' UTR (bp × pxPerBpOutsideCds).
+   *  The cap sits at `[xStart - utr5Px, xStart]` and, on the first exon,
+   *  also holds {@link Transcript.utr5Exons}. Zero when the exon has no
    *  5' UTR (the common case for everything but the first exon). */
   utr5Px?: number;
   /** Display width allocated to this exon's 3' UTR. The cap sits at
-   *  `[xEnd, xEnd + utr3Px]`. */
+   *  `[xEnd, xEnd + utr3Px]` and, on the last exon, also holds
+   *  {@link Transcript.utr3Exons}. */
   utr3Px?: number;
 }
 
@@ -599,6 +638,10 @@ export interface TrackRenderArgs<TData> {
    *  render-args without a viewer; production renders always receive a map
    *  (empty when no track contributes). */
   hiddenByIntron?: ReadonlyMap<string, HiddenFeatureBucket>;
+  /** The track's name (its `label`, else its id), set when more than one
+   *  track in the figure lists features below it, so each list can say
+   *  which track it belongs to. Undefined otherwise. */
+  trackName?: string;
   /** Fires when the cursor enters or leaves a feature in this track; pass
    *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
    *  render. The viewer maps it onto the host's `onHover` prop. */

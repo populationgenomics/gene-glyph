@@ -8,6 +8,7 @@ import type {
   MappedExon,
   Position,
   Transcript,
+  UtrExon,
 } from './types.js';
 
 /** Default soft-collapse spec — one region per intron, compressing
@@ -34,19 +35,119 @@ export function defaultCollapsedRegions(transcript: Transcript, flankBp = 10): C
   return regions;
 }
 
-/** The transcript's exons in transcript order, each with the runs that
- *  align it to the genome. Throws on {@link Exon.blocks} that are out of
- *  order, overlap, or reach outside their exon. */
+/** Every exon of the transcript in transcript order — exons wholly in the
+ *  5' UTR, the coding exons, exons wholly in the 3' UTR — each with the
+ *  runs that align it to the genome. The first coding exon's 5' UTR part
+ *  and the last one's 3' UTR part are runs of those exons. Throws on
+ *  {@link Exon.blocks} that are out of order, overlap, or reach outside
+ *  their exon, and on UTR-only exons that are out of transcript order or
+ *  on another chromosome. */
 export function mapExons(transcript: Transcript): MappedExon[] {
-  return transcript.exons.map((exon, exonIdx) => ({
+  const strand = transcript.strand;
+  const coding: MappedExon[] = transcript.exons.map((exon, exonIdx) => ({
+    kind: 'coding',
+    number: exon.number,
     exonIdx,
     chr: exon.chr,
     genomicStart: exon.genomicStart,
     genomicEnd: exon.genomicEnd,
     cdsStart: exon.cdsStart,
     cdsEnd: exon.cdsEnd,
-    runs: codingRuns(exon, transcript.strand),
+    runs: codingRuns(exon, strand),
   }));
+  const lastIdx = coding.length - 1;
+  if (lastIdx < 0) return coding;
+  const utr5 = transcript.exons[0]!.utr5Bp ?? 0;
+  if (utr5 > 0) {
+    const m = coding[0]!;
+    coding[0] = extendWith(m, {
+      cdsStart: m.cdsStart - utr5,
+      genomicStart: strand === '+' ? m.genomicStart - utr5 : m.genomicEnd + 1,
+      length: utr5,
+    });
+  }
+  const utr3 = transcript.exons[lastIdx]!.utr3Bp ?? 0;
+  if (utr3 > 0) {
+    const m = coding[lastIdx]!;
+    coding[lastIdx] = extendWith(m, {
+      cdsStart: m.cdsEnd + 1,
+      genomicStart: strand === '+' ? m.genomicEnd + 1 : m.genomicStart - utr3,
+      length: utr3,
+    });
+  }
+  const first = coding[0]!;
+  const last = coding[lastIdx]!;
+
+  const before: MappedExon[] = [];
+  let cursor = first.cdsStart;
+  for (const e of [...(transcript.utr5Exons ?? [])].reverse()) {
+    const m = utrOnly(e, 'utr5', first.exonIdx, cursor - utrLength(e));
+    before.unshift(m);
+    cursor = m.cdsStart;
+  }
+  const after: MappedExon[] = [];
+  cursor = last.cdsEnd + 1;
+  for (const e of transcript.utr3Exons ?? []) {
+    const m = utrOnly(e, 'utr3', last.exonIdx, cursor);
+    after.push(m);
+    cursor = m.cdsEnd + 1;
+  }
+
+  const all = [...before, ...coding, ...after];
+  for (let i = 1; i < all.length; i++) {
+    const a = all[i - 1]!;
+    const b = all[i]!;
+    if (a.kind === 'coding' && b.kind === 'coding') continue;
+    const utr = a.kind === 'coding' ? b : a;
+    if (a.chr !== b.chr) {
+      throw new Error(`UTR exon ${utr.number} is on ${utr.chr}, its neighbour on another chr`);
+    }
+    const inOrder = strand === '+' ? a.genomicEnd < b.genomicStart : b.genomicEnd < a.genomicStart;
+    if (!inOrder) {
+      throw new Error(
+        `UTR exon ${utr.number} overlaps or is out of transcript order with exon ` +
+          `${a === utr ? b.number : a.number}`,
+      );
+    }
+  }
+  return all;
+}
+
+function utrLength(e: UtrExon): number {
+  const length = e.genomicEnd - e.genomicStart + 1;
+  if (!Number.isInteger(length) || length < 1) {
+    throw new Error(`UTR exon ${e.number} spans ${e.genomicStart}-${e.genomicEnd}`);
+  }
+  return length;
+}
+
+function utrOnly(e: UtrExon, kind: 'utr5' | 'utr3', exonIdx: number, cdsStart: number): MappedExon {
+  const length = utrLength(e);
+  return {
+    kind,
+    number: e.number,
+    exonIdx,
+    chr: e.chr,
+    genomicStart: e.genomicStart,
+    genomicEnd: e.genomicEnd,
+    cdsStart,
+    cdsEnd: cdsStart + length - 1,
+    runs: [{ cdsStart, genomicStart: e.genomicStart, length }],
+  };
+}
+
+/** `m` with `run` added at its transcript-order start or end, whichever
+ *  the run's c. position puts it at. */
+function extendWith(m: MappedExon, run: AlignedRun): MappedExon {
+  const before = run.cdsStart < m.cdsStart;
+  return {
+    ...m,
+    genomicStart: Math.min(m.genomicStart, run.genomicStart),
+    genomicEnd: Math.max(m.genomicEnd, run.genomicStart + run.length - 1),
+    cdsStart: Math.min(m.cdsStart, run.cdsStart),
+    cdsEnd: Math.max(m.cdsEnd, run.cdsStart + run.length - 1),
+    runs: before ? [run, ...m.runs] : [...m.runs, run],
+  };
 }
 
 function codingRuns(exon: Exon, strand: '+' | '-'): AlignedRun[] {
@@ -113,6 +214,16 @@ export function runGenomicToCds(run: AlignedRun, g: number, strand: '+' | '-'): 
   const k = g - run.genomicStart;
   if (k < 0 || k >= run.length) return null;
   return strand === '+' ? run.cdsStart + k : run.cdsStart + run.length - 1 - k;
+}
+
+/** HGVS text of a c. position on a transcript with CDS length
+ *  `cdsLength`: `c.76`, `c.-20` (cPos -19), `c.*30` (cPos cdsLength + 30),
+ *  `c.673+1`, `c.-15-2`. */
+export function formatCdsPosition(pos: CdsPosition, cdsLength: number): string {
+  const { cPos, offset } = pos;
+  const base = cPos < 1 ? `-${1 - cPos}` : cPos > cdsLength ? `*${cPos - cdsLength}` : `${cPos}`;
+  const intronic = offset > 0 ? `+${offset}` : offset < 0 ? `${offset}` : '';
+  return `c.${base}${intronic}`;
 }
 
 export function createCoordinateMapper(transcript: Transcript): CoordinateMapper {

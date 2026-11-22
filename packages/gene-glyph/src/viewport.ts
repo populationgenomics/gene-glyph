@@ -17,6 +17,8 @@ import type {
   RangeProjection,
   RangeSegment,
   ScreenPoint,
+  Transcript,
+  UtrExon,
   ViewMode,
   Viewport,
 } from './types.js';
@@ -95,9 +97,19 @@ function defaultRangeFor(mode: ViewMode, mapper: CoordinateMapper): [number, num
   const tx = mapper.transcript;
   const cdsLen = Math.max(1, tx.cdsLength);
   if (tx.exons.length === 0) return [1, cdsLen];
-  const utr5 = tx.exons[0]!.utr5Bp ?? 0;
-  const utr3 = tx.exons[tx.exons.length - 1]!.utr3Bp ?? 0;
+  const { utr5, utr3 } = utrBpByEnd(tx);
   return [1 - utr5, cdsLen + utr3];
+}
+
+/** UTR bases drawn in the first exon's 5' cap and the last exon's 3' cap:
+ *  the UTR parts of those exons plus every exon wholly in that UTR. */
+function utrBpByEnd(tx: Transcript): { utr5: number; utr3: number } {
+  const exonBp = (exons: readonly UtrExon[] | undefined) =>
+    (exons ?? []).reduce((sum, e) => sum + e.genomicEnd - e.genomicStart + 1, 0);
+  return {
+    utr5: (tx.exons[0]?.utr5Bp ?? 0) + exonBp(tx.utr5Exons),
+    utr3: (tx.exons[tx.exons.length - 1]?.utr3Bp ?? 0) + exonBp(tx.utr3Exons),
+  };
 }
 
 function defaultIntronScale(mode: ViewMode): number {
@@ -133,8 +145,19 @@ export class ViewportController implements Viewport {
   private _publishStorm = createStormDetector('ViewportController.publish');
   private _listeners = new Set<() => void>();
   readonly mapper: CoordinateMapper;
+  /** Per entry of `transcript.exons`, the c. span drawn in its rect: its
+   *  coding part, plus the UTR in its caps on the first and last. */
+  private readonly drawnCdsSpans: ReadonlyArray<readonly [number, number]>;
+
   constructor(init: ViewportControllerInit) {
     this.mapper = init.mapper;
+    this.drawnCdsSpans = init.mapper.transcript.exons.map((e, i) => {
+      const drawn = init.mapper.mappedExons.filter((m) => m.exonIdx === i);
+      return [
+        Math.min(e.cdsStart, ...drawn.map((m) => m.cdsStart)),
+        Math.max(e.cdsEnd, ...drawn.map((m) => m.cdsEnd)),
+      ] as const;
+    });
     this._mode = init.mode ?? 'genome';
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
@@ -674,10 +697,16 @@ export class ViewportController implements Viewport {
     // bp). Transcript mode collapses each intron to a zero-width
     // junction — the boundary between the last cell of exon i and the
     // first cell of exon i+1 is a single x-coordinate.
+    // The first exon's 5' cap and the last exon's 3' cap also hold the
+    // exons wholly in those UTRs.
+    const utrByEnd = utrBpByEnd(this.mapper.transcript);
+    const utr5BpOf = (i: number) => (i === 0 ? utrByEnd.utr5 : (exons[i]!.utr5Bp ?? 0));
+    const utr3BpOf = (i: number) =>
+      i === exons.length - 1 ? utrByEnd.utr3 : (exons[i]!.utr3Bp ?? 0);
     let linearBp = 0;
-    for (const e of exons) {
-      linearBp +=
-        e.cdsEnd - e.cdsStart + 1 + ((e.utr5Bp ?? 0) + (e.utr3Bp ?? 0)) * UTR_DISPLAY_SCALE;
+    for (let i = 0; i < exons.length; i++) {
+      const e = exons[i]!;
+      linearBp += e.cdsEnd - e.cdsStart + 1 + (utr5BpOf(i) + utr3BpOf(i)) * UTR_DISPLAY_SCALE;
     }
     let fixedBudgetPx = 0;
     let nLegacyGaps = 0; // introns with no flanks → legacy gap shape
@@ -714,8 +743,8 @@ export class ViewportController implements Viewport {
     for (let i = 0; i < exons.length; i++) {
       const e = exons[i]!;
       const cdsBp = e.cdsEnd - e.cdsStart + 1;
-      const utr5Bp = e.utr5Bp ?? 0;
-      const utr3Bp = e.utr3Bp ?? 0;
+      const utr5Bp = utr5BpOf(i);
+      const utr3Bp = utr3BpOf(i);
       const utr5Px = utr5Bp * UTR_DISPLAY_SCALE * pxPerBp;
       const utr3Px = utr3Bp * UTR_DISPLAY_SCALE * pxPerBp;
       // Display rect = 5'UTR cap + CDS + 3'UTR cap, advancing through
@@ -1282,20 +1311,18 @@ export class ViewportController implements Viewport {
   }
 
   private projectExonic(cdsLo: number, cdsHi: number): RangeProjection {
-    const exons = this.mapper.transcript.exons;
-
     const segments: RangeSegment[] = [];
     const droppedRanges: DroppedRange[] = [];
     let droppedIntronicCount = 0;
 
+    // Each drawn exon holds its own c. span plus, on the first and last
+    // exon, the UTR drawn in its caps.
     const hits: Array<{ idx: number; lo: number; hi: number }> = [];
-    for (let i = 0; i < exons.length; i++) {
-      const e = exons[i]!;
-      const overlapLo = Math.max(cdsLo, e.cdsStart);
-      const overlapHi = Math.min(cdsHi, e.cdsEnd);
-      if (overlapLo > overlapHi) continue;
-      hits.push({ idx: i, lo: overlapLo, hi: overlapHi });
-    }
+    this.drawnCdsSpans.forEach(([spanLo, spanHi], i) => {
+      const overlapLo = Math.max(cdsLo, spanLo);
+      const overlapHi = Math.min(cdsHi, spanHi);
+      if (overlapLo <= overlapHi) hits.push({ idx: i, lo: overlapLo, hi: overlapHi });
+    });
 
     if (hits.length === 0) {
       return {
@@ -1356,10 +1383,13 @@ export class ViewportController implements Viewport {
     hits: ReadonlyArray<{ idx: number; lo: number; hi: number }>,
   ): RangeSegment[] {
     const exonRects = this.baselineGeometry().exons;
+    const exons = this.mapper.transcript.exons;
     const byExon = new Map<number, RangeSegment>();
     for (const h of hits) {
-      const aaLo = this.mapper.cdsToProtein(h.lo);
-      const aaHi = this.mapper.cdsToProtein(h.hi);
+      // UTR bases have no residue; only the coding part of a hit draws.
+      const exon = exons[h.idx]!;
+      const aaLo = this.mapper.cdsToProtein(Math.max(h.lo, exon.cdsStart));
+      const aaHi = this.mapper.cdsToProtein(Math.min(h.hi, exon.cdsEnd));
       if (aaLo === null || aaHi === null) continue;
       const rangeStart = this.cdsToBaselineX(aaLo - 0.5);
       const rangeEnd = this.cdsToBaselineX(aaHi + 0.5);

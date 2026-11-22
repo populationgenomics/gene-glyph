@@ -1,6 +1,9 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import { intronMarkPath, placeCdsPosition } from './exon-edge.js';
 import { fitText } from './pfam-track.js';
 import type {
+  CdsPosition,
+  CoordinateMapper,
   ExonBaseline,
   RangeProjection,
   RangeSegment,
@@ -53,6 +56,9 @@ export interface SegmentBandTrackOptions<
   D extends SegmentBandDatum<C> = SegmentBandDatum<C>,
 > {
   id?: string;
+  /** Name of the track, for the gutter and for the list of unplaced
+   *  bands when the figure has several such lists. */
+  label?: string;
   /** Eager array or async loader. Each datum's `[start, end]` is in the
    *  track's declared `coordSystem` units (1-indexed, inclusive). */
   source: SegmentBandSource<C, D>;
@@ -91,10 +97,12 @@ export interface CodingSegmentBandTrackConfig<
 }
 
 /** Band track over genomic positions ({@link GenomicSegmentBandDatum}).
- *  A span draws over the coding exon bases it covers, one piece per
- *  exon, in every view mode. Its intronic parts, and any part outside
- *  the transcript's coding exons (UTR, flanking sequence), are not
- *  drawn. */
+ *  A span draws over the exon bases it covers, one piece per drawn exon:
+ *  coding bases in every view mode, UTR bases (including exons wholly in
+ *  a UTR) in the UTR caps in genome and transcript modes. Its intronic
+ *  parts and flanking sequence are not drawn. A span wholly inside an
+ *  intron draws as a marker on the edge of the exon its nearer end is
+ *  anchored on, pointing into the intron (not in protein mode). */
 export interface GenomicSegmentBandTrackConfig<
   C extends string = string,
 > extends SegmentBandTrackOptions<C, GenomicSegmentBandDatum<C>> {
@@ -111,6 +119,9 @@ export interface SegmentBandTrackData<
   D extends SegmentBandDatum<C> = SegmentBandDatum<C>,
 > {
   segments: ReadonlyArray<D>;
+  /** Spans wholly inside an intron, by feature id: the c. position of the
+   *  end nearer an exon, where the span is drawn. */
+  intronic?: ReadonlyMap<string, CdsPosition>;
 }
 
 const DEFAULT_HEIGHT = 14;
@@ -127,6 +138,9 @@ interface BandBinding<C extends string, D extends SegmentBandDatum<C>> {
   /** Id used when the datum carries none. */
   fallbackId(d: D): string;
   project(d: D, viewport: Viewport): RangeProjection;
+  /** For a span wholly inside an intron, the c. position of its end
+   *  nearer an exon; `null` for any other span. */
+  intronAnchor(d: D, viewport: Viewport, mapper: CoordinateMapper): CdsPosition | null;
   /** Span text for the default tooltip. */
   spanText(d: D): string;
 }
@@ -149,6 +163,7 @@ export function segmentBandTrack<C extends string = string>(
       overlapGroup: (d) => d.chr,
       fallbackId: (d) => `${d.chr}:${d.start}-${d.end}-${d.category}`,
       project: (d, viewport) => viewport.projectGenomicRange(d.chr, d.start, d.end),
+      intronAnchor: (d, viewport, mapper) => genomicIntronAnchor(d, viewport, mapper),
       spanText: (d) => `${d.chr}:${d.start}–${d.end}`,
     });
   }
@@ -162,6 +177,7 @@ export function segmentBandTrack<C extends string = string>(
       isProtein
         ? viewport.projectProteinRange(d.start, d.end)
         : viewport.projectCdsRange(d.start, d.end),
+    intronAnchor: () => null,
     spanText: (d) => `${d.start}–${d.end}`,
   });
 }
@@ -183,13 +199,27 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     data.segments.find((s) => featureIdOf(s) === featureId) ?? null;
   const labelOf = (d: D): string => `${d.label ?? d.category} (${binding.spanText(d)})`;
 
+  // A span wholly inside an intron draws as a marker on the exon edge
+  // nearer it; `null` when it is not in an intron or the view has no place
+  // for it.
+  const dockOf = (
+    data: SegmentBandTrackData<C, D>,
+    d: D,
+    viewport: Viewport,
+    mapper: CoordinateMapper,
+  ) => {
+    const anchor = data.intronic?.get(featureIdOf(d));
+    return anchor ? placeCdsPosition(anchor, viewport, mapper) : null;
+  };
+
   return {
     id,
+    label: config.label,
     coordSystem: config.coordSystem,
     heightPolicy: 'fixed',
     gapAbove: config.gapAbove,
 
-    async load({ signal }: TrackLoadArgs): Promise<SegmentBandTrackData<C, D>> {
+    async load({ signal, viewport, mapper }: TrackLoadArgs): Promise<SegmentBandTrackData<C, D>> {
       const { source } = binding;
       const raw = typeof source === 'function' ? await source({ signal }) : source;
       // Sort + overlap-check once at load time so render() can assume a
@@ -212,7 +242,12 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
           }
         }
       }
-      return { segments: sorted };
+      const intronic = new Map<string, CdsPosition>();
+      for (const d of sorted) {
+        const anchor = binding.intronAnchor(d, viewport, mapper);
+        if (anchor) intronic.set(featureIdOf(d), anchor);
+      }
+      return { segments: sorted, intronic };
     },
 
     height(_args: TrackHeightArgs<SegmentBandTrackData<C, D>>): TrackHeightResult {
@@ -220,7 +255,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     render(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode {
-      const { data, rect, viewport, painter, onFeatureHover, onFeatureClick } = args;
+      const { data, rect, viewport, mapper, painter, onFeatureHover, onFeatureClick } = args;
       if (data.segments.length === 0) return null;
 
       const baseline = viewport.baselineGeometry();
@@ -236,9 +271,47 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         const fill = palette[seg.category];
         if (!fill) continue;
         const projection = binding.project(seg, viewport);
-        if (projection.segments.length === 0) continue;
         const featureId = featureIdOf(seg);
         const click = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
+        const dock = projection.segments.length === 0 ? dockOf(data, seg, viewport, mapper) : null;
+        if (dock?.intronSide) {
+          pushTo(
+            rectsByExon,
+            dock.exonIdx,
+            <g
+              key={`band-${featureId}-intron`}
+              className="vv-segment-band-feature is-intronic"
+              data-vv-feature-id={featureId}
+              data-vv-intron-side={dock.intronSide}
+              onMouseEnter={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
+              onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+              onClick={click}
+              role={click ? 'button' : undefined}
+              tabIndex={click ? 0 : undefined}
+              aria-label={labelOf(seg)}
+              style={{
+                transform:
+                  `translateX(${dock.localX}px) ` +
+                  `scaleX(calc(1 / var(--vv-exon-scale-x-${dock.exonIdx}, 1)))`,
+                transformOrigin: '0 0',
+              }}
+            >
+              <path
+                className="vv-segment-band-intron-mark"
+                d={
+                  `M0 ${rect.yTop}V${rect.yBottom}` +
+                  intronMarkPath(dock.intronSide, 0, rect.yTop, rect.yBottom)
+                }
+                fill="none"
+                stroke={fill}
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>,
+          );
+          continue;
+        }
+        if (projection.segments.length === 0) continue;
         for (const piece of projection.segments) {
           const exon = exonByIdx.get(piece.exonIdx);
           if (!exon) continue;
@@ -341,14 +414,21 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     renderBelow(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode | null {
-      const { data, viewport, interaction, onFeatureHover, onFeatureClick } = args;
+      const { data, viewport, mapper, interaction, trackName, onFeatureHover, onFeatureClick } =
+        args;
       const unplaced = data.segments.filter(
-        (s) => palette[s.category] && binding.project(s, viewport).segments.length === 0,
+        (s) =>
+          palette[s.category] &&
+          binding.project(s, viewport).segments.length === 0 &&
+          !dockOf(data, s, viewport, mapper),
       );
       if (unplaced.length === 0) return null;
+      const where = trackName ? ` in ${trackName}` : '';
       return (
         <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
-          <span className="vv-unplaced-label">Unplaced ({unplaced.length})</span>
+          <span className="vv-unplaced-label">
+            Unplaced{where} ({unplaced.length})
+          </span>
           <ul className="vv-unplaced-list">
             {unplaced.map((s) => {
               const featureId = featureIdOf(s);
@@ -373,6 +453,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(featureId)}
                   title={label}
+                  aria-label={trackName ? `${label}, ${trackName}` : undefined}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{label}</span>
@@ -388,6 +469,10 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       const seg = findSegment(data, anchorId);
       if (!seg) return null;
       const piece = widestPiece(binding.project(seg, viewport).segments);
+      const intronAnchor = data.intronic?.get(anchorId);
+      if (!piece && intronAnchor && viewport.mode !== 'protein') {
+        return viewport.resolveAnchor({ kind: 'cds-pos', cPos: intronAnchor.cPos, offset: 0 });
+      }
       if (!piece) return null;
       const ruler = viewport.baselineXToRuler((piece.xStart + piece.xEnd) / 2);
       const x = viewport.toScreen(
@@ -412,6 +497,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       return {
         ...serialisable,
         id,
+        label: config.label,
         heightPx: trackHeight,
         showLabels,
         minLabelWidthPx: minLabelWidth,
@@ -419,6 +505,21 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       };
     },
   };
+}
+
+/** For a genomic span wholly inside one intron, the c. position of its
+ *  end nearer an exon. */
+function genomicIntronAnchor(
+  d: GenomicSegmentBandDatum,
+  viewport: Viewport,
+  mapper: CoordinateMapper,
+): CdsPosition | null {
+  const a = mapper.genomicToCds(d.chr, orderedStart(d));
+  const b = mapper.genomicToCds(d.chr, orderedEnd(d));
+  if (!a || !b || a.offset === 0 || b.offset === 0) return null;
+  // Two intronic ends can still bracket exons; the projection finds any.
+  if (viewport.projectGenomicRange(d.chr, d.start, d.end).droppedExonicCount === 0) return null;
+  return Math.abs(a.offset) <= Math.abs(b.offset) ? a : b;
 }
 
 /** Span bounds in ascending order; projection treats `start > end` as

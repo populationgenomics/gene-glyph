@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createCoordinateMapper } from '../coordinate-mapper.js';
 import { createSvgPainter } from '../painter/svg-painter.js';
 import type {
@@ -9,6 +9,7 @@ import type {
   ViewerVariant,
   ViewportQuery,
 } from '../types.js';
+import { GeneGlyph } from '../viewer.js';
 import { ViewportController } from '../viewport.js';
 import {
   packStackedVariants,
@@ -60,8 +61,8 @@ describe('partitionVariants', () => {
     const { viewport, mapper } = setup();
     const { placed, unplaced } = partitionVariants(variants, viewport, mapper);
     const placedIds = placed.map((p) => p.variant.id);
-    expect(placedIds).toEqual(expect.arrayContaining(['v1', 'v2', 'v3-prot']));
-    expect(unplaced.map((v) => v.id)).toEqual(expect.arrayContaining(['v4-intronic', 'v5-oob']));
+    expect(placedIds).toEqual(expect.arrayContaining(['v1', 'v2', 'v3-prot', 'v4-intronic']));
+    expect(unplaced.map((v) => v.id)).toEqual(['v5-oob']);
   });
 
   it('returns localX relative to the exon group origin', () => {
@@ -141,10 +142,10 @@ describe('variantIntronGap', () => {
 });
 
 describe('variantTrack', () => {
-  it('hiddenFeaturesByIntron aggregates intronic variants by gap', () => {
+  it('hiddenFeaturesByIntron aggregates intronic variants by gap in protein mode', () => {
     const t = variantTrack({ source: variants });
     const mapper = createCoordinateMapper(transcript);
-    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'protein' });
     const buckets = t.hiddenFeaturesByIntron!({
       data: { variants },
       viewport,
@@ -153,6 +154,13 @@ describe('variantTrack', () => {
     // The fixture variants include `v4-intronic` (cPos 100, offset 5) in
     // intron 0→1; no other intronic variants are defined.
     expect(buckets).toEqual([{ exonIdxA: 0, exonIdxB: 1, count: 1, featureIds: ['v4-intronic'] }]);
+  });
+
+  it('hiddenFeaturesByIntron leaves out intronic variants drawn on an exon edge', () => {
+    const t = variantTrack({ source: variants });
+    const mapper = createCoordinateMapper(transcript);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    expect(t.hiddenFeaturesByIntron!({ data: { variants }, viewport, mapper })).toEqual([]);
   });
 });
 
@@ -208,8 +216,8 @@ describe('variantTrack', () => {
     );
     const { container } = render(<Probe />);
     const placedGs = container.querySelectorAll<SVGGElement>('.vv-variant');
-    // v1, v2, v3-prot are placeable; v4-intronic and v5-oob are not.
-    expect(placedGs).toHaveLength(3);
+    // v1, v2, v3-prot and v4-intronic are placeable; v5-oob is not.
+    expect(placedGs).toHaveLength(4);
     for (const g of placedGs) {
       expect(g.closest('.vv-exon-group')).not.toBeNull();
     }
@@ -291,7 +299,7 @@ describe('variantTrack', () => {
     );
     const { container } = render(<Probe />);
     const stacked = container.querySelectorAll<SVGGElement>('.vv-variant-stacked');
-    expect(stacked).toHaveLength(3);
+    expect(stacked).toHaveLength(4);
     for (const g of stacked) {
       expect(g.closest('.vv-exon-group')).not.toBeNull();
       expect(g.querySelector('.vv-variant-glyph')).not.toBeNull();
@@ -375,12 +383,173 @@ describe('variantTrack', () => {
     expect(node).not.toBeNull();
     const { container } = render(<>{node}</>);
     const chips = container.querySelectorAll<HTMLLIElement>('.vv-unplaced-chip');
-    expect(chips.length).toBe(2);
+    expect(chips.length).toBe(1);
     fireEvent.mouseEnter(chips[0]!);
     fireEvent.click(chips[0]!);
     fireEvent.mouseLeave(chips[0]!);
     expect(onFeatureHover).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId);
     expect(onFeatureHover).toHaveBeenCalledWith(null);
     expect(onFeatureClick).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId);
+  });
+});
+
+// Exon 1 carries c.-10..c.-1 (chr1:990..999) before its CDS, and an exon
+// wholly in the 5' UTR (chr1:500..539) holds c.-50..c.-11. At 720 px over
+// 300 CDS bp + 50 UTR bp at quarter scale, a CDS bp is 2.304 px and a UTR
+// bp 0.576 px.
+const withUtr: Transcript = {
+  ...transcript,
+  exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 10 } : e)),
+  utr5Exons: [{ number: 0, chr: 'chr1', genomicStart: 500, genomicEnd: 539 }],
+};
+
+function genomicVariant(id: string, chr: string, pos: number): ViewerVariant {
+  return { id, label: id, coord: { kind: 'genomic', chr, pos }, category: 'utr' };
+}
+
+function placeIn(mode: 'transcript' | 'protein', vs: ViewerVariant[]) {
+  const mapper = createCoordinateMapper(withUtr);
+  const viewport = new ViewportController({ mapper, width: 720, mode });
+  return partitionVariants(vs, viewport, mapper);
+}
+
+describe('partitionVariants — UTR and intronic positions', () => {
+  it("places a variant in an exon wholly in the 5' UTR in the first exon's cap", () => {
+    // chr1:520 is c.-30 (cPos -29): 29.5 UTR bp left of the CDS start.
+    const { placed } = placeIn('transcript', [genomicVariant('utr', 'chr1', 520)]);
+    expect(placed).toHaveLength(1);
+    expect(placed[0]!.exonIdx).toBe(0);
+    expect(placed[0]!.localX).toBeCloseTo(-16.992, 3);
+    expect(placed[0]!.intronSide).toBeUndefined();
+  });
+
+  it("places a cds-coord 5' UTR variant the same way", () => {
+    const { placed } = placeIn('transcript', [
+      { id: 'c', label: 'c', coord: { kind: 'cds', cPos: -29, offset: 0 }, category: 'utr' },
+    ]);
+    expect(placed[0]!.localX).toBeCloseTo(-16.992, 3);
+  });
+
+  it("draws an intronic variant on the exon's 3' edge, marked as donor side", () => {
+    // chr1:1105 is c.100+6; exon 1's CDS is 100 bp = 230.4 px wide.
+    const { placed } = placeIn('transcript', [genomicVariant('donor', 'chr1', 1105)]);
+    expect(placed[0]).toMatchObject({ exonIdx: 0, intronSide: 'donor' });
+    expect(placed[0]!.localX).toBeCloseTo(230.4, 3);
+  });
+
+  it("draws an intronic variant on the next exon's 5' edge, marked as acceptor side", () => {
+    // chr1:1995 is c.101-5.
+    const { placed } = placeIn('transcript', [genomicVariant('acceptor', 'chr1', 1995)]);
+    expect(placed[0]).toMatchObject({ exonIdx: 1, intronSide: 'acceptor' });
+    expect(placed[0]!.localX).toBeCloseTo(0, 6);
+  });
+
+  it('draws a variant in an intron between UTR exons on the UTR exon edge', () => {
+    // chr1:545 is c.-11+6, past the UTR exon's 3' end (c.-11).
+    const { placed } = placeIn('transcript', [genomicVariant('utr-intron', 'chr1', 545)]);
+    expect(placed[0]).toMatchObject({ exonIdx: 0, intronSide: 'donor' });
+    // c.-11's right cell edge: 10 UTR bp left of the CDS start.
+    expect(placed[0]!.localX).toBeCloseTo(-5.76, 3);
+  });
+
+  it.each([
+    ['on another chromosome', genomicVariant('chr2', 'chr2', 1050)],
+    ['upstream of the transcript', genomicVariant('upstream', 'chr1', 499)],
+    ['downstream of the transcript', genomicVariant('downstream', 'chr1', 3100)],
+  ])('lists a variant %s as unplaced', (_name, v) => {
+    const { placed, unplaced } = placeIn('transcript', [v]);
+    expect(placed).toEqual([]);
+    expect(unplaced).toEqual([v]);
+  });
+
+  it.each([
+    ['intronic', genomicVariant('donor', 'chr1', 1105)],
+    ['in the UTR', genomicVariant('utr', 'chr1', 520)],
+  ])('lists a variant %s as unplaced in protein mode', (_name, v) => {
+    expect(placeIn('protein', [v]).unplaced).toEqual([v]);
+  });
+});
+
+describe('variantTrack — intronic variants', () => {
+  async function renderTrack() {
+    const t = variantTrack({ source: [genomicVariant('V', 'chr1', 1105)] });
+    const mapper = createCoordinateMapper(withUtr);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const data = await t.load({
+      viewport,
+      mapper,
+      signal: new AbortController().signal,
+      protein: null,
+    });
+    const { container } = render(
+      <svg>
+        {t.render({
+          data,
+          rect: { yTop: 0, yBottom: 28 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+        })}
+      </svg>,
+    );
+    return { t, data, container };
+  }
+
+  it('marks the variant with a stub pointing into the intron', async () => {
+    const { container } = await renderTrack();
+    const g = container.querySelector('[data-vv-feature-id="V"]')!;
+    expect(g.getAttribute('data-vv-intron-side')).toBe('donor');
+    expect(g.querySelector('.vv-variant-intron-mark')).not.toBeNull();
+  });
+
+  it('gives the c. position in the hover text and the accessible name', async () => {
+    const { t, data, container } = await renderTrack();
+    expect(t.featureLabel!(data, 'V')).toBe('V (c.100+6)');
+    expect(container.querySelector('[data-vv-feature-id="V"]')!.getAttribute('aria-label')).toBe(
+      'V (c.100+6)',
+    );
+  });
+});
+
+describe('variantTrack — unplaced lists in GeneGlyph', () => {
+  async function flush(): Promise<void> {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+  const offTranscript = genomicVariant('far', 'chr2', 100);
+
+  it('names the track on each list when several tracks list unplaced features', async () => {
+    render(
+      <GeneGlyph
+        transcript={transcript}
+        mode="transcript"
+        tracks={[
+          variantTrack({ id: 'case', label: 'This case', source: [offTranscript] }),
+          variantTrack({ id: 'lit', label: 'Literature', source: [] }),
+        ]}
+      />,
+    );
+    await flush();
+    const list = screen.getByTestId('case-unplaced');
+    expect(list.querySelector('.vv-unplaced-label')!.textContent).toBe('Unplaced in This case (1)');
+    expect(list.querySelector('.vv-unplaced-chip')!.getAttribute('aria-label')).toBe(
+      'far, This case',
+    );
+  });
+
+  it('leaves the list unnamed when only one track lists unplaced features', async () => {
+    render(
+      <GeneGlyph
+        transcript={transcript}
+        mode="transcript"
+        tracks={[variantTrack({ id: 'case', label: 'This case', source: [offTranscript] })]}
+      />,
+    );
+    await flush();
+    const label = screen.getByTestId('case-unplaced').querySelector('.vv-unplaced-label');
+    expect(label!.textContent).toBe('Unplaced (1)');
   });
 });

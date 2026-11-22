@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createCoordinateMapper, defaultCollapsedRegions } from './coordinate-mapper.js';
+import {
+  createCoordinateMapper,
+  defaultCollapsedRegions,
+  formatCdsPosition,
+} from './coordinate-mapper.js';
 import type { Exon, Transcript } from './types.js';
 
 // Three-exon transcript on the '+' strand.
@@ -290,5 +294,119 @@ describe('CoordinateMapper — exons with alignment blocks', () => {
       { cdsStart: 51, genomicStart: 3050, length: 50 },
     ]);
     expect(() => createCoordinateMapper(ascending)).toThrow(/overlaps or precedes/);
+  });
+});
+
+// The transcripts below add UTRs to the three coding exons, renumbered 2-4:
+// an exon wholly in the 5' UTR (exon 1, 50 bp), 20 bp of 5' UTR on exon 2,
+// 10 bp of 3' UTR on exon 4, and an exon wholly in the 3' UTR (exon 5,
+// 30 bp). c.-N is cPos 1 - N; c.*N is cPos 360 + N.
+function withUtrs(
+  base: Transcript,
+  utr5Exon: [number, number],
+  utr3Exon: [number, number],
+): Transcript {
+  return {
+    ...base,
+    exons: base.exons.map((e, i) => ({
+      ...e,
+      number: e.number + 1,
+      ...(i === 0 ? { utr5Bp: 20 } : {}),
+      ...(i === 2 ? { utr3Bp: 10 } : {}),
+    })),
+    utr5Exons: [{ number: 1, chr: 'chr1', genomicStart: utr5Exon[0], genomicEnd: utr5Exon[1] }],
+    utr3Exons: [{ number: 5, chr: 'chr1', genomicStart: utr3Exon[0], genomicEnd: utr3Exon[1] }],
+  };
+}
+
+const plusUtr = withUtrs(plusTranscript, [500, 549], [4000, 4029]);
+const minusUtr = withUtrs(minusTranscript, [4000, 4049], [500, 529]);
+
+describe('CoordinateMapper — UTR parts and exons wholly in a UTR', () => {
+  it.each([
+    [999, 0, 'c.-1'],
+    [980, -19, 'c.-20'],
+    [549, -20, 'c.-21'],
+    [500, -69, 'c.-70'],
+    [3110, 361, 'c.*1'],
+    [3119, 370, 'c.*10'],
+    [4000, 371, 'c.*11'],
+    [4029, 400, 'c.*40'],
+  ])('maps + strand genomic %i to %s and back', (pos, cPos, hgvs) => {
+    const mapper = createCoordinateMapper(plusUtr);
+    const cds = mapper.genomicToCds('chr1', pos);
+    expect(cds).toEqual({ cPos, offset: 0 });
+    expect(formatCdsPosition(cds!, 360)).toBe(hgvs);
+    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+  });
+
+  it.each([
+    [3100, 0, 'c.-1'],
+    [3119, -19, 'c.-20'],
+    [4000, -20, 'c.-21'],
+    [4049, -69, 'c.-70'],
+    [999, 361, 'c.*1'],
+    [990, 370, 'c.*10'],
+    [529, 371, 'c.*11'],
+    [500, 400, 'c.*40'],
+  ])('maps - strand genomic %i to %s and back', (pos, cPos, hgvs) => {
+    const mapper = createCoordinateMapper(minusUtr);
+    const cds = mapper.genomicToCds('chr1', pos);
+    expect(cds).toEqual({ cPos, offset: 0 });
+    expect(formatCdsPosition(cds!, 360)).toBe(hgvs);
+    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+  });
+
+  it.each([
+    [551, { cPos: -20, offset: 2 }, 'c.-21+2'],
+    [975, { cPos: -19, offset: -5 }, 'c.-20-5'],
+    [3500, { cPos: 370, offset: 381 }, 'c.*10+381'],
+  ])('anchors + strand intronic %i in a UTR on the nearer UTR exon edge', (pos, cds, hgvs) => {
+    const mapper = createCoordinateMapper(plusUtr);
+    expect(mapper.genomicToCds('chr1', pos)).toEqual(cds);
+    expect(formatCdsPosition(cds, 360)).toBe(hgvs);
+    expect(mapper.cdsToGenomic(cds.cPos, cds.offset)).toEqual({ chr: 'chr1', pos });
+  });
+
+  it('anchors - strand intronic positions in a UTR on the nearer UTR exon edge', () => {
+    const mapper = createCoordinateMapper(minusUtr);
+    // 3995 lies 5 bp below the 5' UTR exon's 3' end (4000, c.-21).
+    expect(mapper.genomicToCds('chr1', 3995)).toEqual({ cPos: -20, offset: 5 });
+    expect(mapper.cdsToGenomic(-20, 5)).toEqual({ chr: 'chr1', pos: 3995 });
+  });
+
+  it('places a genomic position just upstream of the UTR off the transcript', () => {
+    expect(createCoordinateMapper(plusUtr).genomicToCds('chr1', 499)).toBeNull();
+  });
+
+  it('leaves a transcript without UTR data mapping UTR positions off the transcript', () => {
+    expect(createCoordinateMapper(plusTranscript).genomicToCds('chr1', 999)).toBeNull();
+  });
+
+  it.each([
+    ['overlaps the first exon', [{ number: 1, chr: 'chr1', genomicStart: 960, genomicEnd: 990 }]],
+    [
+      'is out of transcript order',
+      [
+        { number: 1, chr: 'chr1', genomicStart: 600, genomicEnd: 649 },
+        { number: 2, chr: 'chr1', genomicStart: 500, genomicEnd: 549 },
+      ],
+    ],
+    ['is on another chromosome', [{ number: 1, chr: 'chr2', genomicStart: 500, genomicEnd: 549 }]],
+    ['ends before it starts', [{ number: 1, chr: 'chr1', genomicStart: 549, genomicEnd: 500 }]],
+  ])("rejects a 5' UTR exon that %s", (_name, utr5Exons) => {
+    expect(() => createCoordinateMapper({ ...plusUtr, utr5Exons })).toThrow(/UTR exon/);
+  });
+});
+
+describe('formatCdsPosition', () => {
+  it.each([
+    [{ cPos: 76, offset: 0 }, 'c.76'],
+    [{ cPos: 100, offset: 5 }, 'c.100+5'],
+    [{ cPos: 101, offset: -2 }, 'c.101-2'],
+    [{ cPos: 0, offset: 0 }, 'c.-1'],
+    [{ cPos: 361, offset: 0 }, 'c.*1'],
+  ])('writes %o as %s', (pos, hgvs) => {
+    expect(formatCdsPosition(pos, 360)).toBe(hgvs);
   });
 });

@@ -23,6 +23,7 @@ export type {
   AlignmentBlock,
   Exon,
   MappedExon,
+  UtrExon,
   Transcript,
   ProteinAnnotations,
   ProteinDomain,
@@ -89,7 +90,7 @@ export type { ExportArgs, PrepareExportInput } from './export.js';
 
 export { fnv1a32Hex, buildFeatureIdHashMap, resolveSelectedId } from './feature-id-hash.js';
 
-export { createCoordinateMapper } from './coordinate-mapper.js';
+export { createCoordinateMapper, formatCdsPosition } from './coordinate-mapper.js';
 export { ViewportController, DEFAULT_MAX_ZOOM, VIEWPORT_PAN_PADDING } from './viewport.js';
 export type { ViewportControllerInit } from './viewport.js';
 export { layoutTracks } from './layout-engine.js';

@@ -304,33 +304,58 @@ describe('segmentBandTrack — genomic coordinates', () => {
     expect(rects).toEqual([expected]);
   });
 
-  it('clips a span upstream of the CDS at the CDS start rather than drawing into the UTR cap', async () => {
-    // 100 bp 5'UTR drawn at quarter scale: 325 display bp over 600 px.
+  it("draws a span reaching into the 5' UTR over the UTR cap too", async () => {
+    // 100 bp 5'UTR drawn at quarter scale: 325 display bp over 600 px, so a
+    // CDS bp is 1.846 px and a UTR bp 0.462 px. chr1:950..1019 is c.-50..c.20.
     const withUtr: Transcript = {
       ...transcript,
       exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 100 } : e)),
     };
-    const rects = await renderBandRects(genomicBand('chr1', 900, 1019), withUtr, 'transcript');
+    const rects = await renderBandRects(genomicBand('chr1', 950, 1019), withUtr, 'transcript');
     expect(rects).toHaveLength(1);
     expect(rects[0]!.exonIdx).toBe(0);
-    expect(rects[0]!.x).toBe(0);
-    expect(rects[0]!.width).toBeCloseTo(36.923, 2);
+    expect(rects[0]!.x).toBeCloseTo(-23.077, 2);
+    expect(rects[0]!.width).toBeCloseTo(60, 2);
   });
 
   it.each([
-    { name: "5' UTR", start: 950, end: 990 },
-    { name: "3' UTR", start: 3110, end: 3150 },
-  ])('draws nothing for a span strictly inside the $name', async ({ start, end }) => {
-    // UTR caps are drawn but carry no genomic positions: 5'UTR genomically
-    // below exon 1's CDS start, 3'UTR above exon 3's CDS end (plus strand).
-    const withUtr: Transcript = {
+    { name: "5' UTR", start: 950, end: 990, exonIdx: 0, x: -21.429 },
+    { name: "3' UTR", start: 3110, end: 3150, exonIdx: 2, x: 175.714 },
+  ])(
+    'draws a span strictly inside the $name in the UTR cap',
+    async ({ start, end, exonIdx, x }) => {
+      // 100 bp UTR at each end: 350 display bp over 600 px, so a CDS bp is
+      // 1.714 px and a UTR bp 0.429 px. The 5' span is c.-50..c.-10, the
+      // 3' span c.*11..c.*51, each 41 UTR bp wide.
+      const withUtr: Transcript = {
+        ...transcript,
+        exons: transcript.exons.map((e, i) =>
+          i === 0 ? { ...e, utr5Bp: 100 } : i === 2 ? { ...e, utr3Bp: 100 } : e,
+        ),
+      };
+      const rects = await renderBandRects(genomicBand('chr1', start, end), withUtr, 'transcript');
+      expect(rects).toHaveLength(1);
+      expect(rects[0]!.exonIdx).toBe(exonIdx);
+      expect(rects[0]!.x).toBeCloseTo(x, 2);
+      expect(rects[0]!.width).toBeCloseTo(17.571, 2);
+    },
+  );
+
+  it("draws a span over an exon wholly in the 5' UTR in the first exon's cap", async () => {
+    // An exon wholly in the 5' UTR (chr1:500..549, c.-60..c.-11) precedes
+    // the first coding exon, which carries c.-10..c.-1 before its CDS: 60
+    // UTR bp, so 315 display bp over 600 px and a UTR bp of 0.476 px.
+    const withUtrExon: Transcript = {
       ...transcript,
-      exons: transcript.exons.map((e, i) =>
-        i === 0 ? { ...e, utr5Bp: 100 } : i === 2 ? { ...e, utr3Bp: 100 } : e,
-      ),
+      exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 10 } : e)),
+      utr5Exons: [{ number: 1, chr: 'chr1', genomicStart: 500, genomicEnd: 549 }],
     };
-    const rects = await renderBandRects(genomicBand('chr1', start, end), withUtr, 'transcript');
-    expect(rects).toEqual([]);
+    const rects = await renderBandRects(genomicBand('chr1', 520, 549), withUtrExon, 'transcript');
+    expect(rects).toHaveLength(1);
+    expect(rects[0]!.exonIdx).toBe(0);
+    // c.-40..c.-11: left edge 40 UTR bp before the CDS, 30 UTR bp wide.
+    expect(rects[0]!.x).toBeCloseTo(-19.048, 2);
+    expect(rects[0]!.width).toBeCloseTo(14.286, 2);
   });
 
   it.each([
@@ -551,7 +576,7 @@ describe('segmentBandTrack — in GeneGlyph', () => {
     expect(onFeatureClick).toHaveBeenCalledWith('fam-2', 'regions');
   });
 
-  it('lists a span with no drawable base as unplaced, and not a partly drawable one', async () => {
+  it('lists a span off the transcript as unplaced, and not a UTR or partly drawable one', async () => {
     const withUtr: Transcript = {
       ...transcript,
       exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 100 } : e)),
@@ -559,8 +584,9 @@ describe('segmentBandTrack — in GeneGlyph', () => {
     const track = segmentBandTrack<RmcCategory>({
       id: 'regions',
       source: [
+        { id: 'upstream', chr: 'chr1', start: 500, end: 800, category: 'low', label: 'Far del' },
         { id: 'utr-only', chr: 'chr1', start: 950, end: 990, category: 'low', label: 'UTR del' },
-        { id: 'partial', chr: 'chr1', start: 950, end: 1019, category: 'high' },
+        { id: 'partial', chr: 'chr1', start: 850, end: 1019, category: 'high' },
       ],
       coordSystem: 'genomic',
       palette,
@@ -570,6 +596,46 @@ describe('segmentBandTrack — in GeneGlyph', () => {
     const unplaced = screen.getByTestId('regions-unplaced');
     expect(unplaced.querySelector('.vv-unplaced-label')?.textContent).toBe('Unplaced (1)');
     const chips = [...unplaced.querySelectorAll('[data-vv-feature-id]')];
-    expect(chips.map((c) => c.getAttribute('data-vv-feature-id'))).toEqual(['utr-only']);
+    expect(chips.map((c) => c.getAttribute('data-vv-feature-id'))).toEqual(['upstream']);
+  });
+});
+
+describe('segmentBandTrack — a span wholly inside an intron', () => {
+  // chr1:1200..1300 lies in intron 1; its nearer end, 1200, is c.100+101.
+  const intronBand = () =>
+    segmentBandTrack<RmcCategory>({
+      id: 'regions',
+      source: [{ id: 'deep', chr: 'chr1', start: 1200, end: 1300, category: 'high' }],
+      coordSystem: 'genomic',
+      palette,
+    });
+
+  it("draws a marker on exon 1's 3' edge pointing into the intron", async () => {
+    render(<GeneGlyph transcript={transcript} mode="transcript" tracks={[intronBand()]} />);
+    await flushTrackLoads();
+    const marker = document.querySelector('.vv-segment-band-feature[data-vv-feature-id="deep"]');
+    expect(marker?.getAttribute('data-vv-intron-side')).toBe('donor');
+    expect(marker?.closest('[data-vv-exon-idx]')?.getAttribute('data-vv-exon-idx')).toBe('0');
+    expect(screen.queryByTestId('regions-unplaced')).toBeNull();
+  });
+
+  it('lists the span as unplaced in protein mode', async () => {
+    render(<GeneGlyph transcript={transcript} mode="protein" tracks={[intronBand()]} />);
+    await flushTrackLoads();
+    const chips = screen.getByTestId('regions-unplaced').querySelectorAll('[data-vv-feature-id]');
+    expect([...chips].map((c) => c.getAttribute('data-vv-feature-id'))).toEqual(['deep']);
+  });
+
+  it('draws nothing for a span with intronic ends that covers an exon', async () => {
+    // chr1:1200..2200 has both ends in introns 1 and 2 and covers exon 2.
+    const track = segmentBandTrack<RmcCategory>({
+      source: [{ id: 'wide', chr: 'chr1', start: 1200, end: 2200, category: 'high' }],
+      coordSystem: 'genomic',
+      palette,
+    });
+    render(<GeneGlyph transcript={transcript} mode="transcript" tracks={[track]} />);
+    await flushTrackLoads();
+    expect(document.querySelector('.vv-segment-band-feature.is-intronic')).toBeNull();
+    expect(document.querySelectorAll('.vv-segment-band-rect')).toHaveLength(1);
   });
 });

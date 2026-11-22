@@ -1,8 +1,11 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
+import { formatCdsPosition } from '../coordinate-mapper.js';
 import { resolveSourceData } from '../data-source.js';
+import { findExonByBaselineX, intronMarkPath, placeCdsPosition } from './exon-edge.js';
 import { packLanes } from '../pack-lanes.js';
 import {
+  type CdsPosition,
   type CoordinateMapper,
   type DataSource,
   type HiddenFeatureBucket,
@@ -22,6 +25,9 @@ export type VariantSource = ViewerVariant[] | DataSource<ViewportQuery, ViewerVa
 
 export interface VariantTrackConfig {
   id?: string;
+  /** Name of the track, for the gutter and for the list of unplaced
+   *  variants when the figure has several such lists. */
+  label?: string;
   source: VariantSource;
   /** Total track height in pixels (tick+dot style only). Ignored when
    *  {@link stackedVariantStyle} is set — stacked render uses
@@ -46,6 +52,10 @@ export interface VariantTrackConfig {
 
 export interface VariantTrackData {
   variants: ViewerVariant[];
+  /** Variants in an intron, by id, with their c. position and its HGVS
+   *  text. They are drawn at the edge of the exon beside the intron, so
+   *  their hover text states the position. */
+  intronic?: ReadonlyMap<string, { cds: CdsPosition; hgvs: string }>;
   /** Pre-computed stacked layout — populated only when the track was
    *  constructed with a `stackedVariantStyle`. Stored on the data payload
    *  so `height()` and `render()` agree on the row count without
@@ -69,10 +79,16 @@ export interface VariantStackLayout {
 
 export interface VariantPlacement {
   variant: ViewerVariant;
-  /** Exon index the variant lives in, used to pick the per-exon group. */
+  /** Exon index the variant lives in, used to pick the per-exon group. A
+   *  variant in a UTR-only exon or a UTR part lives in the first or last
+   *  exon's group, at a `localX` inside its UTR cap. */
   exonIdx: number;
   /** Screen-x relative to the exon group's origin. */
   localX: number;
+  /** Set for a variant in an intron: it is drawn on the exon edge on this
+   *  side (`donor` = the exon's 3' edge, `acceptor` = its 5' edge), with a
+   *  marker pointing into the intron. */
+  intronSide?: 'donor' | 'acceptor';
 }
 
 export interface VariantPartition {
@@ -155,11 +171,14 @@ export function variantIntronGap(
   return { exonIdxA: exonHit.exonIdx - 1, exonIdxB: exonHit.exonIdx };
 }
 
-/** Partition the variant list into features that project to a visible exon at
- *  the current viewport (placed) and those that don't (unplaced). A CDS
- *  coord-system track skips variants whose `cdsToScreen` returns null, which
- *  covers intronic offsets, out-of-range, and (in spliced/protein modes)
- *  features that fall on collapsed introns. */
+/** Partition the variant list into features drawn on the figure (placed) and
+ *  those listed below it (unplaced). In genome and transcript modes a
+ *  variant is placed when it lies on the transcript: in a coding part, a UTR
+ *  part or a UTR-only exon at its own position, in an intron at the edge of
+ *  the exon its c. position is anchored on. Unplaced are variants off the
+ *  transcript (another chromosome, beyond its ends, a genomic base the
+ *  exon's alignment blocks leave out) and, in protein mode, variants outside
+ *  the coding parts. */
 export function partitionVariants(
   variants: ViewerVariant[],
   viewport: Viewport,
@@ -195,49 +214,21 @@ function placeVariant(
   viewport: Viewport,
   mapper: CoordinateMapper,
 ): VariantPlacement | null {
-  const cds = mapper.resolveCds(v.coord);
-  // Intronic offsets land in the unplaced bucket; the exon track draws
-  // hidden-feature indicators in the gap on their behalf (Slice 15).
-  if (!cds || cds.offset !== 0) return null;
-  // Baseline localX: the variant's position within its host exon's fit-gene
-  // frame. The exon `<g>` carries the live translate + scale; the figure
-  // SVG clips off-figure renderings so the variant stays in the DOM even
-  // when its current screen position is outside [0, width]. `toBaselineX`
-  // handles the protein-mode ruler conversion internally so handing it the
-  // raw VariantCoord works in every viewport mode.
-  const variantBaselineX = viewport.toBaselineX(v.coord);
-  if (variantBaselineX === null) return null;
-  // Locate the host exon by the variant's baseline-x rather than by bp.
-  // In protein mode, codon-spanning aa cells are owned by one exon
-  // (downstream skips the shared aa) — and the baseline-x lookup always
-  // picks the cell-owner, regardless of which physical exon the variant's
-  // CDS bp lives in. In CDS modes the two paths give the same answer
-  // (each bp's cell sits inside its host exon's rect).
-  const baseline = viewport.baselineGeometry();
-  const exonIdx = findExonByBaselineX(baseline.exons, variantBaselineX);
-  if (exonIdx === null) return null;
-  const eb = baseline.exons[exonIdx]!;
-  return { variant: v, exonIdx, localX: variantBaselineX - eb.xStart };
-}
-
-function findExonByBaselineX(
-  exons: readonly { exonIdx: number; xStart: number; xEnd: number }[],
-  x: number,
-): number | null {
-  // Inclusive-left, exclusive-right so a baseline-x that lands exactly on
-  // a shared boundary tile-edge (e.g., the right edge of one exon's last
-  // cell == the left edge of the next exon's first cell) is assigned to
-  // the downstream exon. Symmetric special-case at the right end of the
-  // gene so the C-terminus's right cell-edge stays inside the last exon.
-  const last = exons[exons.length - 1];
-  for (const eb of exons) {
-    if (eb === last) {
-      if (x >= eb.xStart && x <= eb.xEnd) return eb.exonIdx;
-    } else if (x >= eb.xStart && x < eb.xEnd) {
-      return eb.exonIdx;
-    }
+  if (v.coord.kind !== 'protein') {
+    const cds = mapper.resolveCds(v.coord);
+    if (!cds) return null;
+    const placement = placeCdsPosition(cds, viewport, mapper);
+    return placement && { variant: v, ...placement };
   }
-  return null;
+  // In protein mode, codon-spanning aa cells are owned by one exon
+  // (downstream skips the shared aa); locating the host exon by baseline-x
+  // picks the cell-owner.
+  const x = viewport.toBaselineX(v.coord);
+  if (x === null) return null;
+  const exons = viewport.baselineGeometry().exons;
+  const exonIdx = findExonByBaselineX(exons, x);
+  if (exonIdx === null) return null;
+  return { variant: v, exonIdx, localX: x - exons[exonIdx]!.xStart };
 }
 
 /** Greedy lane packing in baseline (fit-gene) screen-x. Group placed variants
@@ -321,8 +312,14 @@ export function variantTrack(
   const stackTopPad = 2;
   const stackBottomPad = 2;
 
+  const labelOf = (data: VariantTrackData, v: ViewerVariant): string => {
+    const intronic = data.intronic?.get(v.id);
+    return intronic ? `${v.label} (${intronic.hgvs})` : v.label;
+  };
+
   return {
     id,
+    label: config.label,
     coordSystem: 'cds',
     heightPolicy: stackedEncoding ? 'data-dependent' : 'fixed',
 
@@ -337,7 +334,15 @@ export function variantTrack(
         const { placed } = partitionVariants(variants, viewport, mapper);
         stackLayout = packStackedVariants(placed, stackedEncoding, viewport, stackMarkRadius);
       }
-      return { variants, stackLayout };
+      const intronic = new Map<string, { cds: CdsPosition; hgvs: string }>();
+      for (const v of variants) {
+        if (v.coord.kind === 'protein') continue;
+        const cds = mapper.resolveCds(v.coord);
+        if (cds && cds.offset !== 0) {
+          intronic.set(v.id, { cds, hgvs: formatCdsPosition(cds, mapper.transcript.cdsLength) });
+        }
+      }
+      return { variants, stackLayout, intronic };
     },
 
     height({ data }: TrackHeightArgs<VariantTrackData>): TrackHeightResult {
@@ -351,17 +356,16 @@ export function variantTrack(
 
     hiddenFeaturesByIntron({
       data,
+      viewport,
       mapper,
     }: HiddenFeaturesArgs<VariantTrackData>): HiddenFeatureBucket[] {
-      // Intronic variants — those whose CDS offset is non-zero, or whose
-      // genomic position lies between exons — are never placed on an exon
-      // ribbon, regardless of mode. The exon track folds these counts onto
-      // dashed-gap polylines (visible in spliced / protein modes) so users
-      // see where data is hidden by the collapse.
+      // Intronic variants the figure does not draw (protein mode has no
+      // place for them) are counted per intron, and the exon track shows
+      // the counts on the collapsed introns.
       const byKey = new Map<string, HiddenFeatureBucket>();
       for (const v of data.variants) {
         const gap = variantIntronGap(v, mapper);
-        if (!gap) continue;
+        if (!gap || placeVariant(v, viewport, mapper)) continue;
         const key = `${gap.exonIdxA}:${gap.exonIdxB}`;
         const prev = byKey.get(key);
         if (prev) {
@@ -411,6 +415,7 @@ export function variantTrack(
           topPad: stackTopPad,
           interaction,
           inBrushIds,
+          labelOf: (v) => labelOf(data, v),
           onFeatureHover,
           onFeatureClick,
           painter,
@@ -444,6 +449,7 @@ export function variantTrack(
             dotRadius,
             interaction,
             inBrush: inBrushIds.has(p.variant.id),
+            label: labelOf(data, p.variant),
             onFeatureHover,
             onFeatureClick,
           }),
@@ -464,12 +470,16 @@ export function variantTrack(
     },
 
     renderBelow(args: TrackRenderArgs<VariantTrackData>): ReactNode | null {
-      const { data, viewport, mapper, interaction, onFeatureHover, onFeatureClick } = args;
+      const { data, viewport, mapper, interaction, trackName, onFeatureHover, onFeatureClick } =
+        args;
       const partition = partitionVariants(data.variants, viewport, mapper);
       if (partition.unplaced.length === 0) return null;
+      const where = trackName ? ` in ${trackName}` : '';
       return (
         <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
-          <span className="vv-unplaced-label">Unplaced ({partition.unplaced.length})</span>
+          <span className="vv-unplaced-label">
+            Unplaced{where} ({partition.unplaced.length})
+          </span>
           <ul className="vv-unplaced-list">
             {partition.unplaced.map((v) => {
               const isHovered = interaction.hoveredFeatureId === v.id;
@@ -494,7 +504,8 @@ export function variantTrack(
                   onMouseEnter={() => onFeatureHover?.(v.id)}
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(v.id)}
-                  title={v.label}
+                  title={labelOf(data, v)}
+                  aria-label={trackName ? `${labelOf(data, v)}, ${trackName}` : undefined}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{v.label}</span>
@@ -509,6 +520,12 @@ export function variantTrack(
     resolveAnchor(data, anchorId, viewport) {
       const v = data.variants.find((x) => x.id === anchorId);
       if (!v) return null;
+      // An intronic variant is drawn on the exon base its position is
+      // anchored on.
+      const intronic = data.intronic?.get(v.id);
+      if (intronic && viewport.mode !== 'protein') {
+        return viewport.resolveAnchor({ kind: 'cds-pos', cPos: intronic.cds.cPos, offset: 0 });
+      }
       switch (v.coord.kind) {
         case 'cds':
           return viewport.resolveAnchor({
@@ -533,12 +550,13 @@ export function variantTrack(
 
     featureLabel(data, featureId) {
       const v = data.variants.find((x) => x.id === featureId);
-      return v ? v.label : null;
+      return v ? labelOf(data, v) : null;
     },
 
     toJSON() {
       return {
         id,
+        label: config.label,
         source,
         height: trackHeight,
         tickHalfHeight: tickHalf,
@@ -561,6 +579,7 @@ interface RenderStackedArgs {
   topPad: number;
   interaction: TrackRenderArgs<VariantTrackData>['interaction'];
   inBrushIds: ReadonlySet<string>;
+  labelOf: (v: ViewerVariant) => string;
   onFeatureHover?: (featureId: string | null) => void;
   onFeatureClick?: (featureId: string) => void;
   painter: TrackRenderArgs<VariantTrackData>['painter'];
@@ -577,6 +596,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
     topPad,
     interaction,
     inBrushIds,
+    labelOf,
     onFeatureHover,
     onFeatureClick,
     painter,
@@ -610,6 +630,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
         'vv-variant',
         'vv-variant-stacked',
         `vv-variant-${v.category}`,
+        p.intronSide && 'is-intronic',
         onFeatureClick && 'is-clickable',
         isHovered && 'is-hovered',
         isSelected && 'is-selected',
@@ -627,13 +648,14 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           data-vv-stack-row={p.row}
           data-vv-stack-lane={p.laneKey}
           data-vv-shape={shape}
+          data-vv-intron-side={p.intronSide}
           transform={`translate(${p.localX} 0)`}
           onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
           onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
           tabIndex={0}
           role="button"
-          aria-label={v.label}
+          aria-label={labelOf(v)}
         >
           <g className="vv-variant-inner">
             <g
@@ -641,6 +663,16 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
               style={{ transform: counterScale, transformOrigin: '0 0' }}
             >
               <g transform={`translate(0 ${cy})`}>
+                {p.intronSide && (
+                  <path
+                    className="vv-variant-intron-mark"
+                    d={intronMarkPath(p.intronSide, r + 1, 0)}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={1.5}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
                 <circle
                   className="vv-variant-ring"
                   cx={0}
@@ -693,6 +725,7 @@ interface RenderVariantArgs {
   dotRadius: number;
   interaction: TrackRenderArgs<VariantTrackData>['interaction'];
   inBrush: boolean;
+  label: string;
   onFeatureHover?: (featureId: string | null) => void;
   onFeatureClick?: (featureId: string) => void;
 }
@@ -706,6 +739,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     dotRadius,
     interaction,
     inBrush,
+    label,
     onFeatureHover,
     onFeatureClick,
   } = args;
@@ -715,6 +749,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
   const wrapperClass = [
     'vv-variant',
     `vv-variant-${v.category}`,
+    placement.intronSide && 'is-intronic',
     onFeatureClick && 'is-clickable',
     isHovered && 'is-hovered',
     isSelected && 'is-selected',
@@ -736,13 +771,14 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       className={wrapperClass}
       data-vv-feature-id={v.id}
       data-vv-category={v.category}
+      data-vv-intron-side={placement.intronSide}
       transform={`translate(${placement.localX} 0)`}
       onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
       onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
       tabIndex={0}
       role="button"
-      aria-label={v.label}
+      aria-label={label}
     >
       <g className="vv-variant-inner">
         <line
@@ -756,6 +792,16 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
           vectorEffect="non-scaling-stroke"
         />
         <g className="vv-variant-shape" style={{ transform: counterScale, transformOrigin: '0 0' }}>
+          {placement.intronSide && (
+            <path
+              className="vv-variant-intron-mark"
+              d={intronMarkPath(placement.intronSide, 0, tickTop, tickBottom)}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
           <circle
             className="vv-variant-ring"
             cx={0}

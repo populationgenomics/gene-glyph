@@ -1291,6 +1291,7 @@ function GeneGlyphInner(
     return merged;
   }, [flatTracks, trackData, viewport, mapper, viewportVersion]);
 
+  const severalBelowLists = flatTracks.filter((t) => t.renderBelow).length > 1;
   const trackRenderArgsFor = (t: Track) => {
     const rect = layout.trackRects.get(t.id);
     if (!rect) return null;
@@ -1304,6 +1305,7 @@ function GeneGlyphInner(
       interaction,
       painter,
       hiddenByIntron,
+      trackName: severalBelowLists && t.renderBelow ? (t.label ?? t.id) : undefined,
       onFeatureHover: (featureId: string | null) => handleHover(t.id, featureId),
       onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
     };

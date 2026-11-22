@@ -16,6 +16,7 @@ import { SequenceTracksScenario } from './scenarios/sequence-tracks-demo.js';
 import { SlotSystemScenario } from './scenarios/slot-system.js';
 import { StackedVariantsDemoScenario } from './scenarios/stacked-variants-demo.js';
 import { TooltipDemoScenario } from './scenarios/tooltip-demo.js';
+import { TranscriptMapDemoScenario } from './scenarios/transcript-map-demo.js';
 
 export function App() {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -51,6 +52,7 @@ export function App() {
       <SequenceTracksScenario />
       <ProfileTracksScenario />
       <SegmentBandDemoScenario />
+      <TranscriptMapDemoScenario />
     </main>
   );
 }
