@@ -925,6 +925,8 @@ function GeneGlyphInner(
       if (featureId) {
         const dismissed = dismissedRef.current;
         if (dismissed && dismissed.trackId === trackId && dismissed.featureId === featureId) return;
+        // Reaching any other surface ends the dismissal.
+        dismissedRef.current = null;
         const next: HoverTarget = { trackId, featureId, anchorEl };
         const current = tooltipTargetRef.current;
         // Re-entering the same feature during exit-grace: just cancel the
@@ -1012,6 +1014,7 @@ function GeneGlyphInner(
     // host hears about it once, with the trackId of the feature that was
     // hovered at the time of leave.
     pointerVelocityRef.current = null;
+    dismissedRef.current = null;
     if (enterTimerRef.current !== null) {
       clearEnterTimer();
       return;
