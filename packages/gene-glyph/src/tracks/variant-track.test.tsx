@@ -528,7 +528,11 @@ describe('variantTrack — unplaced lists in GeneGlyph', () => {
         mode="transcript"
         tracks={[
           variantTrack({ id: 'case', label: 'This case', source: [offTranscript] }),
-          variantTrack({ id: 'lit', label: 'Literature', source: [] }),
+          variantTrack({
+            id: 'lit',
+            label: 'Literature',
+            source: [genomicVariant('far2', 'chr2', 200)],
+          }),
         ]}
       />,
     );
@@ -540,16 +544,31 @@ describe('variantTrack — unplaced lists in GeneGlyph', () => {
     );
   });
 
-  it('leaves the list unnamed when only one track lists unplaced features', async () => {
+  it('leaves the list unnamed when only one track has unplaced features', async () => {
     render(
       <GeneGlyph
         transcript={transcript}
         mode="transcript"
-        tracks={[variantTrack({ id: 'case', label: 'This case', source: [offTranscript] })]}
+        tracks={[
+          variantTrack({ id: 'case', label: 'This case', source: [offTranscript] }),
+          variantTrack({ id: 'lit', label: 'Literature', source: [] }),
+        ]}
       />,
     );
     await flush();
     const label = screen.getByTestId('case-unplaced').querySelector('.vv-unplaced-label');
     expect(label!.textContent).toBe('Unplaced (1)');
+  });
+});
+
+describe('partitionVariants — malformed intronic positions', () => {
+  it('lists an intronic offset on a base that is not an exon edge as unplaced', () => {
+    const v: ViewerVariant = {
+      id: 'mid',
+      label: 'mid',
+      coord: { kind: 'cds', cPos: 6, offset: 4 },
+      category: 'intronic',
+    };
+    expect(placeIn('transcript', [v]).unplaced).toEqual([v]);
   });
 });

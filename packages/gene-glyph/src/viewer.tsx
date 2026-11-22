@@ -1291,7 +1291,9 @@ function GeneGlyphInner(
     return merged;
   }, [flatTracks, trackData, viewport, mapper, viewportVersion]);
 
-  const severalBelowLists = flatTracks.filter((t) => t.renderBelow).length > 1;
+  // Lists below the figure name their track when more than one track has
+  // one; set after a first pass counts them.
+  let severalBelowLists = false;
   const trackRenderArgsFor = (t: Track) => {
     const rect = layout.trackRects.get(t.id);
     if (!rect) return null;
@@ -1526,12 +1528,15 @@ function GeneGlyphInner(
     );
   }, [tooltipTarget, tooltipPos, flatTracks, trackData, renderTooltip]);
 
+  const renderBelowOf = (t: Track): ReactNode | null => {
+    const args = t.renderBelow ? trackRenderArgsFor(t) : null;
+    return args ? t.renderBelow!(args) : null;
+  };
+  const listingTracks = flatTracks.filter((t) => renderBelowOf(t));
+  severalBelowLists = listingTracks.length > 1;
   const belowNodes: ReactNode[] = [];
-  for (const t of flatTracks) {
-    if (!t.renderBelow) continue;
-    const args = trackRenderArgsFor(t);
-    if (!args) continue;
-    const node = t.renderBelow(args);
+  for (const t of listingTracks) {
+    const node = renderBelowOf(t);
     if (node) belowNodes.push(<div key={t.id}>{node}</div>);
   }
 

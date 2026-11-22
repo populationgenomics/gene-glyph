@@ -26,14 +26,18 @@ export function findExonByBaselineX(exons: readonly ExonBaseline[], x: number): 
 /** Place a c. position on the figure. An exonic or UTR position lands on
  *  its base; an intronic one (`offset !== 0`) on the edge of the exon base
  *  it is anchored on, facing the intron. `null` when the position is off
- *  the drawn transcript, and for an intronic position in protein mode,
- *  where an intron has no place. */
+ *  the drawn transcript, for an intronic position not anchored on an exon
+ *  edge with an intron beyond it, and for an intronic position in protein
+ *  mode, where an intron has no place. */
 export function placeCdsPosition(
   pos: CdsPosition,
   viewport: Viewport,
   mapper: CoordinateMapper,
 ): ExonPlacement | null {
-  if (pos.offset !== 0 && viewport.mode === 'protein') return null;
+  if (pos.offset !== 0) {
+    if (viewport.mode === 'protein') return null;
+    if (!mapper.cdsToGenomic(pos.cPos, pos.offset)) return null;
+  }
   const x = viewport.toBaselineX({ kind: 'cds', cPos: pos.cPos, offset: 0 });
   if (x === null) return null;
   const baseline = viewport.baselineGeometry();

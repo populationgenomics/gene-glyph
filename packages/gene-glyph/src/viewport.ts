@@ -1249,8 +1249,10 @@ export class ViewportController implements Viewport {
   projectProteinRange(aaStart: number, aaEnd: number): RangeProjection {
     const [lo, hi] = clampOrdered(aaStart, aaEnd);
     // First and last base of the residue range in CDS coords.
-    const cdsLo = this.mapper.proteinToCds(lo);
-    const cdsHi = this.mapper.proteinToCds(hi) + 2;
+    // Clamped to the CDS: residues have no bases in the UTR caps.
+    const cdsLength = this.mapper.transcript.cdsLength;
+    const cdsLo = Math.max(1, this.mapper.proteinToCds(lo));
+    const cdsHi = Math.min(cdsLength, this.mapper.proteinToCds(hi) + 2);
     return this.projectExonic(cdsLo, cdsHi);
   }
 

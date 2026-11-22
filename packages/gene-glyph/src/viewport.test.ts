@@ -745,3 +745,20 @@ describe('ViewportController — projectGenomicRange through alignment blocks', 
     );
   });
 });
+
+describe('ViewportController — protein ranges and UTR caps', () => {
+  it('clips a residue range running past the protein at the CDS end', () => {
+    const withUtr: Transcript = {
+      ...transcript,
+      exons: transcript.exons.map((e, i) => (i === 2 ? { ...e, utr3Bp: 40 } : e)),
+    };
+    const vp = new ViewportController({
+      mapper: createCoordinateMapper(withUtr),
+      width: 720,
+      mode: 'transcript',
+    });
+    expect(vp.projectProteinRange(110, 130).segments).toEqual(
+      vp.projectCdsRange(328, 360).segments,
+    );
+  });
+});
