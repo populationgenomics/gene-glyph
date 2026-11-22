@@ -281,3 +281,32 @@ describe('exonTrack — UTRs', () => {
     expect(rects[2]!.x).toBeCloseTo(-5.669, 3);
   });
 });
+
+describe('exonTrack — exon numbers', () => {
+  it('names the exons beside a hidden-feature badge by their own numbers', () => {
+    // Exon 1 is left out (wholly UTR) and exon 3 omitted by the host: the
+    // drawn exons keep their numbers 2, 4 and 5.
+    const renumbered: Transcript = {
+      ...transcript,
+      exons: transcript.exons.map((e, i) => ({ ...e, number: [2, 4, 5][i]! })),
+    };
+    const mapper = createCoordinateMapper(renumbered);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const { container } = render(
+      <svg>
+        {exonTrack().render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 24 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+          hiddenByIntron: new Map([['0:1', { exonIdxA: 0, exonIdxB: 1, count: 2 }]]),
+        })}
+      </svg>,
+    );
+    expect(container.querySelector('.vv-hidden-feature-mark')!.getAttribute('aria-label')).toBe(
+      '2 features hidden in intron between exon 2 and exon 4',
+    );
+  });
+});

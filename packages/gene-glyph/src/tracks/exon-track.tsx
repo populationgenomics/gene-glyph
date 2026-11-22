@@ -289,7 +289,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
             data-vv-intron-to={gap.exonIdxB}
             style={wrapperStyle}
             {...clickAttrs(click)}
-            aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${gap.exonIdxA + 1} and exon ${gap.exonIdxB + 1}`}
+            aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${mapper.transcript.exons[gap.exonIdxA]!.number} and exon ${mapper.transcript.exons[gap.exonIdxB]!.number}`}
           >
             <rect
               className="vv-hidden-feature-bg"
