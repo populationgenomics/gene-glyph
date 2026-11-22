@@ -488,10 +488,9 @@ export function variantTrack(
                   data-vv-feature-id={v.id}
                   data-vv-category={v.category}
                   style={style}
-                  onMouseEnter={() => onFeatureHover?.(v.id)}
+                  onMouseEnter={(e) => onFeatureHover?.(v.id, e.currentTarget)}
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(v.id)}
-                  title={labelOf(data, v)}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{v.label}</span>

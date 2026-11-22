@@ -32,6 +32,7 @@ import {
   type InteractionState,
   type ProteinAnnotations,
   type Track,
+  type TooltipAnchor,
   type TooltipRenderArgs,
   type TrackLoadState,
   type TrackOrGroup,
@@ -89,12 +90,21 @@ export interface GeneGlyphProps {
   onHover?: (featureId: string | null, trackId: string) => void;
   /** Fires when a feature is clicked. */
   onFeatureClick?: (featureId: string, trackId: string) => void;
-  /** Host-supplied tooltip renderer. When provided, the viewer shows an
-   *  overlay anchored to the hovered feature with the host's content. When
-   *  omitted, the viewer falls back to its built-in label tooltip (driven by
-   *  {@link Track.featureLabel}). Return `null` to suppress the tooltip for a
-   *  given feature without disabling the system. Slice 17. */
+  /** Host-supplied tooltip content. When provided, the viewer shows its
+   *  tooltip box anchored to the hovered surface with the host's content.
+   *  When omitted, the box shows {@link TooltipRenderArgs.label}. Return
+   *  `null` to suppress the tooltip for a given feature without disabling
+   *  the system. Slice 17. */
   renderTooltip?: (args: TooltipRenderArgs) => ReactNode | null;
+  /** Host-rendered tooltips. When provided, the viewer draws no tooltip of
+   *  its own: for every hover surface (track features in the figure, the
+   *  unplaced lists below it, the built-in header's MANE badge) it calls
+   *  this with the hovered target, its default text and its box on screen,
+   *  and mounts what it returns as is, typically the host's own tooltip
+   *  portalled and placed against `args.anchor`. The viewer still decides
+   *  when a tooltip is open: one at a time, dismissed on leave and on
+   *  Escape. Takes precedence over {@link renderTooltip}. */
+  renderTooltipPanel?: (args: TooltipRenderArgs) => ReactNode | null;
   /** Fires when a track transitions between load states. Hosts can mirror
    *  this into their own loading UI / telemetry; the viewer renders its own
    *  default shimmer regardless. Slice 18. */
@@ -450,6 +460,7 @@ function GeneGlyphInner(
     onHover,
     onFeatureClick,
     renderTooltip,
+    renderTooltipPanel,
     onTrackStateChange,
     loadDebounceMs = typeof globalThis !== 'undefined' &&
     (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV === 'test'
@@ -834,12 +845,16 @@ function GeneGlyphInner(
     [brushControlled, onBrushChange],
   );
 
-  const [tooltipTarget, setTooltipTarget] = useState<{
-    trackId: string;
-    featureId: string;
-  } | null>(null);
+  const [tooltipTarget, setTooltipTarget] = useState<HoverTarget | null>(null);
 
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  // Where the open tooltip points: `pos` in figure-wrap px for the
+  // built-in box, `box` in viewport px for a host's own.
+  const [tooltipPos, setTooltipPos] = useState<{
+    pos: { x: number; y: number };
+    box: TooltipAnchor;
+  } | null>(null);
+  // A target dismissed with Escape stays shut until the pointer leaves it.
+  const dismissedRef = useRef<HoverTarget | null>(null);
 
   // Hover debouncing — see RD-1109. Adjacent variant glyphs separated by a
   // pixel of empty SVG would flicker the tooltip on every cursor jitter: each
@@ -858,7 +873,7 @@ function GeneGlyphInner(
   const HOVER_ENTER_DELAY_MS = 100;
   const HOVER_EXIT_GRACE_MS = 60;
   const HOVER_FAST_VELOCITY_PX_MS = 0.1;
-  const tooltipTargetRef = useRef<{ trackId: string; featureId: string } | null>(null);
+  const tooltipTargetRef = useRef<HoverTarget | null>(null);
   useEffect(() => {
     tooltipTargetRef.current = tooltipTarget;
   }, [tooltipTarget]);
@@ -889,7 +904,7 @@ function GeneGlyphInner(
   );
 
   const commitHover = useCallback(
-    (next: { trackId: string; featureId: string } | null, leavingTrackId?: string) => {
+    (next: HoverTarget | null, leavingTrackId?: string) => {
       clearEnterTimer();
       clearExitTimer();
       if (next) {
@@ -906,9 +921,11 @@ function GeneGlyphInner(
   );
 
   const handleHover = useCallback(
-    (trackId: string, featureId: string | null) => {
+    (trackId: string, featureId: string | null, anchorEl?: Element) => {
       if (featureId) {
-        const next = { trackId, featureId };
+        const dismissed = dismissedRef.current;
+        if (dismissed && dismissed.trackId === trackId && dismissed.featureId === featureId) return;
+        const next: HoverTarget = { trackId, featureId, anchorEl };
         const current = tooltipTargetRef.current;
         // Re-entering the same feature during exit-grace: just cancel the
         // exit so the existing tooltip stays put.
@@ -945,6 +962,7 @@ function GeneGlyphInner(
           if (pending) commitHover(pending);
         }, HOVER_ENTER_DELAY_MS);
       } else {
+        if (dismissedRef.current?.trackId === trackId) dismissedRef.current = null;
         // A pending enter was never committed — just drop it. No onHover
         // call either (we never told the host the entry happened).
         if (enterTimerRef.current !== null) {
@@ -976,6 +994,18 @@ function GeneGlyphInner(
     const vel = prev.vel * 0.5 + inst * 0.5;
     pointerVelocityRef.current = { x: e.clientX, y: e.clientY, t: now, vel };
   }, []);
+
+  // Escape dismisses the open tooltip (WCAG 1.4.13).
+  useEffect(() => {
+    if (!tooltipTarget) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      dismissedRef.current = tooltipTargetRef.current;
+      commitHover(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [tooltipTarget, commitHover]);
 
   const handleFigurePointerLeave = useCallback(() => {
     // Real dismissal — flush both timers and tear down the tooltip now. The
@@ -1304,7 +1334,8 @@ function GeneGlyphInner(
       interaction,
       painter,
       hiddenByIntron,
-      onFeatureHover: (featureId: string | null) => handleHover(t.id, featureId),
+      onFeatureHover: (featureId: string | null, anchorEl?: Element) =>
+        handleHover(t.id, featureId, anchorEl),
       onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
     };
   };
@@ -1464,11 +1495,23 @@ function GeneGlyphInner(
 
   useLayoutEffect(() => {
     if (!tooltipTarget) return;
+    const wrap = figureWrapRef.current;
+    if (!wrap) return;
+    const wr = wrap.getBoundingClientRect();
+    // A surface outside the figure (an unplaced chip, the header badge)
+    // anchors the tooltip to its own box.
+    if (tooltipTarget.anchorEl) {
+      const r = tooltipTarget.anchorEl.getBoundingClientRect();
+      setTooltipPos({
+        pos: { x: (r.left + r.right) / 2 - wr.left, y: r.top - wr.top },
+        box: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+      });
+      return;
+    }
     const track = flatTracks.find((t) => t.id === tooltipTarget.trackId);
     const data = track ? trackData.get(track.id) : undefined;
     const svg = svgRef.current;
-    const wrap = figureWrapRef.current;
-    if (!track || data === undefined || !track.resolveAnchor || !svg || !wrap) return;
+    if (!track || data === undefined || !track.resolveAnchor || !svg) return;
     const point = track.resolveAnchor(data, tooltipTarget.featureId, viewport);
     const rect = layout.trackRects.get(track.id);
     if (point && rect) {
@@ -1477,52 +1520,73 @@ function GeneGlyphInner(
       if (typeof svg.getScreenCTM !== 'function') return;
       const ctm = svg.getScreenCTM();
       if (ctm) {
-        const pt = svg.createSVGPoint();
-        pt.x = point.x;
-        pt.y = (rect.yTop + rect.yBottom) / 2;
-        const sp = pt.matrixTransform(ctm);
-        const wr = wrap.getBoundingClientRect();
-        setTooltipPos({ x: sp.x - wr.left, y: sp.y - wr.top });
+        const toClient = (y: number) => {
+          const pt = svg.createSVGPoint();
+          pt.x = point.x;
+          pt.y = y;
+          return pt.matrixTransform(ctm);
+        };
+        const mid = toClient((rect.yTop + rect.yBottom) / 2);
+        const top = toClient(rect.yTop).y;
+        const bottom = toClient(rect.yBottom).y;
+        setTooltipPos({
+          pos: { x: mid.x - wr.left, y: mid.y - wr.top },
+          box: { left: mid.x, right: mid.x, top, bottom },
+        });
       }
     } else {
       setTooltipPos(null);
     }
   }, [tooltipTarget, flatTracks, trackData, viewport, layout.trackRects, viewportVersion]);
 
-  const tooltipNode = useMemo<ReactNode>(() => {
+  const tooltipArgs = useMemo<TooltipRenderArgs | null>(() => {
     if (!tooltipTarget || !tooltipPos) return null;
+    const base = {
+      trackId: tooltipTarget.trackId,
+      featureId: tooltipTarget.featureId,
+      point: tooltipPos.pos,
+      anchor: tooltipPos.box,
+    };
+    if (tooltipTarget.trackId === HEADER_TOOLTIP_TRACK_ID) {
+      return {
+        ...base,
+        feature: undefined,
+        label: HEADER_TOOLTIP_LABELS[tooltipTarget.featureId] ?? null,
+      };
+    }
     const track = flatTracks.find((t) => t.id === tooltipTarget.trackId);
     const data = track ? trackData.get(track.id) : undefined;
     if (!track || data === undefined) return null;
-    const feature = track.resolveFeature
-      ? track.resolveFeature(data, tooltipTarget.featureId)
-      : undefined;
-    let content: ReactNode = null;
-    if (renderTooltip) {
-      content = renderTooltip({
-        trackId: tooltipTarget.trackId,
-        featureId: tooltipTarget.featureId,
-        feature,
-        point: tooltipPos,
-      });
-    } else if (track.featureLabel) {
-      const label = track.featureLabel(data, tooltipTarget.featureId);
-      if (label) content = label;
+    return {
+      ...base,
+      feature: track.resolveFeature
+        ? track.resolveFeature(data, tooltipTarget.featureId)
+        : undefined,
+      label: track.featureLabel ? track.featureLabel(data, tooltipTarget.featureId) : null,
+    };
+  }, [tooltipTarget, tooltipPos, flatTracks, trackData]);
+
+  const tooltipNode = useMemo<ReactNode>(() => {
+    if (!tooltipArgs || !tooltipPos || renderTooltipPanel) return null;
+    const content = renderTooltip ? renderTooltip(tooltipArgs) : tooltipArgs.label;
+    if (content === null || content === undefined || content === false || content === '') {
+      return null;
     }
-    if (content === null || content === undefined || content === false) return null;
     return (
       <div
         className="vv-tooltip"
         role="tooltip"
         data-testid="gene-glyph-tooltip"
-        data-vv-track-id={tooltipTarget.trackId}
-        data-vv-feature-id={tooltipTarget.featureId}
-        style={{ left: tooltipPos.x, top: tooltipPos.y }}
+        data-vv-track-id={tooltipArgs.trackId}
+        data-vv-feature-id={tooltipArgs.featureId}
+        style={{ left: tooltipPos.pos.x, top: tooltipPos.pos.y }}
       >
         {content}
       </div>
     );
-  }, [tooltipTarget, tooltipPos, flatTracks, trackData, renderTooltip]);
+  }, [tooltipArgs, tooltipPos, renderTooltip, renderTooltipPanel]);
+
+  const hostTooltip = tooltipArgs && renderTooltipPanel ? renderTooltipPanel(tooltipArgs) : null;
 
   const belowLists: Array<{ track: Track; node: ReactNode }> = [];
   for (const t of flatTracks) {
@@ -1660,7 +1724,11 @@ function GeneGlyphInner(
       {headerSlot.props.children}
     </div>
   ) : (
-    <GeneGlyphHeader transcript={transcript} protein={protein ?? null} />
+    <GeneGlyphHeader
+      transcript={transcript}
+      protein={protein ?? null}
+      onHover={(featureId, anchorEl) => handleHover(HEADER_TOOLTIP_TRACK_ID, featureId, anchorEl)}
+    />
   );
 
   const footerNode = footerSlot ? (
@@ -1694,6 +1762,7 @@ function GeneGlyphInner(
         </div>
       )}
       {footerNode}
+      {hostTooltip}
     </div>
   );
 }
@@ -1712,12 +1781,30 @@ GeneGlyph.RightGutter = RightGutter;
 GeneGlyph.Header = Header;
 GeneGlyph.Footer = Footer;
 
+/** `trackId` of the hover targets in the built-in header, as passed to
+ *  `onHover`, `renderTooltip` and `renderTooltipPanel`. Its one target is
+ *  the MANE badge, `featureId` `'mane-select'`. */
+export const HEADER_TOOLTIP_TRACK_ID = 'gene-glyph:header';
+
+const HEADER_TOOLTIP_LABELS: Record<string, string> = {
+  'mane-select': 'MANE Select transcript',
+};
+
+/** The surface a tooltip is open on. `anchorEl` is set for surfaces outside
+ *  the figure SVG, which anchor the tooltip to their own box. */
+interface HoverTarget {
+  trackId: string;
+  featureId: string;
+  anchorEl?: Element;
+}
+
 interface DefaultHeaderProps {
   transcript: Transcript;
   protein: ProteinAnnotations | null;
+  onHover: (featureId: string | null, anchorEl?: Element) => void;
 }
 
-function GeneGlyphHeader({ transcript, protein }: DefaultHeaderProps) {
+function GeneGlyphHeader({ transcript, protein, onHover }: DefaultHeaderProps) {
   const cdsLen = Math.max(1, transcript.cdsLength);
   return (
     <div className="vv-header" data-testid="gene-glyph-header">
@@ -1728,7 +1815,11 @@ function GeneGlyphHeader({ transcript, protein }: DefaultHeaderProps) {
         {transcript.isManeSelect && (
           <>
             <span className="vv-sep"> · </span>
-            <span className="vv-mane-badge" title="MANE Select transcript">
+            <span
+              className="vv-mane-badge"
+              onMouseEnter={(e) => onHover('mane-select', e.currentTarget)}
+              onMouseLeave={() => onHover(null)}
+            >
               MANE Select
             </span>
           </>
@@ -1741,7 +1832,7 @@ function GeneGlyphHeader({ transcript, protein }: DefaultHeaderProps) {
               href={`https://alphafold.ebi.ac.uk/entry/${protein.alphafoldId}`}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open AlphaFold structure"
+              aria-label="Open AlphaFold structure (new tab)"
             >
               AlphaFold ↗
             </a>

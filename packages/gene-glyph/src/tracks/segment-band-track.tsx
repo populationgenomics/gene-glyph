@@ -438,10 +438,9 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                   className={cls}
                   data-vv-feature-id={featureId}
                   style={style}
-                  onMouseEnter={() => onFeatureHover?.(featureId)}
+                  onMouseEnter={(e) => onFeatureHover?.(featureId, e.currentTarget)}
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(featureId)}
-                  title={label}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{label}</span>

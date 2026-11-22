@@ -171,6 +171,7 @@ export function pfamTrack(config: PfamTrackConfig = {}): Track<PfamTrackConfig, 
         const labelMaxW = 2 * maxHalf;
 
         emitDomain({
+          onFeatureHover: args.onFeatureHover,
           placed: p,
           rect,
           rectHalf,
@@ -269,6 +270,7 @@ function placeDomain(domain: ProteinDomain, viewport: Viewport): PlacedDomain | 
 }
 
 interface EmitArgs {
+  onFeatureHover?: (featureId: string | null) => void;
   placed: PlacedDomain;
   rect: TrackRect;
   rectHalf: number;
@@ -294,6 +296,7 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 function emitDomain(args: EmitArgs): void {
   const {
+    onFeatureHover,
     placed,
     rect,
     rectHalf,
@@ -310,6 +313,12 @@ function emitDomain(args: EmitArgs): void {
 
   const domain = placed.domain;
   const featureId = idOfDomain(domain);
+  const hoverProps = onFeatureHover
+    ? {
+        onMouseEnter: () => onFeatureHover(featureId),
+        onMouseLeave: () => onFeatureHover(null),
+      }
+    : {};
   const fill = domainHue(domain.sourceId || domain.shortName);
   const fullName = domain.description || domain.shortName;
   const tooltip = `${fullName} (aa ${domain.aaStart}–${domain.aaEnd})`;
@@ -338,7 +347,13 @@ function emitDomain(args: EmitArgs): void {
     pushTo(
       rectsByExon,
       seg.exonIdx,
-      <Fragment key={`pfam-${featureId}-seg-${seg.exonIdx}`}>
+      <g
+        key={`pfam-${featureId}-seg-${seg.exonIdx}`}
+        className="vv-pfam-feature"
+        data-vv-feature-id={featureId}
+        aria-label={tooltip}
+        {...hoverProps}
+      >
         {painter.drawRect({
           key: `pfam-${featureId}-rect-${seg.exonIdx}`,
           x: localX,
@@ -353,7 +368,7 @@ function emitDomain(args: EmitArgs): void {
           vectorEffect: 'non-scaling-stroke',
           className: 'vv-pfam-rect',
         })}
-      </Fragment>,
+      </g>,
     );
   }
 
@@ -464,6 +479,7 @@ function emitDomain(args: EmitArgs): void {
       <g
         key={`pfam-${featureId}-label-wrap`}
         className="vv-pfam-label-wrap"
+        {...hoverProps}
         style={{
           transform:
             `translateX(${localXMid}px) ` +
@@ -481,7 +497,6 @@ function emitDomain(args: EmitArgs): void {
           fill={painter.color('vv-color-pfam-label', '#475569')}
           className="vv-pfam-label"
         >
-          <title>{tooltip}</title>
           {label}
         </text>
       </g>,

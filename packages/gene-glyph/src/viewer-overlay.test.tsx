@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { GeneGlyph } from './viewer.js';
+import { GeneGlyph, HEADER_TOOLTIP_TRACK_ID } from './viewer.js';
+import { pfamTrack } from './tracks/pfam-track.js';
 import { exonTrack } from './tracks/exon-track.js';
 import { variantTrack } from './tracks/variant-track.js';
 import type { TooltipRenderArgs, Transcript, ViewerVariant } from './types.js';
@@ -163,5 +164,125 @@ describe('GeneGlyph — Slice 17 overlay tooltips', () => {
     await tickRaf();
     await tickRaf();
     expect(container.querySelector('.vv-tooltip')).toBeNull();
+  });
+});
+
+describe('GeneGlyph — hover surfaces without native titles', () => {
+  const maneTranscript: Transcript = { ...transcript, isManeSelect: true };
+  const offTranscript: ViewerVariant = {
+    id: 'far',
+    label: 'Far variant',
+    coord: { kind: 'genomic', chr: 'chr2', pos: 5 },
+    category: 'other',
+  };
+
+  it('renders no title attribute and no SVG title element', async () => {
+    const { container } = render(
+      <GeneGlyph
+        transcript={maneTranscript}
+        protein={{
+          uniprotAcc: 'P00000',
+          length: 100,
+          alphafoldId: 'AF-P00000-F1',
+          domains: [
+            {
+              aaStart: 10,
+              aaEnd: 40,
+              source: 'pfam',
+              sourceId: 'PF00001',
+              shortName: 'Dom',
+              description: 'A domain',
+              entryType: 'domain',
+            },
+          ],
+        }}
+        tracks={[
+          exonTrack({}),
+          variantTrack({ id: 'variants', source: [...variants, offTranscript] }),
+          pfamTrack({}),
+        ]}
+      />,
+    );
+    await flushTrackLoads();
+    expect(container.querySelector('.vv-unplaced-chip')).not.toBeNull();
+    expect(container.querySelectorAll('[title]')).toHaveLength(0);
+    expect(container.querySelectorAll('title')).toHaveLength(0);
+  });
+
+  it('shows the MANE badge description through the tooltip and onHover', async () => {
+    const onHover = vi.fn();
+    const { container } = render(
+      <GeneGlyph transcript={maneTranscript} tracks={[exonTrack({})]} onHover={onHover} />,
+    );
+    await flushTrackLoads();
+    fireEvent.mouseEnter(container.querySelector('.vv-mane-badge')!);
+    await waitFor(() => {
+      expect(screen.getByTestId('gene-glyph-tooltip').textContent).toBe('MANE Select transcript');
+    });
+    expect(onHover).toHaveBeenCalledWith('mane-select', HEADER_TOOLTIP_TRACK_ID);
+  });
+
+  it("shows an unplaced chip's label through the tooltip", async () => {
+    const { container } = render(
+      <GeneGlyph
+        transcript={transcript}
+        tracks={[exonTrack({}), variantTrack({ id: 'variants', source: [offTranscript] })]}
+      />,
+    );
+    await flushTrackLoads();
+    fireEvent.mouseEnter(container.querySelector('.vv-unplaced-chip')!);
+    await waitFor(() => {
+      expect(screen.getByTestId('gene-glyph-tooltip').textContent).toBe('Far variant');
+    });
+  });
+
+  it('dismisses the tooltip on Escape and keeps it shut until the pointer leaves', async () => {
+    const { container } = render(
+      <GeneGlyph
+        transcript={transcript}
+        tracks={[exonTrack({}), variantTrack({ id: 'variants', source: [offTranscript] })]}
+      />,
+    );
+    await flushTrackLoads();
+    const chip = container.querySelector('.vv-unplaced-chip')!;
+    fireEvent.mouseEnter(chip);
+    await waitFor(() => expect(screen.queryByTestId('gene-glyph-tooltip')).not.toBeNull());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('gene-glyph-tooltip')).toBeNull());
+    fireEvent.mouseEnter(chip);
+    await tickRaf();
+    expect(screen.queryByTestId('gene-glyph-tooltip')).toBeNull();
+    fireEvent.mouseLeave(chip);
+    fireEvent.mouseEnter(chip);
+    await waitFor(() => expect(screen.queryByTestId('gene-glyph-tooltip')).not.toBeNull());
+  });
+
+  it('hands every surface to renderTooltipPanel and draws no tooltip of its own', async () => {
+    const renderTooltipPanel = vi.fn((args: TooltipRenderArgs) => (
+      <div data-testid="host-panel">{args.label}</div>
+    ));
+    const { container } = render(
+      <GeneGlyph
+        transcript={maneTranscript}
+        tracks={[exonTrack({}), variantTrack({ id: 'variants', source: [offTranscript] })]}
+        renderTooltipPanel={renderTooltipPanel}
+      />,
+    );
+    await flushTrackLoads();
+    const badge = container.querySelector('.vv-mane-badge')!;
+    badge.getBoundingClientRect = () =>
+      ({ left: 10, right: 90, top: 5, bottom: 20 }) as unknown as DOMRect;
+    fireEvent.mouseEnter(badge);
+    await waitFor(() => {
+      expect(screen.getByTestId('host-panel').textContent).toBe('MANE Select transcript');
+    });
+    expect(renderTooltipPanel).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        trackId: HEADER_TOOLTIP_TRACK_ID,
+        featureId: 'mane-select',
+        anchor: { left: 10, right: 90, top: 5, bottom: 20 },
+      }),
+    );
+    expect(screen.queryByTestId('gene-glyph-tooltip')).toBeNull();
   });
 });

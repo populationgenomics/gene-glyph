@@ -301,7 +301,18 @@ export interface ScreenPoint {
 /** Args passed to {@link GeneGlyphProps.renderTooltip}. Slice 17 ships hover
  *  tooltips as the first overlay kind; future overlay anchors (intron
  *  boundaries, "you are here" markers) reuse the same `point` contract. */
+/** A box in viewport (client) pixels, as `getBoundingClientRect` gives
+ *  one. */
+export interface TooltipAnchor {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export interface TooltipRenderArgs {
+  /** The hovered feature's track, or `HEADER_TOOLTIP_TRACK_ID` for the
+   *  built-in header. */
   trackId: string;
   featureId: string;
   /** Track-specific feature payload, resolved via
@@ -312,6 +323,14 @@ export interface TooltipRenderArgs {
    *  pixels for overlay placement. Hosts rarely need this — included for
    *  symmetry with imperative overlay APIs landing in later slices. */
   point: ScreenPoint;
+  /** The text the built-in tooltip shows: the track's
+   *  {@link Track.featureLabel}, or the header surface's description.
+   *  `null` when there is none. */
+  label: string | null;
+  /** The hovered surface's box on screen: the element's box for a surface
+   *  outside the figure (an unplaced chip, the header badge); for a figure
+   *  feature, a zero-width box at its x spanning its track's height. */
+  anchor: TooltipAnchor;
 }
 
 /** An ungapped run of transcribed bases: `length` bases from c. position
@@ -673,8 +692,10 @@ export interface TrackRenderArgs<TData> {
   hiddenByIntron?: ReadonlyMap<string, HiddenFeatureBucket>;
   /** Fires when the cursor enters or leaves a feature in this track; pass
    *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
-   *  render. The viewer maps it onto the host's `onHover` prop. */
-  onFeatureHover?: (featureId: string | null) => void;
+   *  render. The viewer maps it onto the host's `onHover` prop and opens
+   *  the tooltip. A surface outside the figure SVG (e.g. an unplaced chip)
+   *  passes its element as `anchorEl`, and the tooltip anchors to it. */
+  onFeatureHover?: (featureId: string | null, anchorEl?: Element) => void;
   /** Fires when a feature in this track is clicked. The viewer maps it onto
    *  the host's `onFeatureClick` prop. */
   onFeatureClick?: (featureId: string) => void;

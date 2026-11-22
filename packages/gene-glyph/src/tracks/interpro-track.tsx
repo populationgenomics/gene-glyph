@@ -257,6 +257,7 @@ function makeSubTrack(opts: SubTrackOptions): Track<unknown, InterProSubTrackDat
             labelMaxW = 2 * maxHalf;
           }
           emitDomain({
+            onFeatureHover: args.onFeatureHover,
             placed: p,
             lane,
             rect,
@@ -344,6 +345,7 @@ function filterDomains(
 }
 
 interface EmitArgs {
+  onFeatureHover?: (featureId: string | null) => void;
   placed: PlacedDomain;
   lane: number;
   rect: TrackRect;
@@ -372,6 +374,7 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 function emitDomain(args: EmitArgs): void {
   const {
+    onFeatureHover,
     placed,
     lane,
     rect,
@@ -391,6 +394,12 @@ function emitDomain(args: EmitArgs): void {
 
   const domain = placed.domain;
   const featureId = idOfDomain(domain);
+  const hoverProps = onFeatureHover
+    ? {
+        onMouseEnter: () => onFeatureHover(featureId),
+        onMouseLeave: () => onFeatureHover(null),
+      }
+    : {};
   const fill = domainHue(domain.sourceId || domain.shortName);
   const fullName = domain.shortName || domain.description;
   const tooltip = `${domain.shortName}${domain.description ? ` — ${domain.description}` : ''} (aa ${domain.aaStart}–${domain.aaEnd})`;
@@ -439,7 +448,13 @@ function emitDomain(args: EmitArgs): void {
         pushTo(
           rectsByExon,
           anchorExon.exonIdx,
-          <Fragment key={`ipr-${featureId}-line`}>
+          <g
+            key={`ipr-${featureId}-line`}
+            className="vv-interpro-feature"
+            data-vv-feature-id={featureId}
+            aria-label={tooltip}
+            {...hoverProps}
+          >
             <line
               key={`ipr-${featureId}-line-main`}
               x1={localStart}
@@ -476,7 +491,7 @@ function emitDomain(args: EmitArgs): void {
               vectorEffect="non-scaling-stroke"
               className="vv-interpro-cap"
             />
-          </Fragment>,
+          </g>,
         );
       }
     }
@@ -491,7 +506,13 @@ function emitDomain(args: EmitArgs): void {
       pushTo(
         rectsByExon,
         seg.exonIdx,
-        <Fragment key={`ipr-${featureId}-seg-${seg.exonIdx}`}>
+        <g
+          key={`ipr-${featureId}-seg-${seg.exonIdx}`}
+          className="vv-interpro-feature"
+          data-vv-feature-id={featureId}
+          aria-label={tooltip}
+          {...hoverProps}
+        >
           {painter.drawRect({
             key: `ipr-${featureId}-rect-${seg.exonIdx}`,
             x: localX,
@@ -506,7 +527,7 @@ function emitDomain(args: EmitArgs): void {
             vectorEffect: 'non-scaling-stroke',
             className: 'vv-interpro-rect',
           })}
-        </Fragment>,
+        </g>,
       );
     }
     // Bridge across inter-exon gaps. Split into three pieces (donor
@@ -610,6 +631,7 @@ function emitDomain(args: EmitArgs): void {
       <g
         key={`ipr-${featureId}-label-wrap`}
         className="vv-interpro-label-wrap"
+        {...hoverProps}
         style={{
           transform:
             `translateX(${anchorX}px) ` +
@@ -627,7 +649,6 @@ function emitDomain(args: EmitArgs): void {
           fill={painter.color('vv-color-pfam-label', '#475569')}
           className="vv-interpro-label"
         >
-          <title>{tooltip}</title>
           {label}
         </text>
       </g>,

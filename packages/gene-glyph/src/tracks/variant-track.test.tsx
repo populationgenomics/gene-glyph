@@ -387,7 +387,7 @@ describe('variantTrack', () => {
     fireEvent.mouseEnter(chips[0]!);
     fireEvent.click(chips[0]!);
     fireEvent.mouseLeave(chips[0]!);
-    expect(onFeatureHover).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId);
+    expect(onFeatureHover).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId, chips[0]);
     expect(onFeatureHover).toHaveBeenCalledWith(null);
     expect(onFeatureClick).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId);
   });

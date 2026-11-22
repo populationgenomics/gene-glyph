@@ -1,4 +1,4 @@
-export { GeneGlyph } from './viewer.js';
+export { GeneGlyph, HEADER_TOOLTIP_TRACK_ID } from './viewer.js';
 export type {
   GeneGlyphProps,
   GeneGlyphRef,
@@ -50,6 +50,7 @@ export type {
   AnchorTarget,
   ScreenPoint,
   ExonPlacement,
+  TooltipAnchor,
   TooltipRenderArgs,
   CoordinateMapper,
   Viewport,
