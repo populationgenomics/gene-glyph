@@ -4,7 +4,7 @@ import { GeneGlyph } from './viewer.js';
 import { exonTrack } from './tracks/exon-track.js';
 import { segmentBandTrack } from './tracks/segment-band-track.js';
 import { variantTrack } from './tracks/variant-track.js';
-import type { Transcript, ViewerVariant } from './types.js';
+import type { Track, Transcript, ViewerVariant } from './types.js';
 
 const transcript: Transcript = {
   geneSymbol: 'TEST',
@@ -142,5 +142,39 @@ describe('GeneGlyph — per-feature clickability', () => {
   it('makes no feature a button without onFeatureClick', async () => {
     const { container } = await renderMap({});
     expect(container.querySelectorAll('[data-vv-feature-id][role="button"]')).toHaveLength(0);
+  });
+});
+
+describe('GeneGlyph — clicks from tracks that ignore isFeatureClickable', () => {
+  it('does not report a click on a feature the host keeps unclickable', async () => {
+    const onFeatureClick = vi.fn();
+    const naive: Track<unknown, { ready: true }> = {
+      id: 'naive',
+      coordSystem: 'cds',
+      heightPolicy: 'fixed',
+      load: async () => ({ ready: true }),
+      height: () => ({ px: 10, didTruncate: false }),
+      render: ({ onFeatureClick: click }) => (
+        <g>
+          <rect data-testid="naive-plain" onClick={() => click?.('plain')} />
+          <rect data-testid="naive-cited" onClick={() => click?.('cited')} />
+        </g>
+      ),
+      toJSON: () => ({}),
+    };
+    const view = render(
+      <GeneGlyph
+        transcript={transcript}
+        tracks={[naive]}
+        onFeatureClick={onFeatureClick}
+        isFeatureClickable={citedOnly}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(view.getByTestId('naive-plain'));
+    fireEvent.click(view.getByTestId('naive-cited'));
+    expect(onFeatureClick.mock.calls).toEqual([['cited', 'naive']]);
   });
 });

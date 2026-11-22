@@ -1035,11 +1035,13 @@ function GeneGlyphInner(
     [onFeatureClick, isFeatureClickable],
   );
 
+  // Tracks that ignore `isFeatureClickable` still cannot report a click on
+  // a feature the host keeps unclickable.
   const handleClick = useCallback(
     (trackId: string, featureId: string) => {
-      onFeatureClick?.(featureId, trackId);
+      if (isClickable(trackId, featureId)) onFeatureClick?.(featureId, trackId);
     },
-    [onFeatureClick],
+    [onFeatureClick, isClickable],
   );
 
   const applyImperativeRange = useCallback(
