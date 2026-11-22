@@ -693,3 +693,55 @@ describe('ViewportController — Phase 3 soft-collapse spec', () => {
     expect(baseline.flanks ?? []).toHaveLength(0);
   });
 });
+
+describe('ViewportController — projectGenomicRange through alignment blocks', () => {
+  // Exon 1: c.1-50 <-> 1000-1049, genomic gap 1050-1051, c.51-80 <->
+  // 1052-1081, c. gap c.81-82, c.83-100 <-> 1082-1099.
+  const gapped: Transcript = {
+    ...transcript,
+    exons: [
+      {
+        ...transcript.exons[0]!,
+        blocks: [
+          { cdsStart: 1, genomicStart: 1000, length: 50 },
+          { cdsStart: 51, genomicStart: 1052, length: 30 },
+          { cdsStart: 83, genomicStart: 1082, length: 18 },
+        ],
+      },
+      ...transcript.exons.slice(1),
+    ],
+  };
+  const gappedViewport = () =>
+    new ViewportController({
+      mapper: createCoordinateMapper(gapped),
+      width: 720,
+      mode: 'transcript',
+    });
+
+  it('draws a range across a genomic gap over the c. bases on either side', () => {
+    const vp = gappedViewport();
+    expect(vp.projectGenomicRange('chr1', 1045, 1055).segments).toEqual(
+      vp.projectCdsRange(46, 54).segments,
+    );
+  });
+
+  it('draws a range across a c. gap over the transcript-only bases too', () => {
+    const vp = gappedViewport();
+    expect(vp.projectGenomicRange('chr1', 1080, 1083).segments).toEqual(
+      vp.projectCdsRange(79, 84).segments,
+    );
+  });
+
+  it('draws nothing for a range inside a genomic gap', () => {
+    const proj = gappedViewport().projectGenomicRange('chr1', 1050, 1051);
+    expect(proj.segments).toEqual([]);
+    expect(proj.droppedRanges).toEqual([{ kind: 'out-of-bounds' }]);
+  });
+
+  it('places a genomic coord through the blocks', () => {
+    const vp = gappedViewport();
+    expect(vp.toBaselineX({ kind: 'genomic', chr: 'chr1', pos: 1082 })).toBe(
+      vp.toBaselineX({ kind: 'cds', cPos: 83, offset: 0 }),
+    );
+  });
+});

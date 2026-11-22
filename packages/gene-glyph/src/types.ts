@@ -4,6 +4,17 @@ import type { ReactNode } from 'react';
 // Domain types — the public data contract.
 // ---------------------------------------------------------------------------
 
+/** One ungapped run of an exon's coding part: `length` bases from c.
+ *  position `cdsStart` on, aligned base for base to the genome from
+ *  `genomicStart`. `genomicStart` is the run's lowest genomic coordinate
+ *  on both strands, so on a `-` strand transcript c. `cdsStart` sits at
+ *  `genomicStart + length - 1` and c. increases as genomic decreases. */
+export interface AlignmentBlock {
+  cdsStart: number;
+  length: number;
+  genomicStart: number;
+}
+
 export interface Exon {
   number: number;
   cdsStart: number;
@@ -11,6 +22,17 @@ export interface Exon {
   genomicStart: number;
   genomicEnd: number;
   chr: string;
+  /** How the coding part aligns to the genome, for a transcript whose
+   *  sequence differs from the genome by indels. Without `blocks`,
+   *  c. `cdsStart..cdsEnd` maps linearly onto `genomicStart..genomicEnd`.
+   *  With them, every genomic <-> c. mapping goes through the blocks:
+   *  bases between two blocks on the genome (present in the genome,
+   *  absent from the transcript) have no c. position, and c. positions
+   *  between two blocks (present only in the transcript) have no genomic
+   *  base. Blocks are listed in transcript order, lie inside the exon's
+   *  c. and genomic spans, and do not overlap; the mapper throws
+   *  otherwise. */
+  blocks?: AlignmentBlock[];
   /** 5' UTR length (bp) within this exon — typically non-zero only on the
    *  first CDS-containing exon. Optional; defaults to 0. The viewport
    *  allocates display width for UTR bp at the same `pxPerBp` as CDS bp,
@@ -255,7 +277,11 @@ export interface TooltipRenderArgs {
 
 export interface CoordinateMapper {
   readonly transcript: Transcript;
+  /** `null` off the transcript, and for a base inside an exon that the
+   *  exon's {@link Exon.blocks} leave out of the transcript. */
   genomicToCds(chr: string, pos: number): CdsPosition | null;
+  /** `null` off the transcript, and for an exonic c. position that the
+   *  exon's {@link Exon.blocks} give no genomic base. */
   cdsToGenomic(cPos: number, offset: number): GenomicPosition | null;
   cdsToProtein(cPos: number): number | null;
   proteinToCds(aa: number): number;

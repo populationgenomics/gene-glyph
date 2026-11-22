@@ -1,4 +1,5 @@
 import { createStormDetector } from './debug-leash.js';
+import { mapExons, runGenomicToRuler, type MappedExon } from './coordinate-mapper.js';
 import { ProjectionFrame } from './projection-frame.js';
 import type {
   AnchorTarget,
@@ -132,9 +133,11 @@ export class ViewportController implements Viewport {
   private _publishStorm = createStormDetector('ViewportController.publish');
   private _listeners = new Set<() => void>();
   readonly mapper: CoordinateMapper;
+  private readonly mappedExons: readonly MappedExon[];
 
   constructor(init: ViewportControllerInit) {
     this.mapper = init.mapper;
+    this.mappedExons = mapExons(init.mapper.transcript);
     this._mode = init.mode ?? 'genome';
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
@@ -1227,26 +1230,35 @@ export class ViewportController implements Viewport {
 
   projectGenomicRange(chr: string, start: number, end: number): RangeProjection {
     const [gLo, gHi] = clampOrdered(start, end);
-    const exons = this.mapper.transcript.exons;
+    const strand = this.mapper.transcript.strand;
 
     const segments: RangeSegment[] = [];
     const droppedRanges: DroppedRange[] = [];
     let droppedIntronicCount = 0;
     let droppedExonicCount = 0;
 
-    const exonHits: Array<{ idx: number; cdsLo: number; cdsHi: number }> = [];
-    for (let i = 0; i < exons.length; i++) {
-      const e = exons[i]!;
-      if (e.chr !== chr) continue;
-      const overlapLo = Math.max(gLo, e.genomicStart);
-      const overlapHi = Math.min(gHi, e.genomicEnd);
-      if (overlapLo > overlapHi) continue;
-      const cdsA = exonicToCds(e, overlapLo, this.mapper.transcript.strand);
-      const cdsB = exonicToCds(e, overlapHi, this.mapper.transcript.strand);
-      const cdsLo = Math.min(cdsA, cdsB);
-      const cdsHi = Math.max(cdsA, cdsB);
-      exonHits.push({ idx: i, cdsLo, cdsHi });
+    // Per drawn exon, the lowest and highest ruler position of the bases
+    // the range covers. A c. gap between two covered bases (bases only
+    // the transcript has) falls inside the span and is drawn with it.
+    const byExon = new Map<number, { idx: number; cdsLo: number; cdsHi: number }>();
+    for (const m of this.mappedExons) {
+      if (m.chr !== chr || gHi < m.genomicStart || gLo > m.genomicEnd) continue;
+      for (const run of m.runs) {
+        const runHi = run.genomicStart + run.length - 1;
+        const overlapLo = Math.max(gLo, run.genomicStart);
+        const overlapHi = Math.min(gHi, runHi);
+        if (overlapLo > overlapHi) continue;
+        const a = runGenomicToRuler(run, overlapLo, strand)!;
+        const b = runGenomicToRuler(run, overlapHi, strand)!;
+        const prev = byExon.get(m.exonIdx);
+        byExon.set(m.exonIdx, {
+          idx: m.exonIdx,
+          cdsLo: Math.min(a, b, prev?.cdsLo ?? Infinity),
+          cdsHi: Math.max(a, b, prev?.cdsHi ?? -Infinity),
+        });
+      }
     }
+    const exonHits = [...byExon.values()].sort((x, y) => x.idx - y.idx);
 
     segments.push(
       ...this.exonHitsToSegments(exonHits.map((h) => ({ idx: h.idx, lo: h.cdsLo, hi: h.cdsHi }))),
@@ -1477,16 +1489,6 @@ function snapRightEdge(exonRects: ExonBaseline[], width: number): void {
     last.xEnd = width;
     last.width = last.xEnd - last.xStart;
   }
-}
-
-function exonicToCds(
-  exon: { cdsStart: number; genomicStart: number; genomicEnd: number },
-  pos: number,
-  strand: '+' | '-',
-): number {
-  return strand === '+'
-    ? exon.cdsStart + (pos - exon.genomicStart)
-    : exon.cdsStart + (exon.genomicEnd - pos);
 }
 
 /** Convert the viewport's range from one mode's ruler to another's, preserving

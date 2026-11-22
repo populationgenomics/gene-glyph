@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCoordinateMapper, defaultCollapsedRegions } from './coordinate-mapper.js';
-import type { Transcript } from './types.js';
+import type { Exon, Transcript } from './types.js';
 
 // Three-exon transcript on the '+' strand.
 // CDS coordinates are 1-based and contiguous: exon 1 = c.1-100,
@@ -171,5 +171,124 @@ describe('defaultCollapsedRegions — Phase 3 soft-collapse spec', () => {
       exons: [{ number: 1, cdsStart: 1, cdsEnd: 9, genomicStart: 1, genomicEnd: 9, chr: 'chr1' }],
     };
     expect(defaultCollapsedRegions(oneExon)).toEqual([]);
+  });
+});
+
+// Exon 1 of each transcript below aligns to the genome with two indels:
+// genomic bases the transcript lacks (a 2 bp genomic gap after c.50) and
+// transcript bases the genome lacks (c.81-82, a 2 bp c. gap). Exons 2 and
+// 3 carry no blocks and map linearly.
+function withGappedExon1(base: Transcript, blocks: Exon['blocks']): Transcript {
+  const [first, ...rest] = base.exons;
+  return { ...base, exons: [{ ...first!, blocks }, ...rest] };
+}
+
+const plusGapped = withGappedExon1(plusTranscript, [
+  { cdsStart: 1, genomicStart: 1000, length: 50 }, // c.1-50 <-> 1000-1049
+  { cdsStart: 51, genomicStart: 1052, length: 30 }, // c.51-80 <-> 1052-1081
+  { cdsStart: 83, genomicStart: 1082, length: 18 }, // c.83-100 <-> 1082-1099
+]);
+
+const minusGapped = withGappedExon1(minusTranscript, [
+  { cdsStart: 1, genomicStart: 3050, length: 50 }, // c.1-50 <-> 3099-3050
+  { cdsStart: 51, genomicStart: 3018, length: 30 }, // c.51-80 <-> 3047-3018
+  { cdsStart: 83, genomicStart: 3000, length: 18 }, // c.83-100 <-> 3017-3000
+]);
+
+describe('CoordinateMapper — exons with alignment blocks', () => {
+  it.each([
+    [1049, 50],
+    [1052, 51],
+    [1081, 80],
+    [1082, 83],
+    [1099, 100],
+  ])('maps genomic %i to c.%i through the blocks on the + strand', (pos, cPos) => {
+    const mapper = createCoordinateMapper(plusGapped);
+    expect(mapper.genomicToCds('chr1', pos)).toEqual({ cPos, offset: 0 });
+    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+  });
+
+  it.each([
+    [3099, 1],
+    [3050, 50],
+    [3047, 51],
+    [3018, 80],
+    [3017, 83],
+    [3000, 100],
+  ])('maps genomic %i to c.%i through the blocks on the - strand', (pos, cPos) => {
+    const mapper = createCoordinateMapper(minusGapped);
+    expect(mapper.genomicToCds('chr1', pos)).toEqual({ cPos, offset: 0 });
+    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+  });
+
+  it.each([
+    ['+', 1050],
+    ['+', 1051],
+    ['-', 3048],
+    ['-', 3049],
+  ] as const)('gives a genomic-gap base no c. position (%s strand, %i)', (strand, pos) => {
+    const mapper = createCoordinateMapper(strand === '+' ? plusGapped : minusGapped);
+    expect(mapper.genomicToCds('chr1', pos)).toBeNull();
+  });
+
+  it.each([
+    ['+', 81],
+    ['+', 82],
+    ['-', 81],
+    ['-', 82],
+  ] as const)('gives a c.-gap position no genomic base (%s strand, c.%i)', (strand, cPos) => {
+    const mapper = createCoordinateMapper(strand === '+' ? plusGapped : minusGapped);
+    expect(mapper.cdsToGenomic(cPos, 0)).toBeNull();
+  });
+
+  it('resolves a genomic coord in a genomic gap to no CDS position', () => {
+    const mapper = createCoordinateMapper(plusGapped);
+    expect(mapper.resolveCds({ kind: 'genomic', chr: 'chr1', pos: 1050 })).toBeNull();
+  });
+
+  it('keeps intronic offsets anchored on the exon edges', () => {
+    const plus = createCoordinateMapper(plusGapped);
+    expect(plus.genomicToCds('chr1', 1105)).toEqual({ cPos: 100, offset: 6 });
+    expect(plus.cdsToGenomic(100, 6)).toEqual({ chr: 'chr1', pos: 1105 });
+    const minus = createCoordinateMapper(minusGapped);
+    expect(minus.genomicToCds('chr1', 2995)).toEqual({ cPos: 100, offset: 5 });
+    expect(minus.cdsToGenomic(100, 5)).toEqual({ chr: 'chr1', pos: 2995 });
+  });
+
+  it.each([
+    [
+      'overlapping in c.',
+      [
+        { cdsStart: 1, genomicStart: 1000, length: 50 },
+        { cdsStart: 50, genomicStart: 1052, length: 30 },
+      ],
+      /overlaps or precedes/,
+    ],
+    [
+      'listed against transcript order',
+      [
+        { cdsStart: 51, genomicStart: 1052, length: 30 },
+        { cdsStart: 1, genomicStart: 1000, length: 50 },
+      ],
+      /overlaps or precedes/,
+    ],
+    ['past the exon end in c.', [{ cdsStart: 90, genomicStart: 1080, length: 20 }], /outside c\./],
+    [
+      'past the exon end on the genome',
+      [{ cdsStart: 1, genomicStart: 1090, length: 20 }],
+      /outside 1000-1099/,
+    ],
+    ['of zero length', [{ cdsStart: 1, genomicStart: 1000, length: 0 }], /length 0/],
+    ['that are empty', [], /blocks is empty/],
+  ])('rejects blocks %s', (_name, blocks, message) => {
+    expect(() => createCoordinateMapper(withGappedExon1(plusTranscript, blocks))).toThrow(message);
+  });
+
+  it('rejects - strand blocks listed in ascending genomic order', () => {
+    const ascending = withGappedExon1(minusTranscript, [
+      { cdsStart: 1, genomicStart: 3000, length: 50 },
+      { cdsStart: 51, genomicStart: 3050, length: 50 },
+    ]);
+    expect(() => createCoordinateMapper(ascending)).toThrow(/overlaps or precedes/);
   });
 });
