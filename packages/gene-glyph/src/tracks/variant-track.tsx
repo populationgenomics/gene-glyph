@@ -437,6 +437,7 @@ export function variantTrack(
             interaction,
             inBrush: inBrushIds.has(p.variant.id),
             label: labelOf(data, p.variant),
+            painter,
             onFeatureHover,
             onFeatureClick,
           }),
@@ -633,16 +634,15 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
               style={{ transform: counterScale, transformOrigin: '0 0' }}
             >
               <g transform={`translate(0 ${cy})`}>
-                {p.intronSide && (
-                  <path
-                    className="vv-variant-intron-mark"
-                    d={intronMarkPath(p.intronSide, r + 1, 0)}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )}
+                {p.intronSide &&
+                  painter.drawPath({
+                    className: 'vv-variant-intron-mark',
+                    d: intronMarkPath(p.intronSide, r + 1, 0),
+                    fill: 'none',
+                    stroke,
+                    strokeWidth: 1.5,
+                    vectorEffect: 'non-scaling-stroke',
+                  })}
                 <circle
                   className="vv-variant-ring"
                   cx={0}
@@ -696,6 +696,7 @@ interface RenderVariantArgs {
   interaction: TrackRenderArgs<VariantTrackData>['interaction'];
   inBrush: boolean;
   label: string;
+  painter: TrackRenderArgs<VariantTrackData>['painter'];
   onFeatureHover?: (featureId: string | null) => void;
   onFeatureClick?: (featureId: string) => void;
 }
@@ -710,6 +711,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
     interaction,
     inBrush,
     label,
+    painter,
     onFeatureHover,
     onFeatureClick,
   } = args;
@@ -762,16 +764,15 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
           vectorEffect="non-scaling-stroke"
         />
         <g className="vv-variant-shape" style={{ transform: counterScale, transformOrigin: '0 0' }}>
-          {placement.intronSide && (
-            <path
-              className="vv-variant-intron-mark"
-              d={intronMarkPath(placement.intronSide, 0, tickTop, tickBottom)}
-              fill="none"
-              stroke={color}
-              strokeWidth={1.5}
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
+          {placement.intronSide &&
+            painter.drawPath({
+              className: 'vv-variant-intron-mark',
+              d: intronMarkPath(placement.intronSide, 0, tickTop, tickBottom),
+              fill: 'none',
+              stroke: color,
+              strokeWidth: 1.5,
+              vectorEffect: 'non-scaling-stroke',
+            })}
           <circle
             className="vv-variant-ring"
             cx={0}

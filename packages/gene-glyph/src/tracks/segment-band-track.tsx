@@ -273,36 +273,34 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
           pushTo(
             rectsByExon,
             dock.exonIdx,
-            <g
-              key={`band-${featureId}-intron`}
-              className="vv-segment-band-feature is-intronic"
-              data-vv-feature-id={featureId}
-              data-vv-intron-side={dock.intronSide}
-              onMouseEnter={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
-              onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
-              onClick={click}
-              role={click ? 'button' : undefined}
-              tabIndex={click ? 0 : undefined}
-              aria-label={labelOf(seg)}
-              style={{
+            painter.group({
+              key: `band-${featureId}-intron`,
+              className: 'vv-segment-band-feature is-intronic',
+              featureId,
+              attributes: { 'data-vv-intron-side': dock.intronSide },
+              onMouseEnter: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
+              onMouseLeave: onFeatureHover ? () => onFeatureHover(null) : undefined,
+              onClick: click,
+              role: click ? 'button' : undefined,
+              tabIndex: click ? 0 : undefined,
+              ariaLabel: labelOf(seg),
+              style: {
                 transform:
                   `translateX(${dock.localX}px) ` +
                   `scaleX(calc(1 / var(--vv-exon-scale-x-${dock.exonIdx}, 1)))`,
                 transformOrigin: '0 0',
-              }}
-            >
-              <path
-                className="vv-segment-band-intron-mark"
-                d={
+              },
+              children: painter.drawPath({
+                className: 'vv-segment-band-intron-mark',
+                d:
                   `M0 ${rect.yTop}V${rect.yBottom}` +
-                  intronMarkPath(dock.intronSide, 0, rect.yTop, rect.yBottom)
-                }
-                fill="none"
-                stroke={fill}
-                strokeWidth={2}
-                vectorEffect="non-scaling-stroke"
-              />
-            </g>,
+                  intronMarkPath(dock.intronSide, 0, rect.yTop, rect.yBottom),
+                fill: 'none',
+                stroke: fill,
+                strokeWidth: 2,
+                vectorEffect: 'non-scaling-stroke',
+              }),
+            }),
           );
           continue;
         }

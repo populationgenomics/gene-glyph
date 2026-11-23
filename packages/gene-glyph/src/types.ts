@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
 // Domain types — the public data contract.
@@ -817,6 +817,8 @@ export interface DrawRectArgs {
   stroke?: string;
   strokeWidth?: number;
   vectorEffect?: string;
+  fillOpacity?: number;
+  strokeOpacity?: number;
   className?: string;
   onClick?: () => void;
   key?: string | number;
@@ -850,6 +852,7 @@ export interface DrawPathArgs {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  vectorEffect?: string;
   className?: string;
   key?: string | number;
 }
@@ -870,6 +873,20 @@ export interface GroupArgs {
   style?: Record<string, string | number>;
   children: ReactNode;
   key?: string | number;
+  /** Set when the group is a feature (or a piece of one): written as
+   *  `data-vv-feature-id`. */
+  featureId?: string;
+  /** Further attributes, by full name (`data-vv-intron-side`, ...). */
+  attributes?: Record<string, string | number | undefined>;
+  ariaLabel?: string;
+  role?: 'button';
+  tabIndex?: number;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onClick?: () => void;
+  onKeyDown?: (e: KeyboardEvent) => void;
 }
 
 export type PainterMode = 'screen' | 'export';

@@ -107,22 +107,21 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // visually distinct ribbons.
       if (viewport.mode !== 'protein') {
         const utrY = exonY + exonH / 4;
-        const utrRect = (key: string, x: number, width: number, className: string) => (
-          <rect
-            key={key}
-            x={x}
-            y={utrY}
-            width={width}
-            height={exonH / 2}
-            fill={painter.color('vv-color-exon-fill', '#94a3b8')}
-            stroke={painter.color('vv-color-exon-stroke', '#475569')}
-            strokeWidth={1}
-            strokeOpacity={0.6}
-            fillOpacity={0.35}
-            vectorEffect="non-scaling-stroke"
-            className={className}
-          />
-        );
+        const utrRect = (key: string, x: number, width: number, className: string) =>
+          painter.drawRect({
+            key,
+            x,
+            y: utrY,
+            width,
+            height: exonH / 2,
+            fill: painter.color('vv-color-exon-fill', '#94a3b8'),
+            stroke: painter.color('vv-color-exon-stroke', '#475569'),
+            strokeWidth: 1,
+            strokeOpacity: 0.6,
+            fillOpacity: 0.35,
+            vectorEffect: 'non-scaling-stroke',
+            className,
+          });
         for (const eb of geom.exons) {
           const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
           const acceptorWidth = flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
