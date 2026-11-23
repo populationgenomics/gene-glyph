@@ -317,6 +317,8 @@ function emitDomain(args: EmitArgs): void {
     ? {
         onMouseEnter: () => onFeatureHover(featureId),
         onMouseLeave: () => onFeatureHover(null),
+        onFocus: () => onFeatureHover(featureId),
+        onBlur: () => onFeatureHover(null),
       }
     : {};
   const fill = domainHue(domain.sourceId || domain.shortName);
@@ -347,28 +349,31 @@ function emitDomain(args: EmitArgs): void {
     pushTo(
       rectsByExon,
       seg.exonIdx,
-      <g
-        key={`pfam-${featureId}-seg-${seg.exonIdx}`}
-        className="vv-pfam-feature"
-        data-vv-feature-id={featureId}
-        aria-label={tooltip}
-        {...hoverProps}
-      >
-        {painter.drawRect({
-          key: `pfam-${featureId}-rect-${seg.exonIdx}`,
-          x: localX,
-          y: rectY,
-          width,
-          height: rectH,
-          rx: 2,
-          ry: 2,
-          fill,
-          stroke: painter.color('vv-color-pfam-stroke', '#475569'),
-          strokeWidth: 0.75,
-          vectorEffect: 'non-scaling-stroke',
-          className: 'vv-pfam-rect',
-        })}
-      </g>,
+      painter.group({
+        key: `pfam-${featureId}-seg-${seg.exonIdx}`,
+        className: 'vv-pfam-feature',
+        featureId,
+        ariaLabel: tooltip,
+        ...hoverProps,
+        children: (
+          <>
+            {painter.drawRect({
+              key: `pfam-${featureId}-rect-${seg.exonIdx}`,
+              x: localX,
+              y: rectY,
+              width,
+              height: rectH,
+              rx: 2,
+              ry: 2,
+              fill,
+              stroke: painter.color('vv-color-pfam-stroke', '#475569'),
+              strokeWidth: 0.75,
+              vectorEffect: 'non-scaling-stroke',
+              className: 'vv-pfam-rect',
+            })}
+          </>
+        ),
+      }),
     );
   }
 
@@ -476,30 +481,33 @@ function emitDomain(args: EmitArgs): void {
     pushTo(
       labelsByExon,
       labelExon.exonIdx,
-      <g
-        key={`pfam-${featureId}-label-wrap`}
-        className="vv-pfam-label-wrap"
-        {...hoverProps}
-        style={{
+      painter.group({
+        key: `pfam-${featureId}-label-wrap`,
+        className: 'vv-pfam-label-wrap',
+        ...hoverProps,
+        style: {
           transform:
             `translateX(${localXMid}px) ` +
             `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
           transformOrigin: '0 0',
-        }}
-      >
-        <text
-          key={`pfam-${featureId}-label`}
-          x={0}
-          y={rectY - labelOffset}
-          textAnchor="middle"
-          dominantBaseline="auto"
-          fontSize={labelFont}
-          fill={painter.color('vv-color-pfam-label', '#475569')}
-          className="vv-pfam-label"
-        >
-          {label}
-        </text>
-      </g>,
+        },
+        children: (
+          <>
+            <text
+              key={`pfam-${featureId}-label`}
+              x={0}
+              y={rectY - labelOffset}
+              textAnchor="middle"
+              dominantBaseline="auto"
+              fontSize={labelFont}
+              fill={painter.color('vv-color-pfam-label', '#475569')}
+              className="vv-pfam-label"
+            >
+              {label}
+            </text>
+          </>
+        ),
+      }),
     );
   }
 }

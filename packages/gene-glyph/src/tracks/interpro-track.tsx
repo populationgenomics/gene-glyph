@@ -398,6 +398,8 @@ function emitDomain(args: EmitArgs): void {
     ? {
         onMouseEnter: () => onFeatureHover(featureId),
         onMouseLeave: () => onFeatureHover(null),
+        onFocus: () => onFeatureHover(featureId),
+        onBlur: () => onFeatureHover(null),
       }
     : {};
   const fill = domainHue(domain.sourceId || domain.shortName);
@@ -448,50 +450,53 @@ function emitDomain(args: EmitArgs): void {
         pushTo(
           rectsByExon,
           anchorExon.exonIdx,
-          <g
-            key={`ipr-${featureId}-line`}
-            className="vv-interpro-feature"
-            data-vv-feature-id={featureId}
-            aria-label={tooltip}
-            {...hoverProps}
-          >
-            <line
-              key={`ipr-${featureId}-line-main`}
-              x1={localStart}
-              x2={localEnd}
-              y1={lineY}
-              y2={lineY}
-              stroke={fill}
-              strokeWidth={4.5}
-              strokeLinecap="butt"
-              vectorEffect="non-scaling-stroke"
-              className="vv-interpro-line"
-            />
-            <line
-              key={`ipr-${featureId}-cap-l`}
-              x1={localStart}
-              x2={localStart}
-              y1={lineY - capHalf}
-              y2={lineY + capHalf}
-              stroke={fill}
-              strokeWidth={2}
-              strokeLinecap="butt"
-              vectorEffect="non-scaling-stroke"
-              className="vv-interpro-cap"
-            />
-            <line
-              key={`ipr-${featureId}-cap-r`}
-              x1={localEnd}
-              x2={localEnd}
-              y1={lineY - capHalf}
-              y2={lineY + capHalf}
-              stroke={fill}
-              strokeWidth={2}
-              strokeLinecap="butt"
-              vectorEffect="non-scaling-stroke"
-              className="vv-interpro-cap"
-            />
-          </g>,
+          painter.group({
+            key: `ipr-${featureId}-line`,
+            className: 'vv-interpro-feature',
+            featureId,
+            ariaLabel: tooltip,
+            ...hoverProps,
+            children: (
+              <>
+                <line
+                  key={`ipr-${featureId}-line-main`}
+                  x1={localStart}
+                  x2={localEnd}
+                  y1={lineY}
+                  y2={lineY}
+                  stroke={fill}
+                  strokeWidth={4.5}
+                  strokeLinecap="butt"
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-interpro-line"
+                />
+                <line
+                  key={`ipr-${featureId}-cap-l`}
+                  x1={localStart}
+                  x2={localStart}
+                  y1={lineY - capHalf}
+                  y2={lineY + capHalf}
+                  stroke={fill}
+                  strokeWidth={2}
+                  strokeLinecap="butt"
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-interpro-cap"
+                />
+                <line
+                  key={`ipr-${featureId}-cap-r`}
+                  x1={localEnd}
+                  x2={localEnd}
+                  y1={lineY - capHalf}
+                  y2={lineY + capHalf}
+                  stroke={fill}
+                  strokeWidth={2}
+                  strokeLinecap="butt"
+                  vectorEffect="non-scaling-stroke"
+                  className="vv-interpro-cap"
+                />
+              </>
+            ),
+          }),
         );
       }
     }
@@ -506,28 +511,31 @@ function emitDomain(args: EmitArgs): void {
       pushTo(
         rectsByExon,
         seg.exonIdx,
-        <g
-          key={`ipr-${featureId}-seg-${seg.exonIdx}`}
-          className="vv-interpro-feature"
-          data-vv-feature-id={featureId}
-          aria-label={tooltip}
-          {...hoverProps}
-        >
-          {painter.drawRect({
-            key: `ipr-${featureId}-rect-${seg.exonIdx}`,
-            x: localX,
-            y: rectY,
-            width,
-            height: rectH,
-            rx: 2,
-            ry: 2,
-            fill,
-            stroke: painter.color('vv-color-pfam-stroke', '#475569'),
-            strokeWidth: 0.5,
-            vectorEffect: 'non-scaling-stroke',
-            className: 'vv-interpro-rect',
-          })}
-        </g>,
+        painter.group({
+          key: `ipr-${featureId}-seg-${seg.exonIdx}`,
+          className: 'vv-interpro-feature',
+          featureId,
+          ariaLabel: tooltip,
+          ...hoverProps,
+          children: (
+            <>
+              {painter.drawRect({
+                key: `ipr-${featureId}-rect-${seg.exonIdx}`,
+                x: localX,
+                y: rectY,
+                width,
+                height: rectH,
+                rx: 2,
+                ry: 2,
+                fill,
+                stroke: painter.color('vv-color-pfam-stroke', '#475569'),
+                strokeWidth: 0.5,
+                vectorEffect: 'non-scaling-stroke',
+                className: 'vv-interpro-rect',
+              })}
+            </>
+          ),
+        }),
       );
     }
     // Bridge across inter-exon gaps. Split into three pieces (donor
@@ -628,30 +636,33 @@ function emitDomain(args: EmitArgs): void {
     pushTo(
       labelsByExon,
       labelExon.exonIdx,
-      <g
-        key={`ipr-${featureId}-label-wrap`}
-        className="vv-interpro-label-wrap"
-        {...hoverProps}
-        style={{
+      painter.group({
+        key: `ipr-${featureId}-label-wrap`,
+        className: 'vv-interpro-label-wrap',
+        ...hoverProps,
+        style: {
           transform:
             `translateX(${anchorX}px) ` +
             `scaleX(calc(1 / var(--vv-exon-scale-x-${labelExon.exonIdx}, 1)))`,
           transformOrigin: '0 0',
-        }}
-      >
-        <text
-          key={`ipr-${featureId}-label`}
-          x={0}
-          y={labelY}
-          textAnchor={textAnchor}
-          dominantBaseline={dominantBaseline}
-          fontSize={labelFont}
-          fill={painter.color('vv-color-pfam-label', '#475569')}
-          className="vv-interpro-label"
-        >
-          {label}
-        </text>
-      </g>,
+        },
+        children: (
+          <>
+            <text
+              key={`ipr-${featureId}-label`}
+              x={0}
+              y={labelY}
+              textAnchor={textAnchor}
+              dominantBaseline={dominantBaseline}
+              fontSize={labelFont}
+              fill={painter.color('vv-color-pfam-label', '#475569')}
+              className="vv-interpro-label"
+            >
+              {label}
+            </text>
+          </>
+        ),
+      }),
     );
   }
 }
