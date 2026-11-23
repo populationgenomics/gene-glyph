@@ -497,6 +497,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         ...serialisable,
         id,
         label: config.label,
+        outline: config.outline,
         heightPx: trackHeight,
         showLabels,
         minLabelWidthPx: minLabelWidth,

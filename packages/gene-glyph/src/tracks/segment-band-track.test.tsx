@@ -687,4 +687,14 @@ describe('segmentBandTrack — outlines', () => {
   it('draws no outline when outline is null', async () => {
     expect(await strokeOf(null)).toBeNull();
   });
+
+  it('serialises the outline option', () => {
+    const track = segmentBandTrack<RmcCategory>({
+      source: [],
+      coordSystem: 'cds',
+      palette,
+      outline: null,
+    });
+    expect(track.toJSON()).toHaveProperty('outline', null);
+  });
 });
