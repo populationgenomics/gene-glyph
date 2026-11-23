@@ -31,3 +31,6 @@ npm-debug.log*
 
 # google-github-actions/auth credentials
 gha-creds-*.json
+
+# Claude Code worktrees
+.claude/worktrees/
