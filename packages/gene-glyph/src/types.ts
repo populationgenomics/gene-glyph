@@ -325,12 +325,14 @@ export interface TooltipRenderArgs {
   point: ScreenPoint;
   /** The text the built-in tooltip shows: the track's
    *  {@link Track.featureLabel}, or the header surface's description.
-   *  `null` when there is none. */
-  label: string | null;
+   *  `null` when there is none. The viewer always sets this and `anchor`;
+   *  both are optional so code that builds these args itself still
+   *  compiles. */
+  label?: string | null;
   /** The hovered surface's box on screen: the element's box for a surface
    *  outside the figure (an unplaced chip, the header badge); for a figure
    *  feature, a zero-width box at its x spanning its track's height. */
-  anchor: TooltipAnchor;
+  anchor?: TooltipAnchor;
 }
 
 /** An ungapped run of transcribed bases: `length` bases from c. position
