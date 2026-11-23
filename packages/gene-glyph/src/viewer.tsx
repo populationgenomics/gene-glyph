@@ -1537,7 +1537,9 @@ function GeneGlyphInner(
     const name = track.label ?? track.id;
     return (
       <div key={track.id} className="vv-below-track" role="group" aria-label={name}>
-        <span className="vv-below-track-name">{name}</span>
+        <span className="vv-below-track-name" aria-hidden>
+          {name}
+        </span>
         {node}
       </div>
     );

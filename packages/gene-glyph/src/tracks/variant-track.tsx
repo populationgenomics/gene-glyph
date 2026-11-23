@@ -373,9 +373,12 @@ export function variantTrack(
       if (brush) {
         const lo = Math.min(brush[0], brush[1]);
         const hi = Math.max(brush[0], brush[1]);
+        // Brush membership follows where each variant is drawn, UTR caps
+        // and docked intronic variants included.
         for (const v of data.variants) {
-          const r = variantRulerPos(v, viewport, mapper);
-          if (r === null) continue;
+          const placement = viewport.placePosition(v.coord);
+          if (!placement) continue;
+          const r = viewport.baselineXToRuler(placement.baselineX);
           if (r >= lo && r <= hi) inBrushIds.add(v.id);
         }
       }

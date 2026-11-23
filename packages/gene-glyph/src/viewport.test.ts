@@ -762,3 +762,52 @@ describe('ViewportController — protein ranges and UTR caps', () => {
     );
   });
 });
+
+describe('ViewportController — placePosition', () => {
+  // Exon 1 carries c.-10..c.-1 (chr1:990..999); at 720 px over 360 CDS bp
+  // + 10 UTR bp at quarter scale a CDS bp is 1.986 px, a UTR bp 0.497 px.
+  const withUtr: Transcript = {
+    ...transcript,
+    exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 10 } : e)),
+  };
+  const vpIn = (mode: 'genome' | 'transcript' | 'protein') =>
+    new ViewportController({ mapper: createCoordinateMapper(withUtr), width: 720, mode });
+
+  it('places a genomic UTR position in the first exon cap', () => {
+    const p = vpIn('transcript').placePosition({ kind: 'genomic', chr: 'chr1', pos: 995 });
+    expect(p).toMatchObject({ exonIdx: 0 });
+    expect(p!.localX).toBeCloseTo(-4.5 * (720 / 362.5) * 0.25, 6);
+    expect(p!.intronSide).toBeUndefined();
+  });
+
+  it.each(['genome', 'transcript'] as const)(
+    "docks an intronic position on the exon 3' edge in %s mode",
+    (mode) => {
+      const vp = vpIn(mode);
+      const p = vp.placePosition({ kind: 'cds', cPos: 100, offset: 3 });
+      expect(p).toMatchObject({ exonIdx: 0, intronSide: 'donor' });
+      expect(p!.baselineX).toBeCloseTo(vp.baselineGeometry().exons[0]!.xEnd, 6);
+    },
+  );
+
+  it.each([
+    ['an intronic offset off an exon edge', { kind: 'cds', cPos: 50, offset: 3 }],
+    ['a genomic position beyond the transcript', { kind: 'genomic', chr: 'chr1', pos: 5000 }],
+    ['another chromosome', { kind: 'genomic', chr: 'chr2', pos: 1050 }],
+  ] as const)('places nothing for %s', (_name, pos) => {
+    expect(vpIn('transcript').placePosition(pos)).toBeNull();
+  });
+
+  it.each([
+    ['an intronic position', { kind: 'cds', cPos: 100, offset: 3 }],
+    ['a UTR position', { kind: 'genomic', chr: 'chr1', pos: 995 }],
+  ] as const)('places nothing in protein mode for %s', (_name, pos) => {
+    expect(vpIn('protein').placePosition(pos)).toBeNull();
+  });
+
+  it('gives the screen x of a placement at fit-gene zoom', () => {
+    const vp = vpIn('transcript');
+    const p = vp.placePosition({ kind: 'cds', cPos: 50, offset: 0 })!;
+    expect(vp.baselineXToScreen(p.baselineX)).toBeCloseTo(vp.cdsToScreen(50, 0)!, 6);
+  });
+});

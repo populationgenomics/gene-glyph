@@ -571,3 +571,31 @@ describe('partitionVariants — malformed intronic positions', () => {
     expect(placeIn('transcript', [v]).unplaced).toEqual([v]);
   });
 });
+
+describe('variantTrack — brush over UTR and intronic variants', () => {
+  it('marks variants drawn in the cap or on an exon edge inside the brush', () => {
+    const mapper = createCoordinateMapper(withUtr);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const vs = [genomicVariant('utr', 'chr1', 520), genomicVariant('donor', 'chr1', 1105)];
+    const { container } = render(
+      <svg>
+        {variantTrack({ source: vs }).render({
+          data: { variants: vs },
+          rect: { yTop: 0, yBottom: 28 },
+          viewport,
+          mapper,
+          interaction: {
+            hoveredFeatureId: null,
+            selectedFeatureIds: new Set(),
+            brushRange: [-40, 101],
+          },
+          painter: createSvgPainter({ mode: 'screen' }),
+        })}
+      </svg>,
+    );
+    const inBrush = [...container.querySelectorAll('.vv-variant.is-in-brush')].map((g) =>
+      g.getAttribute('data-vv-feature-id'),
+    );
+    expect(inBrush.sort()).toEqual(['donor', 'utr']);
+  });
+});
