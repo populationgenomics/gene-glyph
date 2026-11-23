@@ -1,5 +1,5 @@
 import { createStormDetector } from './debug-leash.js';
-import { mapExons, runGenomicToRuler, type MappedExon } from './coordinate-mapper.js';
+import { runGenomicToCds } from './coordinate-mapper.js';
 import { ProjectionFrame } from './projection-frame.js';
 import type {
   AnchorTarget,
@@ -133,11 +133,8 @@ export class ViewportController implements Viewport {
   private _publishStorm = createStormDetector('ViewportController.publish');
   private _listeners = new Set<() => void>();
   readonly mapper: CoordinateMapper;
-  private readonly mappedExons: readonly MappedExon[];
-
   constructor(init: ViewportControllerInit) {
     this.mapper = init.mapper;
-    this.mappedExons = mapExons(init.mapper.transcript);
     this._mode = init.mode ?? 'genome';
     this._width = init.width;
     this._intronScale = init.intronScale ?? defaultIntronScale(this._mode);
@@ -1241,15 +1238,15 @@ export class ViewportController implements Viewport {
     // the range covers. A c. gap between two covered bases (bases only
     // the transcript has) falls inside the span and is drawn with it.
     const byExon = new Map<number, { idx: number; cdsLo: number; cdsHi: number }>();
-    for (const m of this.mappedExons) {
+    for (const m of this.mapper.mappedExons) {
       if (m.chr !== chr || gHi < m.genomicStart || gLo > m.genomicEnd) continue;
       for (const run of m.runs) {
         const runHi = run.genomicStart + run.length - 1;
         const overlapLo = Math.max(gLo, run.genomicStart);
         const overlapHi = Math.min(gHi, runHi);
         if (overlapLo > overlapHi) continue;
-        const a = runGenomicToRuler(run, overlapLo, strand)!;
-        const b = runGenomicToRuler(run, overlapHi, strand)!;
+        const a = runGenomicToCds(run, overlapLo, strand)!;
+        const b = runGenomicToCds(run, overlapHi, strand)!;
         const prev = byExon.get(m.exonIdx);
         byExon.set(m.exonIdx, {
           idx: m.exonIdx,

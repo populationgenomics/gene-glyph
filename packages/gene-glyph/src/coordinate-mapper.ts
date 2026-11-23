@@ -2,8 +2,10 @@ import type {
   CdsPosition,
   CollapsedRegion,
   CoordinateMapper,
+  AlignedRun,
   Exon,
   GenomicPosition,
+  MappedExon,
   Position,
   Transcript,
 } from './types.js';
@@ -32,29 +34,6 @@ export function defaultCollapsedRegions(transcript: Transcript, flankBp = 10): C
   return regions;
 }
 
-/** An ungapped run of transcribed bases: `length` bases from ruler
- *  position `rulerStart` (c. position in CDS modes), aligned to the genome
- *  from `genomicStart`, its lowest coordinate on either strand. */
-export interface AlignedRun {
-  rulerStart: number;
-  genomicStart: number;
-  length: number;
-}
-
-/** An exon as the coordinate mapper and the viewport's range projection
- *  see it: its transcribed span in genomic and c. coordinates, and the
- *  runs that align the two. `exonIdx` indexes `transcript.exons`. */
-export interface MappedExon {
-  exonIdx: number;
-  chr: string;
-  genomicStart: number;
-  genomicEnd: number;
-  rulerStart: number;
-  rulerEnd: number;
-  /** Runs in transcript order. */
-  runs: readonly AlignedRun[];
-}
-
 /** The transcript's exons in transcript order, each with the runs that
  *  align it to the genome. Throws on {@link Exon.blocks} that are out of
  *  order, overlap, or reach outside their exon. */
@@ -64,8 +43,8 @@ export function mapExons(transcript: Transcript): MappedExon[] {
     chr: exon.chr,
     genomicStart: exon.genomicStart,
     genomicEnd: exon.genomicEnd,
-    rulerStart: exon.cdsStart,
-    rulerEnd: exon.cdsEnd,
+    cdsStart: exon.cdsStart,
+    cdsEnd: exon.cdsEnd,
     runs: codingRuns(exon, transcript.strand),
   }));
 }
@@ -74,7 +53,7 @@ function codingRuns(exon: Exon, strand: '+' | '-'): AlignedRun[] {
   if (exon.blocks === undefined) {
     return [
       {
-        rulerStart: exon.cdsStart,
+        cdsStart: exon.cdsStart,
         genomicStart: exon.genomicStart,
         length: exon.cdsEnd - exon.cdsStart + 1,
       },
@@ -103,7 +82,7 @@ function codingRuns(exon: Exon, strand: '+' | '-'): AlignedRun[] {
     }
     const prev = runs[runs.length - 1];
     if (prev) {
-      const afterInCds = cdsStart > prev.rulerStart + prev.length - 1;
+      const afterInCds = cdsStart > prev.cdsStart + prev.length - 1;
       const afterOnGenome =
         strand === '+'
           ? genomicStart > prev.genomicStart + prev.length - 1
@@ -115,25 +94,25 @@ function codingRuns(exon: Exon, strand: '+' | '-'): AlignedRun[] {
         );
       }
     }
-    runs.push({ rulerStart: cdsStart, genomicStart, length });
+    runs.push({ cdsStart: cdsStart, genomicStart, length });
   }
   return runs;
 }
 
-/** Genomic position of ruler position `r` in `run`, or `null` when the run
+/** Genomic position of c. position `r` in `run`, or `null` when the run
  *  does not hold `r`. */
-export function runRulerToGenomic(run: AlignedRun, r: number, strand: '+' | '-'): number | null {
-  const k = r - run.rulerStart;
+export function runCdsToGenomic(run: AlignedRun, r: number, strand: '+' | '-'): number | null {
+  const k = r - run.cdsStart;
   if (k < 0 || k >= run.length) return null;
   return strand === '+' ? run.genomicStart + k : run.genomicStart + run.length - 1 - k;
 }
 
-/** Ruler position of genomic position `g` in `run`, or `null` when the run
+/** C. position of genomic position `g` in `run`, or `null` when the run
  *  does not hold `g`. */
-export function runGenomicToRuler(run: AlignedRun, g: number, strand: '+' | '-'): number | null {
+export function runGenomicToCds(run: AlignedRun, g: number, strand: '+' | '-'): number | null {
   const k = g - run.genomicStart;
   if (k < 0 || k >= run.length) return null;
-  return strand === '+' ? run.rulerStart + k : run.rulerStart + run.length - 1 - k;
+  return strand === '+' ? run.cdsStart + k : run.cdsStart + run.length - 1 - k;
 }
 
 export function createCoordinateMapper(transcript: Transcript): CoordinateMapper {
@@ -164,7 +143,7 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     for (const m of mapped) {
       if (m.chr !== chr || pos < m.genomicStart || pos > m.genomicEnd) continue;
       for (const run of m.runs) {
-        const r = runGenomicToRuler(run, pos, strand);
+        const r = runGenomicToCds(run, pos, strand);
         if (r !== null) return { cPos: r, offset: 0 };
       }
       return null;
@@ -196,9 +175,9 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
       if (!inIntron) continue;
 
       if (distFromUpstream <= distToDownstream) {
-        return { cPos: a.rulerEnd, offset: distFromUpstream };
+        return { cPos: a.cdsEnd, offset: distFromUpstream };
       }
-      return { cPos: b.rulerStart, offset: -distToDownstream };
+      return { cPos: b.cdsStart, offset: -distToDownstream };
     }
     return null;
   }
@@ -206,9 +185,9 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
   function cdsToGenomic(cPos: number, offset: number): GenomicPosition | null {
     if (offset === 0) {
       for (const m of mapped) {
-        if (cPos < m.rulerStart || cPos > m.rulerEnd) continue;
+        if (cPos < m.cdsStart || cPos > m.cdsEnd) continue;
         for (const run of m.runs) {
-          const g = runRulerToGenomic(run, cPos, strand);
+          const g = runCdsToGenomic(run, cPos, strand);
           if (g !== null) return { chr: m.chr, pos: g };
         }
         return null;
@@ -220,11 +199,11 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     // Negative offset -> anchored on downstream exon's 5' end.
     for (let i = 0; i < mapped.length; i++) {
       const m = mapped[i]!;
-      if (offset > 0 && m.rulerEnd === cPos && i < mapped.length - 1) {
+      if (offset > 0 && m.cdsEnd === cPos && i < mapped.length - 1) {
         const pos = strand === '+' ? m.genomicEnd + offset : m.genomicStart - offset;
         return { chr: m.chr, pos };
       }
-      if (offset < 0 && m.rulerStart === cPos && i > 0) {
+      if (offset < 0 && m.cdsStart === cPos && i > 0) {
         const dist = -offset;
         const pos = strand === '+' ? m.genomicStart - dist : m.genomicEnd + dist;
         return { chr: m.chr, pos };
@@ -262,6 +241,7 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
 
   return {
     transcript,
+    mappedExons: mapped,
     genomicToCds,
     cdsToGenomic,
     cdsToProtein,

@@ -275,8 +275,35 @@ export interface TooltipRenderArgs {
   point: ScreenPoint;
 }
 
+/** An ungapped run of transcribed bases: `length` bases from c. position
+ *  `cdsStart`, aligned base for base to the genome from `genomicStart`,
+ *  the run's lowest coordinate on either strand. */
+export interface AlignedRun {
+  cdsStart: number;
+  genomicStart: number;
+  length: number;
+}
+
+/** An exon as the coordinate mapper sees it: its span in genomic and c.
+ *  coordinates, and the runs that align the two. `exonIdx` indexes
+ *  `transcript.exons`. */
+export interface MappedExon {
+  exonIdx: number;
+  chr: string;
+  genomicStart: number;
+  genomicEnd: number;
+  cdsStart: number;
+  cdsEnd: number;
+  /** Runs in transcript order: the exon's {@link Exon.blocks}, or one run
+   *  over its whole coding part. */
+  runs: readonly AlignedRun[];
+}
+
 export interface CoordinateMapper {
   readonly transcript: Transcript;
+  /** The transcript's exons in transcript order, each with the runs that
+   *  align it to the genome. Computed once per mapper. */
+  readonly mappedExons: readonly MappedExon[];
   /** `null` off the transcript, and for a base inside an exon that the
    *  exon's {@link Exon.blocks} leave out of the transcript. */
   genomicToCds(chr: string, pos: number): CdsPosition | null;

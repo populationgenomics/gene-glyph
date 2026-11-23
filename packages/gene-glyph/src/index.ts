@@ -19,8 +19,10 @@ export type { DefaultMinimapProps } from './chrome/default-minimap.js';
 
 export type {
   // Domain
+  AlignedRun,
   AlignmentBlock,
   Exon,
+  MappedExon,
   Transcript,
   ProteinAnnotations,
   ProteinDomain,
