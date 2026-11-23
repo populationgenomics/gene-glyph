@@ -78,7 +78,7 @@ async function renderMap(props: {
 const citedOnly = (featureId: string) => featureId.includes('cited');
 
 describe('GeneGlyph — per-feature clickability', () => {
-  it.each(['cited', 'far-cited', 'band-cited'])(
+  it.each(['cited', 'band-cited'])(
     'makes %s, which the host lets be clicked, a button with a tab stop',
     async (id) => {
       const { feature } = await renderMap({
@@ -91,15 +91,37 @@ describe('GeneGlyph — per-feature clickability', () => {
     },
   );
 
-  it.each(['plain', 'far-plain', 'band-plain'])(
+  it('keeps a variant tick the host does not let be clicked a tab stop, not a button', async () => {
+    const { feature } = await renderMap({ onFeatureClick: vi.fn(), isFeatureClickable: citedOnly });
+    expect(feature('plain').getAttribute('tabindex')).toBe('0');
+    expect(feature('plain').hasAttribute('role')).toBe(false);
+  });
+
+  it('puts a button in an unplaced chip the host lets be clicked', async () => {
+    const onFeatureClick = vi.fn();
+    const { feature } = await renderMap({ onFeatureClick, isFeatureClickable: citedOnly });
+    expect(feature('far-cited').hasAttribute('role')).toBe(false);
+    const button = feature('far-cited').querySelector('button')!;
+    fireEvent.click(button);
+    expect(onFeatureClick).toHaveBeenCalledWith('far-cited', 'variants');
+  });
+
+  it('gives an unplaced chip the host keeps unclickable a focusable control, not a button', async () => {
+    const { feature } = await renderMap({ onFeatureClick: vi.fn(), isFeatureClickable: citedOnly });
+    expect(feature('far-plain').querySelector('button')).toBeNull();
+    const control = feature('far-plain').querySelector('.vv-unplaced-chip-control')!;
+    expect(control.getAttribute('tabindex')).toBe('0');
+  });
+
+  it.each(['plain', 'band-plain'])(
     'leaves %s, which the host does not let be clicked, without button semantics',
     async (id) => {
       const onFeatureClick = vi.fn();
       const { feature } = await renderMap({ onFeatureClick, isFeatureClickable: citedOnly });
       expect(feature(id).hasAttribute('role')).toBe(false);
-      expect(feature(id).hasAttribute('tabindex')).toBe(false);
       expect(feature(id).classList.contains('is-clickable')).toBe(false);
       fireEvent.click(feature(id));
+      fireEvent.keyDown(feature(id), { key: 'Enter' });
       expect(onFeatureClick).not.toHaveBeenCalled();
     },
   );
@@ -125,7 +147,6 @@ describe('GeneGlyph — per-feature clickability', () => {
   it.each([
     ['Enter', 'cited', 'variants'],
     [' ', 'cited', 'variants'],
-    ['Enter', 'far-cited', 'variants'],
     [' ', 'band-cited', 'bands'],
   ])('activates on the %j key (%s)', async (key, id, trackId) => {
     const onFeatureClick = vi.fn();

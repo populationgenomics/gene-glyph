@@ -655,6 +655,18 @@ body.vv-gg-box-zooming * {
     transform 100ms ease-out;
 }
 
+.gene-glyph .vv-unplaced-chip-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: inherit;
+}
+
 .gene-glyph .vv-unplaced-chip.is-hovered,
 .gene-glyph .vv-unplaced-chip:hover {
   transform: translateY(-1px);

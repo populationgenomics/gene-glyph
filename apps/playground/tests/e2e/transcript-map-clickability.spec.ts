@@ -17,19 +17,19 @@ test.describe('Transcript map — per-feature clickability', () => {
     await variant.focus();
     await page.keyboard.press('Enter');
     await expect(clicked).toHaveText('Clicked: c.524G>A');
-    const chip = s.locator('[data-testid="literature-unplaced"] .vv-unplaced-chip');
+    const chip = s.locator('[data-testid="literature-unplaced"] .vv-unplaced-chip button');
     await chip.focus();
     await page.keyboard.press(' ');
     await expect(clicked).toHaveText('Clicked: chr1:g.1000A>G');
   });
 
-  test('a variant the host does not let be clicked is hoverable but not a button', async ({
+  test('a variant the host does not let be clicked is focusable and hoverable but not a button', async ({
     page,
   }) => {
     const s = await scenario(page);
     const variant = s.locator('[data-vv-track-id="case"] [data-vv-feature-id="c.*50T>C"]');
     await expect(variant).not.toHaveAttribute('role', 'button');
-    await expect(variant).not.toHaveAttribute('tabindex', /.*/);
+    await expect(variant).toHaveAttribute('tabindex', '0');
     await variant.locator('.vv-variant-dot').hover();
     await expect(s.locator('[data-testid="gene-glyph-tooltip"]')).toHaveText('c.*50T>C');
     await expect(s.locator('.vv-figure')).not.toHaveCSS('cursor', 'pointer');

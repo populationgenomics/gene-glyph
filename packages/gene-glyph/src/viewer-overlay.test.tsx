@@ -230,7 +230,7 @@ describe('GeneGlyph — hover surfaces without native titles', () => {
       />,
     );
     await flushTrackLoads();
-    fireEvent.mouseEnter(container.querySelector('.vv-unplaced-chip')!);
+    fireEvent.mouseEnter(container.querySelector('.vv-unplaced-chip-control')!);
     await waitFor(() => {
       expect(screen.getByTestId('gene-glyph-tooltip').textContent).toBe('Far variant');
     });
@@ -244,7 +244,7 @@ describe('GeneGlyph — hover surfaces without native titles', () => {
       />,
     );
     await flushTrackLoads();
-    const chip = container.querySelector('.vv-unplaced-chip')!;
+    const chip = container.querySelector('.vv-unplaced-chip-control')!;
     fireEvent.mouseEnter(chip);
     await waitFor(() => expect(screen.queryByTestId('gene-glyph-tooltip')).not.toBeNull());
     fireEvent.keyDown(document, { key: 'Escape' });

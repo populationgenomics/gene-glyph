@@ -4,6 +4,7 @@ import { formatCdsPosition } from '../coordinate-mapper.js';
 import { resolveSourceData } from '../data-source.js';
 import { intronMarkPath } from './exon-edge.js';
 import { clickAttrs, featureClickProps, type FeatureClickProps } from './feature-click.js';
+import { unplacedChipControl } from './unplaced-chip.js';
 import { packLanes } from '../pack-lanes.js';
 import {
   type CdsPosition,
@@ -491,14 +492,18 @@ export function variantTrack(
                   data-vv-feature-id={v.id}
                   data-vv-category={v.category}
                   style={style}
-                  onMouseEnter={(e) => onFeatureHover?.(v.id, e.currentTarget)}
-                  onMouseLeave={() => onFeatureHover?.(null)}
-                  onFocus={(e) => onFeatureHover?.(v.id, e.currentTarget)}
-                  onBlur={() => onFeatureHover?.(null)}
-                  {...clickAttrs(click)}
                 >
-                  <span className="vv-unplaced-dot" aria-hidden />
-                  <span className="vv-unplaced-text">{v.label}</span>
+                  {unplacedChipControl({
+                    featureId: v.id,
+                    click,
+                    onFeatureHover,
+                    children: (
+                      <>
+                        <span className="vv-unplaced-dot" aria-hidden />
+                        <span className="vv-unplaced-text">{v.label}</span>
+                      </>
+                    ),
+                  })}
                 </li>
               );
             })}
@@ -629,6 +634,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
           {...clickAttrs(click)}
+          tabIndex={0}
           aria-label={labelOf(v)}
         >
           <g className="vv-variant-inner">
@@ -753,6 +759,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
       {...clickAttrs(click)}
+      tabIndex={0}
       aria-label={label}
     >
       <g className="vv-variant-inner">

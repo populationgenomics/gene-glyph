@@ -384,10 +384,11 @@ describe('variantTrack', () => {
     const { container } = render(<>{node}</>);
     const chips = container.querySelectorAll<HTMLLIElement>('.vv-unplaced-chip');
     expect(chips.length).toBe(1);
-    fireEvent.mouseEnter(chips[0]!);
-    fireEvent.click(chips[0]!);
-    fireEvent.mouseLeave(chips[0]!);
-    expect(onFeatureHover).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId, chips[0]);
+    const control = chips[0]!.querySelector('button')!;
+    fireEvent.mouseEnter(control);
+    fireEvent.click(control);
+    fireEvent.mouseLeave(control);
+    expect(onFeatureHover).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId, control);
     expect(onFeatureHover).toHaveBeenCalledWith(null);
     expect(onFeatureClick).toHaveBeenCalledWith(chips[0]!.dataset.vvFeatureId);
   });

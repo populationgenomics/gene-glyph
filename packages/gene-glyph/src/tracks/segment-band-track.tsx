@@ -1,6 +1,7 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { intronMarkPath } from './exon-edge.js';
 import { clickAttrs, featureClickProps } from './feature-click.js';
+import { unplacedChipControl } from './unplaced-chip.js';
 import { fitText } from './pfam-track.js';
 import type {
   CdsPosition,
@@ -437,19 +438,18 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               } as CSSProperties;
               const label = labelOf(s);
               return (
-                <li
-                  key={featureId}
-                  className={cls}
-                  data-vv-feature-id={featureId}
-                  style={style}
-                  onMouseEnter={(e) => onFeatureHover?.(featureId, e.currentTarget)}
-                  onMouseLeave={() => onFeatureHover?.(null)}
-                  onFocus={(e) => onFeatureHover?.(featureId, e.currentTarget)}
-                  onBlur={() => onFeatureHover?.(null)}
-                  {...clickAttrs(click)}
-                >
-                  <span className="vv-unplaced-dot" aria-hidden />
-                  <span className="vv-unplaced-text">{label}</span>
+                <li key={featureId} className={cls} data-vv-feature-id={featureId} style={style}>
+                  {unplacedChipControl({
+                    featureId,
+                    click,
+                    onFeatureHover,
+                    children: (
+                      <>
+                        <span className="vv-unplaced-dot" aria-hidden />
+                        <span className="vv-unplaced-text">{label}</span>
+                      </>
+                    ),
+                  })}
                 </li>
               );
             })}
