@@ -1,5 +1,5 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
-import { intronMarkPath, placeCdsPosition } from './exon-edge.js';
+import { intronMarkPath } from './exon-edge.js';
 import { fitText } from './pfam-track.js';
 import type {
   CdsPosition,
@@ -202,14 +202,9 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
   // A span wholly inside an intron draws as a marker on the exon edge
   // nearer it; `null` when it is not in an intron or the view has no place
   // for it.
-  const dockOf = (
-    data: SegmentBandTrackData<C, D>,
-    d: D,
-    viewport: Viewport,
-    mapper: CoordinateMapper,
-  ) => {
+  const dockOf = (data: SegmentBandTrackData<C, D>, d: D, viewport: Viewport) => {
     const anchor = data.intronic?.get(featureIdOf(d));
-    return anchor ? placeCdsPosition(anchor, viewport, mapper) : null;
+    return anchor ? viewport.placePosition({ kind: 'cds', ...anchor }) : null;
   };
 
   return {
@@ -255,7 +250,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     render(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode {
-      const { data, rect, viewport, mapper, painter, onFeatureHover, onFeatureClick } = args;
+      const { data, rect, viewport, painter, onFeatureHover, onFeatureClick } = args;
       if (data.segments.length === 0) return null;
 
       const baseline = viewport.baselineGeometry();
@@ -273,7 +268,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
         const projection = binding.project(seg, viewport);
         const featureId = featureIdOf(seg);
         const click = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
-        const dock = projection.segments.length === 0 ? dockOf(data, seg, viewport, mapper) : null;
+        const dock = projection.segments.length === 0 ? dockOf(data, seg, viewport) : null;
         if (dock?.intronSide) {
           pushTo(
             rectsByExon,
@@ -414,13 +409,12 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     renderBelow(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode | null {
-      const { data, viewport, mapper, interaction, trackName, onFeatureHover, onFeatureClick } =
-        args;
+      const { data, viewport, interaction, trackName, onFeatureHover, onFeatureClick } = args;
       const unplaced = data.segments.filter(
         (s) =>
           palette[s.category] &&
           binding.project(s, viewport).segments.length === 0 &&
-          !dockOf(data, s, viewport, mapper),
+          !dockOf(data, s, viewport),
       );
       if (unplaced.length === 0) return null;
       const where = trackName ? ` in ${trackName}` : '';
@@ -469,17 +463,10 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
       const seg = findSegment(data, anchorId);
       if (!seg) return null;
       const piece = widestPiece(binding.project(seg, viewport).segments);
-      const intronAnchor = data.intronic?.get(anchorId);
-      if (!piece && intronAnchor && viewport.mode !== 'protein') {
-        return viewport.resolveAnchor({ kind: 'cds-pos', cPos: intronAnchor.cPos, offset: 0 });
-      }
-      if (!piece) return null;
-      const ruler = viewport.baselineXToRuler((piece.xStart + piece.xEnd) / 2);
-      const x = viewport.toScreen(
-        viewport.mode === 'protein'
-          ? { kind: 'protein', aa: ruler }
-          : { kind: 'cds', cPos: ruler, offset: 0 },
-      );
+      const baselineX = piece
+        ? (piece.xStart + piece.xEnd) / 2
+        : dockOf(data, seg, viewport)?.baselineX;
+      const x = baselineX === undefined ? null : viewport.baselineXToScreen(baselineX);
       return x === null ? null : { x, y: 0 };
     },
 
@@ -514,8 +501,8 @@ function genomicIntronAnchor(
   viewport: Viewport,
   mapper: CoordinateMapper,
 ): CdsPosition | null {
-  const a = mapper.genomicToCds(d.chr, orderedStart(d));
-  const b = mapper.genomicToCds(d.chr, orderedEnd(d));
+  const a = mapper.genomicToTranscript(d.chr, orderedStart(d));
+  const b = mapper.genomicToTranscript(d.chr, orderedEnd(d));
   if (!a || !b || a.offset === 0 || b.offset === 0) return null;
   // Two intronic ends can still bracket exons; the projection finds any.
   if (viewport.projectGenomicRange(d.chr, d.start, d.end).droppedExonicCount === 0) return null;

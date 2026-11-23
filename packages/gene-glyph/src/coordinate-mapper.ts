@@ -44,17 +44,7 @@ export function defaultCollapsedRegions(transcript: Transcript, flankBp = 10): C
  *  on another chromosome. */
 export function mapExons(transcript: Transcript): MappedExon[] {
   const strand = transcript.strand;
-  const coding: MappedExon[] = transcript.exons.map((exon, exonIdx) => ({
-    kind: 'coding',
-    number: exon.number,
-    exonIdx,
-    chr: exon.chr,
-    genomicStart: exon.genomicStart,
-    genomicEnd: exon.genomicEnd,
-    cdsStart: exon.cdsStart,
-    cdsEnd: exon.cdsEnd,
-    runs: codingRuns(exon, strand),
-  }));
+  const coding = mapCodingParts(transcript);
   const lastIdx = coding.length - 1;
   if (lastIdx < 0) return coding;
   const utr5 = transcript.exons[0]!.utr5Bp ?? 0;
@@ -111,6 +101,21 @@ export function mapExons(transcript: Transcript): MappedExon[] {
     }
   }
   return all;
+}
+
+/** The coding exons alone, each described by its coding part only. */
+function mapCodingParts(transcript: Transcript): MappedExon[] {
+  return transcript.exons.map((exon, exonIdx) => ({
+    kind: 'coding',
+    number: exon.number,
+    exonIdx,
+    chr: exon.chr,
+    genomicStart: exon.genomicStart,
+    genomicEnd: exon.genomicEnd,
+    cdsStart: exon.cdsStart,
+    cdsEnd: exon.cdsEnd,
+    runs: codingRuns(exon, transcript.strand),
+  }));
 }
 
 function utrLength(e: UtrExon): number {
@@ -231,6 +236,9 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
   const strand = transcript.strand;
   const cdsLength = transcript.cdsLength;
   const mapped = mapExons(transcript);
+  // genomicToCds / cdsToGenomic keep their coding-part-only contract; the
+  // transcript-wide pair maps UTRs too.
+  const codingParts = mapCodingParts(transcript);
 
   function findExonByCds(cPos: number): { exonIdx: number } | null {
     for (let i = 0; i < exons.length; i++) {
@@ -250,7 +258,11 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     return null;
   }
 
-  function genomicToCds(chr: string, pos: number): CdsPosition | null {
+  function genomicToCdsIn(
+    mapped: readonly MappedExon[],
+    chr: string,
+    pos: number,
+  ): CdsPosition | null {
     for (const m of mapped) {
       if (m.chr !== chr || pos < m.genomicStart || pos > m.genomicEnd) continue;
       for (const run of m.runs) {
@@ -293,7 +305,11 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     return null;
   }
 
-  function cdsToGenomic(cPos: number, offset: number): GenomicPosition | null {
+  function cdsToGenomicIn(
+    mapped: readonly MappedExon[],
+    cPos: number,
+    offset: number,
+  ): GenomicPosition | null {
     if (offset === 0) {
       for (const m of mapped) {
         if (cPos < m.cdsStart || cPos > m.cdsEnd) continue;
@@ -323,6 +339,12 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     return null;
   }
 
+  const genomicToCds = (chr: string, pos: number) => genomicToCdsIn(codingParts, chr, pos);
+  const cdsToGenomic = (cPos: number, offset: number) => cdsToGenomicIn(codingParts, cPos, offset);
+  const genomicToTranscript = (chr: string, pos: number) => genomicToCdsIn(mapped, chr, pos);
+  const transcriptToGenomic = (cPos: number, offset: number) =>
+    cdsToGenomicIn(mapped, cPos, offset);
+
   function cdsToProtein(cPos: number): number | null {
     if (cPos < 1 || cPos > cdsLength) return null;
     return Math.ceil(cPos / 3);
@@ -333,6 +355,14 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
   }
 
   function resolveCds(pos: Position): CdsPosition | null {
+    return pos.kind === 'genomic' ? genomicToCds(pos.chr, pos.pos) : resolveCoding(pos);
+  }
+
+  function resolveTranscript(pos: Position): CdsPosition | null {
+    return pos.kind === 'genomic' ? genomicToTranscript(pos.chr, pos.pos) : resolveCoding(pos);
+  }
+
+  function resolveCoding(pos: Exclude<Position, { kind: 'genomic' }>): CdsPosition {
     switch (pos.kind) {
       case 'cds':
         return { cPos: pos.cPos, offset: pos.offset };
@@ -345,8 +375,6 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
         // bp (3N-2) for range bracket math, where you want the lo-bound
         // to cover the whole codon.
         return { cPos: (pos.aa - 1) * 3 + 2, offset: 0 };
-      case 'genomic':
-        return genomicToCds(pos.chr, pos.pos);
     }
   }
 
@@ -355,6 +383,9 @@ export function createCoordinateMapper(transcript: Transcript): CoordinateMapper
     mappedExons: mapped,
     genomicToCds,
     cdsToGenomic,
+    genomicToTranscript,
+    transcriptToGenomic,
+    resolveTranscript,
     cdsToProtein,
     proteinToCds,
     findExonByCds,

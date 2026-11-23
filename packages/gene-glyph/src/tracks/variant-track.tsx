@@ -2,7 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import { formatCdsPosition } from '../coordinate-mapper.js';
 import { resolveSourceData } from '../data-source.js';
-import { findExonByBaselineX, intronMarkPath, placeCdsPosition } from './exon-edge.js';
+import { intronMarkPath } from './exon-edge.js';
 import { packLanes } from '../pack-lanes.js';
 import {
   type CdsPosition,
@@ -182,12 +182,14 @@ export function variantIntronGap(
 export function partitionVariants(
   variants: ViewerVariant[],
   viewport: Viewport,
-  mapper: CoordinateMapper,
+  // Placement resolves through the viewport's own mapper; the parameter
+  // stays so existing three-argument calls keep compiling.
+  _mapper?: CoordinateMapper,
 ): VariantPartition {
   const placed: VariantPlacement[] = [];
   const unplaced: ViewerVariant[] = [];
   for (const v of variants) {
-    const placement = placeVariant(v, viewport, mapper);
+    const placement = placeVariant(v, viewport);
     if (placement) placed.push(placement);
     else unplaced.push(v);
   }
@@ -209,26 +211,11 @@ export function variantRulerPos(
   return viewport.mode === 'protein' ? mapper.cdsToProtein(cds.cPos) : cds.cPos;
 }
 
-function placeVariant(
-  v: ViewerVariant,
-  viewport: Viewport,
-  mapper: CoordinateMapper,
-): VariantPlacement | null {
-  if (v.coord.kind !== 'protein') {
-    const cds = mapper.resolveCds(v.coord);
-    if (!cds) return null;
-    const placement = placeCdsPosition(cds, viewport, mapper);
-    return placement && { variant: v, ...placement };
-  }
-  // In protein mode, codon-spanning aa cells are owned by one exon
-  // (downstream skips the shared aa); locating the host exon by baseline-x
-  // picks the cell-owner.
-  const x = viewport.toBaselineX(v.coord);
-  if (x === null) return null;
-  const exons = viewport.baselineGeometry().exons;
-  const exonIdx = findExonByBaselineX(exons, x);
-  if (exonIdx === null) return null;
-  return { variant: v, exonIdx, localX: x - exons[exonIdx]!.xStart };
+function placeVariant(v: ViewerVariant, viewport: Viewport): VariantPlacement | null {
+  const placement = viewport.placePosition(v.coord);
+  if (!placement) return null;
+  const { exonIdx, localX, intronSide } = placement;
+  return { variant: v, exonIdx, localX, ...(intronSide ? { intronSide } : {}) };
 }
 
 /** Greedy lane packing in baseline (fit-gene) screen-x. Group placed variants
@@ -337,7 +324,7 @@ export function variantTrack(
       const intronic = new Map<string, { cds: CdsPosition; hgvs: string }>();
       for (const v of variants) {
         if (v.coord.kind === 'protein') continue;
-        const cds = mapper.resolveCds(v.coord);
+        const cds = mapper.resolveTranscript(v.coord);
         if (cds && cds.offset !== 0) {
           intronic.set(v.id, { cds, hgvs: formatCdsPosition(cds, mapper.transcript.cdsLength) });
         }
@@ -365,7 +352,7 @@ export function variantTrack(
       const byKey = new Map<string, HiddenFeatureBucket>();
       for (const v of data.variants) {
         const gap = variantIntronGap(v, mapper);
-        if (!gap || placeVariant(v, viewport, mapper)) continue;
+        if (!gap || placeVariant(v, viewport)) continue;
         const key = `${gap.exonIdxA}:${gap.exonIdxB}`;
         const prev = byKey.get(key);
         if (prev) {
@@ -520,28 +507,11 @@ export function variantTrack(
     resolveAnchor(data, anchorId, viewport) {
       const v = data.variants.find((x) => x.id === anchorId);
       if (!v) return null;
-      // An intronic variant is drawn on the exon base its position is
-      // anchored on.
-      const intronic = data.intronic?.get(v.id);
-      if (intronic && viewport.mode !== 'protein') {
-        return viewport.resolveAnchor({ kind: 'cds-pos', cPos: intronic.cds.cPos, offset: 0 });
-      }
-      switch (v.coord.kind) {
-        case 'cds':
-          return viewport.resolveAnchor({
-            kind: 'cds-pos',
-            cPos: v.coord.cPos,
-            offset: v.coord.offset,
-          });
-        case 'protein':
-          return viewport.resolveAnchor({ kind: 'protein-aa', aa: v.coord.aa });
-        case 'genomic':
-          return viewport.resolveAnchor({
-            kind: 'genomic-pos',
-            chr: v.coord.chr,
-            pos: v.coord.pos,
-          });
-      }
+      // Anchored where the variant is drawn: UTR variants in the caps,
+      // intronic ones on their exon edge.
+      const placement = viewport.placePosition(v.coord);
+      const x = placement && viewport.baselineXToScreen(placement.baselineX);
+      return x === null || x === undefined ? null : { x, y: 0 };
     },
 
     resolveFeature(data, featureId) {

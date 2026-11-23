@@ -282,6 +282,17 @@ export type AnchorTarget =
   | { kind: 'cds-pos'; cPos: number; offset?: number }
   | { kind: 'genomic-pos'; chr: string; pos: number };
 
+/** Where a feature is drawn: inside exon `exonIdx`'s group, at baseline
+ *  `baselineX` (`localX` from the group's origin). */
+export interface ExonPlacement {
+  exonIdx: number;
+  baselineX: number;
+  localX: number;
+  /** Set for a position in an intron, drawn on the exon edge facing it:
+   *  `donor` is the exon's 3' edge, `acceptor` its 5' edge. */
+  intronSide?: 'donor' | 'acceptor';
+}
+
 export interface ScreenPoint {
   x: number;
   y: number;
@@ -347,6 +358,16 @@ export interface CoordinateMapper {
   /** `null` off the transcript, and for an exonic c. position that the
    *  exon's {@link Exon.blocks} give no genomic base. */
   cdsToGenomic(cPos: number, offset: number): GenomicPosition | null;
+  /** Like {@link genomicToCds}, but over the whole transcript: also places
+   *  positions in the UTRs (the first and last exon's UTR parts and the
+   *  exons wholly in a UTR) and in the introns between UTR exons. c.-N is
+   *  `cPos` `1 - N` and c.*N is `cdsLength + N`; see {@link Transcript}. */
+  genomicToTranscript(chr: string, pos: number): CdsPosition | null;
+  /** Inverse of {@link genomicToTranscript}. */
+  transcriptToGenomic(cPos: number, offset: number): GenomicPosition | null;
+  /** Like {@link resolveCds}, with genomic positions resolved by
+   *  {@link genomicToTranscript}. */
+  resolveTranscript(pos: Position): CdsPosition | null;
   cdsToProtein(cPos: number): number | null;
   proteinToCds(aa: number): number;
   findExonByCds(cPos: number): { exonIdx: number } | null;
@@ -470,6 +491,18 @@ export interface Viewport {
    *  off-transcript genomic positions). Tracks rendering against the
    *  baseline-x frame use this to anchor features. */
   toBaselineX(pos: Position): number | null;
+  /** Where a feature at `pos` is drawn in the active mode. Unlike
+   *  {@link toBaselineX}, this places positions anywhere on the transcript:
+   *  a genomic position resolves through
+   *  {@link CoordinateMapper.genomicToTranscript}; a UTR position lands in
+   *  the UTR cap of the first or last exon; an intronic one (`offset !==
+   *  0`) on the edge of the exon base it is anchored on, with
+   *  `intronSide` set. `null` off the drawn transcript, for an intronic
+   *  position not anchored on an exon edge with an intron beyond it, and
+   *  in protein mode for any position outside the coding parts. */
+  placePosition(pos: Position): ExonPlacement | null;
+  /** Baseline-x to current screen-x; `null` when out of view. */
+  baselineXToScreen(baselineX: number): number | null;
 
   cdsToScreen(cPos: number, offset: number): number | null;
   proteinToScreen(aa: number): number | null;

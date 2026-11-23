@@ -49,6 +49,7 @@ export type {
   HiddenFeaturesArgs,
   AnchorTarget,
   ScreenPoint,
+  ExonPlacement,
   TooltipRenderArgs,
   CoordinateMapper,
   Viewport,

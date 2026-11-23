@@ -334,10 +334,10 @@ describe('CoordinateMapper — UTR parts and exons wholly in a UTR', () => {
     [4029, 400, 'c.*40'],
   ])('maps + strand genomic %i to %s and back', (pos, cPos, hgvs) => {
     const mapper = createCoordinateMapper(plusUtr);
-    const cds = mapper.genomicToCds('chr1', pos);
+    const cds = mapper.genomicToTranscript('chr1', pos);
     expect(cds).toEqual({ cPos, offset: 0 });
     expect(formatCdsPosition(cds!, 360)).toBe(hgvs);
-    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+    expect(mapper.transcriptToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
   });
 
   it.each([
@@ -351,10 +351,10 @@ describe('CoordinateMapper — UTR parts and exons wholly in a UTR', () => {
     [500, 400, 'c.*40'],
   ])('maps - strand genomic %i to %s and back', (pos, cPos, hgvs) => {
     const mapper = createCoordinateMapper(minusUtr);
-    const cds = mapper.genomicToCds('chr1', pos);
+    const cds = mapper.genomicToTranscript('chr1', pos);
     expect(cds).toEqual({ cPos, offset: 0 });
     expect(formatCdsPosition(cds!, 360)).toBe(hgvs);
-    expect(mapper.cdsToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
+    expect(mapper.transcriptToGenomic(cPos, 0)).toEqual({ chr: 'chr1', pos });
   });
 
   it.each([
@@ -363,24 +363,36 @@ describe('CoordinateMapper — UTR parts and exons wholly in a UTR', () => {
     [3500, { cPos: 370, offset: 381 }, 'c.*10+381'],
   ])('anchors + strand intronic %i in a UTR on the nearer UTR exon edge', (pos, cds, hgvs) => {
     const mapper = createCoordinateMapper(plusUtr);
-    expect(mapper.genomicToCds('chr1', pos)).toEqual(cds);
+    expect(mapper.genomicToTranscript('chr1', pos)).toEqual(cds);
     expect(formatCdsPosition(cds, 360)).toBe(hgvs);
-    expect(mapper.cdsToGenomic(cds.cPos, cds.offset)).toEqual({ chr: 'chr1', pos });
+    expect(mapper.transcriptToGenomic(cds.cPos, cds.offset)).toEqual({ chr: 'chr1', pos });
   });
 
   it('anchors - strand intronic positions in a UTR on the nearer UTR exon edge', () => {
     const mapper = createCoordinateMapper(minusUtr);
     // 3995 lies 5 bp below the 5' UTR exon's 3' end (4000, c.-21).
-    expect(mapper.genomicToCds('chr1', 3995)).toEqual({ cPos: -20, offset: 5 });
-    expect(mapper.cdsToGenomic(-20, 5)).toEqual({ chr: 'chr1', pos: 3995 });
+    expect(mapper.genomicToTranscript('chr1', 3995)).toEqual({ cPos: -20, offset: 5 });
+    expect(mapper.transcriptToGenomic(-20, 5)).toEqual({ chr: 'chr1', pos: 3995 });
   });
 
   it('places a genomic position just upstream of the UTR off the transcript', () => {
-    expect(createCoordinateMapper(plusUtr).genomicToCds('chr1', 499)).toBeNull();
+    expect(createCoordinateMapper(plusUtr).genomicToTranscript('chr1', 499)).toBeNull();
+  });
+
+  it('keeps genomicToCds and cdsToGenomic to the coding parts', () => {
+    const mapper = createCoordinateMapper(plusUtr);
+    expect(mapper.genomicToCds('chr1', 999)).toBeNull();
+    expect(mapper.genomicToCds('chr1', 551)).toBeNull();
+    expect(mapper.cdsToGenomic(0, 0)).toBeNull();
+    expect(mapper.resolveCds({ kind: 'genomic', chr: 'chr1', pos: 999 })).toBeNull();
+    expect(mapper.resolveTranscript({ kind: 'genomic', chr: 'chr1', pos: 999 })).toEqual({
+      cPos: 0,
+      offset: 0,
+    });
   });
 
   it('leaves a transcript without UTR data mapping UTR positions off the transcript', () => {
-    expect(createCoordinateMapper(plusTranscript).genomicToCds('chr1', 999)).toBeNull();
+    expect(createCoordinateMapper(plusTranscript).genomicToTranscript('chr1', 999)).toBeNull();
   });
 
   it.each([

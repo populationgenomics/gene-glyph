@@ -10,6 +10,7 @@ import type {
   DroppedRange,
   Exon,
   ExonBaseline,
+  ExonPlacement,
   FlankBaseline,
   GapBaseline,
   GenomicPosition,
@@ -1088,6 +1089,47 @@ export class ViewportController implements Viewport {
     }
   }
 
+  placePosition(pos: Position): ExonPlacement | null {
+    const baseline = this.baselineGeometry();
+    const onExon = (x: number | null): { exonIdx: number; origin: number } | null => {
+      if (x === null) return null;
+      const exonIdx = findExonByBaselineX(baseline.exons, x);
+      return exonIdx === null ? null : { exonIdx, origin: baseline.exons[exonIdx]!.xStart };
+    };
+    if (pos.kind === 'protein') {
+      // Codon-spanning aa cells belong to one exon in protein mode; the
+      // baseline-x lookup picks the cell-owner.
+      const x = this.toBaselineX(pos);
+      const hit = onExon(x);
+      return hit && { exonIdx: hit.exonIdx, baselineX: x!, localX: x! - hit.origin };
+    }
+    const cds =
+      pos.kind === 'genomic'
+        ? this.mapper.genomicToTranscript(pos.chr, pos.pos)
+        : { cPos: pos.cPos, offset: pos.offset };
+    if (!cds) return null;
+    if (cds.offset !== 0) {
+      // An intron has no place on the protein axis.
+      if (this._mode === 'protein') return null;
+      if (!this.mapper.transcriptToGenomic(cds.cPos, cds.offset)) return null;
+    }
+    const x = this.toBaselineX({ kind: 'cds', cPos: cds.cPos, offset: 0 });
+    const hit = onExon(x);
+    if (!hit) return null;
+    if (cds.offset === 0) return { exonIdx: hit.exonIdx, baselineX: x!, localX: x! - hit.origin };
+    // Intronic: from the anchor base's centre to its cell edge facing the
+    // intron.
+    const intronSide = cds.offset > 0 ? 'donor' : 'acceptor';
+    const coding = cds.cPos >= 1 && cds.cPos <= this.mapper.transcript.cdsLength;
+    const halfCell = (coding ? baseline.pxPerBp : baseline.pxPerBpOutsideCds) / 2;
+    const edgeX = intronSide === 'donor' ? x! + halfCell : x! - halfCell;
+    return { exonIdx: hit.exonIdx, baselineX: edgeX, localX: edgeX - hit.origin, intronSide };
+  }
+
+  baselineXToScreen(baselineX: number): number | null {
+    return this.applyZoomClamped(baselineX);
+  }
+
   /** Project a {@link Position} onto current screen-x. Composes
    *  {@link toBaselineX} with the live zoom-and-clip mapping. */
   toScreen(pos: Position): number | null {
@@ -1502,6 +1544,19 @@ export class ViewportController implements Viewport {
 }
 
 const CELL_EPSILON_PX = 1e-6;
+
+/** The exon whose drawn extent, UTR caps included, holds baseline `x`.
+ *  Inclusive-left, exclusive-right so an x on a shared tile edge goes to
+ *  the downstream exon; the last exon also takes its right edge. */
+function findExonByBaselineX(exons: readonly ExonBaseline[], x: number): number | null {
+  const last = exons[exons.length - 1];
+  for (const eb of exons) {
+    const lo = eb.xStart - (eb.utr5Px ?? 0);
+    const hi = eb.xEnd + (eb.utr3Px ?? 0);
+    if (x >= lo && (eb === last ? x <= hi : x < hi)) return eb.exonIdx;
+  }
+  return null;
+}
 
 function clampOrdered(a: number, b: number): [number, number] {
   return a <= b ? [a, b] : [b, a];
