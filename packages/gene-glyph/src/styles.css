@@ -600,6 +600,18 @@ body.vv-gg-box-zooming * {
   margin-top: 4px;
 }
 
+.gene-glyph .vv-below-track {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gene-glyph .vv-below-track-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--vv-color-text-primary);
+}
+
 .gene-glyph .vv-unplaced-variants {
   display: flex;
   flex-wrap: wrap;

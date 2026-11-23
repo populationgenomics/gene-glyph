@@ -458,16 +458,12 @@ export function variantTrack(
     },
 
     renderBelow(args: TrackRenderArgs<VariantTrackData>): ReactNode | null {
-      const { data, viewport, mapper, interaction, trackName, onFeatureHover, onFeatureClick } =
-        args;
+      const { data, viewport, mapper, interaction, onFeatureHover, onFeatureClick } = args;
       const partition = partitionVariants(data.variants, viewport, mapper);
       if (partition.unplaced.length === 0) return null;
-      const where = trackName ? ` in ${trackName}` : '';
       return (
         <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
-          <span className="vv-unplaced-label">
-            Unplaced{where} ({partition.unplaced.length})
-          </span>
+          <span className="vv-unplaced-label">Unplaced ({partition.unplaced.length})</span>
           <ul className="vv-unplaced-list">
             {partition.unplaced.map((v) => {
               const isHovered = interaction.hoveredFeatureId === v.id;
@@ -493,7 +489,6 @@ export function variantTrack(
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(v.id)}
                   title={labelOf(data, v)}
-                  aria-label={trackName ? `${labelOf(data, v)}, ${trackName}` : undefined}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{v.label}</span>

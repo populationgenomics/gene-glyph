@@ -407,7 +407,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
     },
 
     renderBelow(args: TrackRenderArgs<SegmentBandTrackData<C, D>>): ReactNode | null {
-      const { data, viewport, interaction, trackName, onFeatureHover, onFeatureClick } = args;
+      const { data, viewport, interaction, onFeatureHover, onFeatureClick } = args;
       const unplaced = data.segments.filter(
         (s) =>
           palette[s.category] &&
@@ -415,12 +415,9 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
           !dockOf(data, s, viewport),
       );
       if (unplaced.length === 0) return null;
-      const where = trackName ? ` in ${trackName}` : '';
       return (
         <div className="vv-unplaced-variants" data-vv-track-id={id} data-testid={`${id}-unplaced`}>
-          <span className="vv-unplaced-label">
-            Unplaced{where} ({unplaced.length})
-          </span>
+          <span className="vv-unplaced-label">Unplaced ({unplaced.length})</span>
           <ul className="vv-unplaced-list">
             {unplaced.map((s) => {
               const featureId = featureIdOf(s);
@@ -445,7 +442,6 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                   onMouseLeave={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(featureId)}
                   title={label}
-                  aria-label={trackName ? `${label}, ${trackName}` : undefined}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
                   <span className="vv-unplaced-text">{label}</span>

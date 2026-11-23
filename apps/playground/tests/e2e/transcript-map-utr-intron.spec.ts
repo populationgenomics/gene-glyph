@@ -38,15 +38,15 @@ test.describe('Transcript map — UTR and intronic placement', () => {
     page,
   }) => {
     const s = await scenario(page);
-    const caseList = s.locator('[data-testid="case-unplaced"]');
-    await expect(caseList.locator('.vv-unplaced-label')).toHaveText('Unplaced in This case (1)');
-    await expect(caseList.locator('.vv-unplaced-chip')).toHaveAttribute(
+    const caseGroup = s.getByRole('group', { name: 'This case' });
+    await expect(caseGroup.locator('.vv-below-track-name')).toHaveText('This case');
+    await expect(caseGroup.locator('.vv-unplaced-chip')).toHaveAttribute(
       'data-vv-feature-id',
       'chr17:g.7700000A>G',
     );
-    await expect(s.locator('[data-testid="literature-unplaced"] .vv-unplaced-label')).toHaveText(
-      'Unplaced in Literature (1)',
-    );
+    await expect(
+      s.getByRole('group', { name: 'Literature' }).locator('[data-testid="literature-unplaced"]'),
+    ).toHaveCount(1);
     await expect(s.locator('[data-testid="regions-unplaced"]')).toHaveCount(0);
   });
 

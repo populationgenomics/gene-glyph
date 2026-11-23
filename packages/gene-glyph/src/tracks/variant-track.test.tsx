@@ -537,11 +537,10 @@ describe('variantTrack — unplaced lists in GeneGlyph', () => {
       />,
     );
     await flush();
-    const list = screen.getByTestId('case-unplaced');
-    expect(list.querySelector('.vv-unplaced-label')!.textContent).toBe('Unplaced in This case (1)');
-    expect(list.querySelector('.vv-unplaced-chip')!.getAttribute('aria-label')).toBe(
-      'far, This case',
-    );
+    const group = screen.getByRole('group', { name: 'This case' });
+    expect(group.querySelector('.vv-below-track-name')!.textContent).toBe('This case');
+    expect(group.contains(screen.getByTestId('case-unplaced'))).toBe(true);
+    expect(screen.getByRole('group', { name: 'Literature' })).not.toBeNull();
   });
 
   it('leaves the list unnamed when only one track has unplaced features', async () => {
@@ -556,8 +555,8 @@ describe('variantTrack — unplaced lists in GeneGlyph', () => {
       />,
     );
     await flush();
-    const label = screen.getByTestId('case-unplaced').querySelector('.vv-unplaced-label');
-    expect(label!.textContent).toBe('Unplaced (1)');
+    expect(screen.getByTestId('case-unplaced')).not.toBeNull();
+    expect(document.querySelector('.vv-below-track')).toBeNull();
   });
 });
 

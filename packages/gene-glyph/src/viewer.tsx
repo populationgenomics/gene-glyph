@@ -1291,9 +1291,6 @@ function GeneGlyphInner(
     return merged;
   }, [flatTracks, trackData, viewport, mapper, viewportVersion]);
 
-  // Lists below the figure name their track when more than one track has
-  // one; set after a first pass counts them.
-  let severalBelowLists = false;
   const trackRenderArgsFor = (t: Track) => {
     const rect = layout.trackRects.get(t.id);
     if (!rect) return null;
@@ -1307,7 +1304,6 @@ function GeneGlyphInner(
       interaction,
       painter,
       hiddenByIntron,
-      trackName: severalBelowLists && t.renderBelow ? (t.label ?? t.id) : undefined,
       onFeatureHover: (featureId: string | null) => handleHover(t.id, featureId),
       onFeatureClick: (featureId: string) => handleClick(t.id, featureId),
     };
@@ -1528,17 +1524,24 @@ function GeneGlyphInner(
     );
   }, [tooltipTarget, tooltipPos, flatTracks, trackData, renderTooltip]);
 
-  const renderBelowOf = (t: Track): ReactNode | null => {
+  const belowLists: Array<{ track: Track; node: ReactNode }> = [];
+  for (const t of flatTracks) {
     const args = t.renderBelow ? trackRenderArgsFor(t) : null;
-    return args ? t.renderBelow!(args) : null;
-  };
-  const listingTracks = flatTracks.filter((t) => renderBelowOf(t));
-  severalBelowLists = listingTracks.length > 1;
-  const belowNodes: ReactNode[] = [];
-  for (const t of listingTracks) {
-    const node = renderBelowOf(t);
-    if (node) belowNodes.push(<div key={t.id}>{node}</div>);
+    const node = args ? t.renderBelow!(args) : null;
+    if (node) belowLists.push({ track: t, node });
   }
+  // With more than one list below the figure, each is named for its track.
+  const severalBelowLists = belowLists.length > 1;
+  const belowNodes = belowLists.map(({ track, node }) => {
+    if (!severalBelowLists) return <div key={track.id}>{node}</div>;
+    const name = track.label ?? track.id;
+    return (
+      <div key={track.id} className="vv-below-track" role="group" aria-label={name}>
+        <span className="vv-below-track-name">{name}</span>
+        {node}
+      </div>
+    );
+  });
 
   const leftGutter = findSlot<LeftGutterProps>(children, LeftGutter);
   const rightGutter = findSlot<RightGutterProps>(children, RightGutter);

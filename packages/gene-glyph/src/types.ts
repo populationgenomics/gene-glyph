@@ -671,10 +671,6 @@ export interface TrackRenderArgs<TData> {
    *  render-args without a viewer; production renders always receive a map
    *  (empty when no track contributes). */
   hiddenByIntron?: ReadonlyMap<string, HiddenFeatureBucket>;
-  /** The track's name (its `label`, else its id), set when more than one
-   *  track in the figure lists features below it, so each list can say
-   *  which track it belongs to. Undefined otherwise. */
-  trackName?: string;
   /** Fires when the cursor enters or leaves a feature in this track; pass
    *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
    *  render. The viewer maps it onto the host's `onHover` prop. */
