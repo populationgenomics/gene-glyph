@@ -1,8 +1,19 @@
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
 // Domain types — the public data contract.
 // ---------------------------------------------------------------------------
+
+/** One ungapped run of an exon's coding part: `length` bases from c.
+ *  position `cdsStart` on, aligned base for base to the genome from
+ *  `genomicStart`. `genomicStart` is the run's lowest genomic coordinate
+ *  on both strands, so on a `-` strand transcript c. `cdsStart` sits at
+ *  `genomicStart + length - 1` and c. increases as genomic decreases. */
+export interface AlignmentBlock {
+  cdsStart: number;
+  length: number;
+  genomicStart: number;
+}
 
 export interface Exon {
   number: number;
@@ -11,16 +22,49 @@ export interface Exon {
   genomicStart: number;
   genomicEnd: number;
   chr: string;
+  /** How the coding part aligns to the genome, for a transcript whose
+   *  sequence differs from the genome by indels. Without `blocks`,
+   *  c. `cdsStart..cdsEnd` maps linearly onto `genomicStart..genomicEnd`.
+   *  With them, every genomic <-> c. mapping goes through the blocks:
+   *  bases between two blocks on the genome (present in the genome,
+   *  absent from the transcript) have no c. position, and c. positions
+   *  between two blocks (present only in the transcript) have no genomic
+   *  base. Blocks are listed in transcript order, lie inside the exon's
+   *  c. and genomic spans, and do not overlap; the mapper throws
+   *  otherwise. */
+  blocks?: AlignmentBlock[];
   /** 5' UTR length (bp) within this exon — typically non-zero only on the
    *  first CDS-containing exon. Optional; defaults to 0. The viewport
-   *  allocates display width for UTR bp at the same `pxPerBp` as CDS bp,
-   *  visually compressing the CDS to make room. */
+   *  allocates display width for UTR bp at a quarter of the width of a
+   *  CDS bp, visually compressing the CDS to make room. On `exons[0]` the
+   *  UTR part lies on the genome right next to the coding part, so the
+   *  mapper places genomic positions in it at c.-1 to c.-utr5Bp. */
   utr5Bp?: number;
   /** 3' UTR length (bp) within this exon — typically non-zero only on the
-   *  last CDS-containing exon. */
+   *  last CDS-containing exon. On the last exon the mapper places genomic
+   *  positions in it at c.*1 to c.*utr3Bp. */
   utr3Bp?: number;
 }
 
+/** An exon wholly in a UTR. It has no coding part, so it carries only
+ *  where it lies on the genome; its c. positions follow from its place in
+ *  the transcript. */
+export interface UtrExon {
+  number: number;
+  chr: string;
+  genomicStart: number;
+  genomicEnd: number;
+}
+
+/** A transcript. `exons` are the exons with a coding part, each described
+ *  by that part (`genomicStart..genomicEnd` covers its coding bases only);
+ *  exons wholly in a UTR go in `utr5Exons` and `utr3Exons`.
+ *
+ *  UTR positions sit on the same c. ruler as the CDS: c.-N is `cPos`
+ *  `1 - N` and c.*N is `cPos` `cdsLength + N`. The 5' UTR counts back
+ *  from c.-1 through `exons[0].utr5Bp` and then the bases of `utr5Exons`
+ *  from the last to the first; the 3' UTR counts on from c.*1 through the
+ *  last exon's `utr3Bp` and then `utr3Exons` in order. */
 export interface Transcript {
   geneSymbol: string;
   transcriptId: string;
@@ -28,6 +72,12 @@ export interface Transcript {
   cdsLength: number;
   strand: '+' | '-';
   exons: Exon[];
+  /** Exons wholly in the 5' UTR, in transcript order, all upstream of
+   *  `exons[0]`. Drawn in the first exon's 5' UTR cap. */
+  utr5Exons?: UtrExon[];
+  /** Exons wholly in the 3' UTR, in transcript order, all downstream of
+   *  the last of `exons`. Drawn in the last exon's 3' UTR cap. */
+  utr3Exons?: UtrExon[];
 }
 
 export type ProteinDomainEntryType =
@@ -232,6 +282,17 @@ export type AnchorTarget =
   | { kind: 'cds-pos'; cPos: number; offset?: number }
   | { kind: 'genomic-pos'; chr: string; pos: number };
 
+/** Where a feature is drawn: inside exon `exonIdx`'s group, at baseline
+ *  `baselineX` (`localX` from the group's origin). */
+export interface ExonPlacement {
+  exonIdx: number;
+  baselineX: number;
+  localX: number;
+  /** Set for a position in an intron, drawn on the exon edge facing it:
+   *  `donor` is the exon's 3' edge, `acceptor` its 5' edge. */
+  intronSide?: 'donor' | 'acceptor';
+}
+
 export interface ScreenPoint {
   x: number;
   y: number;
@@ -240,7 +301,18 @@ export interface ScreenPoint {
 /** Args passed to {@link GeneGlyphProps.renderTooltip}. Slice 17 ships hover
  *  tooltips as the first overlay kind; future overlay anchors (intron
  *  boundaries, "you are here" markers) reuse the same `point` contract. */
+/** A box in viewport (client) pixels, as `getBoundingClientRect` gives
+ *  one. */
+export interface TooltipAnchor {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export interface TooltipRenderArgs {
+  /** The hovered feature's track, or `HEADER_TOOLTIP_TRACK_ID` for the
+   *  built-in header. */
   trackId: string;
   featureId: string;
   /** Track-specific feature payload, resolved via
@@ -251,12 +323,72 @@ export interface TooltipRenderArgs {
    *  pixels for overlay placement. Hosts rarely need this — included for
    *  symmetry with imperative overlay APIs landing in later slices. */
   point: ScreenPoint;
+  /** The text the built-in tooltip shows: the track's
+   *  {@link Track.featureLabel}, or the header surface's description.
+   *  `null` when there is none. The viewer always sets this and `anchor`;
+   *  both are optional so code that builds these args itself still
+   *  compiles. */
+  label?: string | null;
+  /** The hovered surface's box on screen: the element's box for a surface
+   *  outside the figure (an unplaced chip, the header badge); for a figure
+   *  feature, a zero-width box at its x spanning its track's height. */
+  anchor?: TooltipAnchor;
+}
+
+/** An ungapped run of transcribed bases: `length` bases from c. position
+ *  `cdsStart`, aligned base for base to the genome from `genomicStart`,
+ *  the run's lowest coordinate on either strand. */
+export interface AlignedRun {
+  cdsStart: number;
+  genomicStart: number;
+  length: number;
+}
+
+/** An exon as the coordinate mapper sees it: its whole transcribed span
+ *  (UTR part included) in genomic and c. coordinates, and the runs that
+ *  align the two. */
+export interface MappedExon {
+  /** `coding` for an entry of `transcript.exons`; `utr5` / `utr3` for an
+   *  exon wholly in a UTR ({@link Transcript.utr5Exons} /
+   *  {@link Transcript.utr3Exons}). */
+  kind: 'coding' | 'utr5' | 'utr3';
+  number: number;
+  /** Index into `transcript.exons` of the exon drawn with this one: itself
+   *  when coding, else the first (5') or last (3') coding exon, in whose
+   *  UTR cap a UTR-only exon is drawn. */
+  exonIdx: number;
+  chr: string;
+  genomicStart: number;
+  genomicEnd: number;
+  cdsStart: number;
+  cdsEnd: number;
+  /** Runs in transcript order: a UTR part, then the exon's
+   *  {@link Exon.blocks} or one run over its whole coding part. */
+  runs: readonly AlignedRun[];
 }
 
 export interface CoordinateMapper {
   readonly transcript: Transcript;
+  /** Every exon in transcript order (exons wholly in the 5' UTR, the
+   *  coding exons, exons wholly in the 3' UTR), each with the runs that
+   *  align it to the genome. Computed once per mapper. */
+  readonly mappedExons: readonly MappedExon[];
+  /** `null` off the transcript, and for a base inside an exon that the
+   *  exon's {@link Exon.blocks} leave out of the transcript. */
   genomicToCds(chr: string, pos: number): CdsPosition | null;
+  /** `null` off the transcript, and for an exonic c. position that the
+   *  exon's {@link Exon.blocks} give no genomic base. */
   cdsToGenomic(cPos: number, offset: number): GenomicPosition | null;
+  /** Like {@link genomicToCds}, but over the whole transcript: also places
+   *  positions in the UTRs (the first and last exon's UTR parts and the
+   *  exons wholly in a UTR) and in the introns between UTR exons. c.-N is
+   *  `cPos` `1 - N` and c.*N is `cdsLength + N`; see {@link Transcript}. */
+  genomicToTranscript(chr: string, pos: number): CdsPosition | null;
+  /** Inverse of {@link genomicToTranscript}. */
+  transcriptToGenomic(cPos: number, offset: number): GenomicPosition | null;
+  /** Like {@link resolveCds}, with genomic positions resolved by
+   *  {@link genomicToTranscript}. */
+  resolveTranscript(pos: Position): CdsPosition | null;
   cdsToProtein(cPos: number): number | null;
   proteinToCds(aa: number): number;
   findExonByCds(cPos: number): { exonIdx: number } | null;
@@ -282,12 +414,14 @@ export interface ExonBaseline {
   xEnd: number;
   /** CDS-portion width: `xEnd - xStart`. */
   width: number;
-  /** Display width allocated to this exon's 5' UTR (bp × pxPerBp). The
-   *  cap sits at `[xStart - utr5Px, xStart]`. Zero when the exon has no
+  /** Display width allocated to this exon's 5' UTR (bp × pxPerBpOutsideCds).
+   *  The cap sits at `[xStart - utr5Px, xStart]` and, on the first exon,
+   *  also holds {@link Transcript.utr5Exons}. Zero when the exon has no
    *  5' UTR (the common case for everything but the first exon). */
   utr5Px?: number;
   /** Display width allocated to this exon's 3' UTR. The cap sits at
-   *  `[xEnd, xEnd + utr3Px]`. */
+   *  `[xEnd, xEnd + utr3Px]` and, on the last exon, also holds
+   *  {@link Transcript.utr3Exons}. */
   utr3Px?: number;
 }
 
@@ -378,6 +512,18 @@ export interface Viewport {
    *  off-transcript genomic positions). Tracks rendering against the
    *  baseline-x frame use this to anchor features. */
   toBaselineX(pos: Position): number | null;
+  /** Where a feature at `pos` is drawn in the active mode. Unlike
+   *  {@link toBaselineX}, this places positions anywhere on the transcript:
+   *  a genomic position resolves through
+   *  {@link CoordinateMapper.genomicToTranscript}; a UTR position lands in
+   *  the UTR cap of the first or last exon; an intronic one (`offset !==
+   *  0`) on the edge of the exon base it is anchored on, with
+   *  `intronSide` set. `null` off the drawn transcript, for an intronic
+   *  position not anchored on an exon edge with an intron beyond it, and
+   *  in protein mode for any position outside the coding parts. */
+  placePosition(pos: Position): ExonPlacement | null;
+  /** Baseline-x to current screen-x; `null` when out of view. */
+  baselineXToScreen(baselineX: number): number | null;
 
   cdsToScreen(cPos: number, offset: number): number | null;
   proteinToScreen(aa: number): number | null;
@@ -548,11 +694,18 @@ export interface TrackRenderArgs<TData> {
   hiddenByIntron?: ReadonlyMap<string, HiddenFeatureBucket>;
   /** Fires when the cursor enters or leaves a feature in this track; pass
    *  `null` for leave. Tracks wire this onto the per-feature `<g>` they
-   *  render. The viewer maps it onto the host's `onHover` prop. */
-  onFeatureHover?: (featureId: string | null) => void;
+   *  render. The viewer maps it onto the host's `onHover` prop and opens
+   *  the tooltip. A surface outside the figure SVG (e.g. an unplaced chip)
+   *  passes its element as `anchorEl`, and the tooltip anchors to it. */
+  onFeatureHover?: (featureId: string | null, anchorEl?: Element) => void;
   /** Fires when a feature in this track is clicked. The viewer maps it onto
    *  the host's `onFeatureClick` prop. */
   onFeatureClick?: (featureId: string) => void;
+  /** Whether the host lets feature `featureId` be clicked. Only a clickable
+   *  feature gets the pointer cursor, `role="button"`, a tab stop and
+   *  activation on click, Enter and Space; every feature stays hoverable.
+   *  Set by the viewer from {@link GeneGlyphProps.isFeatureClickable}. */
+  isFeatureClickable?: (featureId: string) => boolean;
 }
 
 export interface HiddenFeaturesArgs<TData> {
@@ -688,6 +841,8 @@ export interface DrawRectArgs {
   stroke?: string;
   strokeWidth?: number;
   vectorEffect?: string;
+  fillOpacity?: number;
+  strokeOpacity?: number;
   className?: string;
   onClick?: () => void;
   key?: string | number;
@@ -721,6 +876,7 @@ export interface DrawPathArgs {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  vectorEffect?: string;
   className?: string;
   key?: string | number;
 }
@@ -741,6 +897,20 @@ export interface GroupArgs {
   style?: Record<string, string | number>;
   children: ReactNode;
   key?: string | number;
+  /** Set when the group is a feature (or a piece of one): written as
+   *  `data-vv-feature-id`. */
+  featureId?: string;
+  /** Further attributes, by full name (`data-vv-intron-side`, ...). */
+  attributes?: Record<string, string | number | undefined>;
+  ariaLabel?: string;
+  role?: 'button' | 'img';
+  tabIndex?: number;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onClick?: () => void;
+  onKeyDown?: (e: KeyboardEvent) => void;
 }
 
 export type PainterMode = 'screen' | 'export';

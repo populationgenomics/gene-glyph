@@ -684,6 +684,11 @@ interface Transcript {
     genomicStart: number;
     genomicEnd: number;
     chr: string;
+    utr5Bp?: number;
+    utr3Bp?: number;
+    // Ungapped runs of the coding part, for transcripts that align to the
+    // genome with indels; genomic <-> c. mapping goes through them.
+    blocks?: Array<{ cdsStart: number; genomicStart: number; length: number }>;
   }>;
 }
 

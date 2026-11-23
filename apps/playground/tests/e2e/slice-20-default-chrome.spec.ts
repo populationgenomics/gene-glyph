@@ -70,7 +70,7 @@ test.describe('Slice 20 — default chrome components', () => {
     for (let i = 0; i < 4; i++) await page.keyboard.press('=');
     await page.waitForTimeout(450);
     const window = s.locator('[data-testid="gene-glyph-minimap-window"]');
-    await window.scrollIntoViewIfNeeded();
+    await window.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     const before = await window.evaluate((el) => (el as SVGRectElement).x.baseVal.value);
     const wbox = (await window.boundingBox())!;
     await page.mouse.move(wbox.x + wbox.width / 2, wbox.y + wbox.height / 2);

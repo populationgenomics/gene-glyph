@@ -362,13 +362,19 @@
   overflow: hidden;
 }
 
-/* RD-1109: while a feature hover is committed (debounced), force the figure
- * cursor to `pointer` so crossing the 1–2 px gaps between adjacent glyphs
+/* RD-1109: while a hover on a clickable feature is committed (debounced),
+ * force the figure cursor to `pointer` so crossing the 1–2 px gaps between adjacent glyphs
  * doesn't flicker the cursor between crosshair and pointer. The glyph's own
  * inline `cursor: pointer` still wins on the glyph itself; this rule only
  * affects the inter-glyph gaps. Guarded with `:not(.vv-dragging)` so an
  * active drag continues to show the grabbing cursor. */
-.gene-glyph.vv-hover-active:not(.vv-dragging) .vv-figure {
+.gene-glyph.vv-hover-clickable:not(.vv-dragging) .vv-figure {
+  cursor: pointer;
+}
+
+.gene-glyph .vv-segment-band-feature.is-clickable,
+.gene-glyph .vv-unplaced-chip.is-clickable,
+.gene-glyph .vv-hidden-feature-mark.is-clickable {
   cursor: pointer;
 }
 
@@ -421,7 +427,6 @@
 .gene-glyph .vv-hidden-feature-mark {
   transform-box: view-box;
   transform-origin: 0 0;
-  cursor: pointer;
 }
 
 /* Phase 3: splice-site flanks sit inside the adjacent exon group and ride
@@ -600,6 +605,18 @@ body.vv-gg-box-zooming * {
   margin-top: 4px;
 }
 
+.gene-glyph .vv-below-track {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gene-glyph .vv-below-track-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--vv-color-text-primary);
+}
+
 .gene-glyph .vv-unplaced-variants {
   display: flex;
   flex-wrap: wrap;
@@ -633,10 +650,21 @@ body.vv-gg-box-zooming * {
   border-radius: 999px;
   background: var(--vv-color-bg-surface, transparent);
   color: var(--vv-color-text-primary);
-  cursor: pointer;
   transition:
     background-color 100ms ease-out,
     transform 100ms ease-out;
+}
+
+.gene-glyph .vv-unplaced-chip-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: inherit;
 }
 
 .gene-glyph .vv-unplaced-chip.is-hovered,
@@ -681,6 +709,12 @@ body.vv-gg-box-zooming * {
  * structure. Rects sit inside per-exon `<g>` so they pan / zoom with
  * the exon ribbon; the optional inline label rides a counter-scale so
  * it stays legible regardless of live zoom. */
+.gene-glyph {
+  /* Outline around each band, so touching bands with the same fill read
+   * as two; translucent so it darkens any fill. */
+  --vv-segment-band-outline: rgba(15, 23, 42, 0.45);
+}
+
 .gene-glyph .vv-segment-band-rect {
   pointer-events: visiblePainted;
 }
@@ -835,6 +869,7 @@ body.vv-gg-box-zooming * {
  *   3. Kill any soft chrome (saturate/desaturate filters from the stale-data
  *      affordance, drop shadows, low-opacity overlays) that would muddy print. */
 [data-vv-print] .gene-glyph {
+  --vv-segment-band-outline: rgba(17, 24, 39, 0.7);
   --vv-color-text-primary: #111827;
   --vv-color-text-secondary: #1f2937;
   --vv-color-text-tertiary: #4b5563;
@@ -990,6 +1025,7 @@ body.vv-gg-box-zooming * {
   --vv-clinvar-color-other: #94a3b8;
 
   --vv-segment-band-label: #e2e8f0;
+  --vv-segment-band-outline: rgba(226, 232, 240, 0.55);
 
   --vv-brush-fill: rgba(96, 165, 250, 0.16);
   --vv-brush-stroke: rgba(96, 165, 250, 0.75);
@@ -1044,6 +1080,7 @@ body.vv-gg-box-zooming * {
     --vv-clinvar-color-other: #94a3b8;
 
     --vv-segment-band-label: #e2e8f0;
+    --vv-segment-band-outline: rgba(226, 232, 240, 0.55);
 
     --vv-brush-fill: rgba(96, 165, 250, 0.16);
     --vv-brush-stroke: rgba(96, 165, 250, 0.75);

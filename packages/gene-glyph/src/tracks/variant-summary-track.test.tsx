@@ -83,12 +83,11 @@ describe('variantSummaryTrack', () => {
       </svg>,
     );
     const ticks = container.querySelectorAll('.vv-variant-summary-tick');
-    // v3 is intronic — partitionVariants drops it; v1 + v2 stay.
-    expect(ticks).toHaveLength(2);
+    // v3 is intronic and drawn at the edge of exon 1, like the other two.
     const ids = [...ticks].map((t) => t.getAttribute('data-vv-feature-id')).sort();
-    expect(ids).toEqual(['v1', 'v2']);
+    expect(ids).toEqual(['v1', 'v2', 'v3-intronic']);
     const categories = [...ticks].map((t) => t.getAttribute('data-vv-category')).sort();
-    expect(categories).toEqual(['missense', 'nonsense']);
+    expect(categories).toEqual(['missense', 'nonsense', 'splice']);
   });
 
   it('queries a DataSource source through the viewport', async () => {

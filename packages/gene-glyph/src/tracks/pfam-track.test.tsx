@@ -139,7 +139,7 @@ describe('pfamTrack', () => {
     }
   });
 
-  it('renders centred labels with a tooltip carrying the full domain name', () => {
+  it('renders centred labels and names each domain by its full name', () => {
     const { mapper, viewport, painter, interaction } = setup();
     const t = pfamTrack({});
 
@@ -162,8 +162,9 @@ describe('pfamTrack', () => {
     const label = container.querySelector<SVGTextElement>('text.vv-pfam-label');
     expect(label).not.toBeNull();
     expect(label!.getAttribute('text-anchor')).toBe('middle');
-    const title = label!.querySelector('title');
-    expect(title?.textContent).toMatch(/Domain A description/);
+    expect(container.querySelector('title')).toBeNull();
+    const feature = container.querySelector('.vv-pfam-feature');
+    expect(feature?.getAttribute('aria-label')).toMatch(/Domain A description/);
   });
 
   it('returns null when there are no domains to render', () => {
@@ -178,5 +179,29 @@ describe('pfamTrack', () => {
       painter,
     });
     expect(out).toBeNull();
+  });
+});
+
+describe('pfamTrack — keyboard', () => {
+  it('gives each domain one tab stop, even when it spans exons', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const { container } = render(
+      <svg>
+        {pfamTrack({}).render({
+          data: { domains },
+          rect: { yTop: 0, yBottom: 28 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const stops = [...container.querySelectorAll('.vv-pfam-feature[tabindex="0"]')];
+    expect(stops.map((g) => g.getAttribute('data-vv-feature-id'))).toHaveLength(domains.length);
+    expect(new Set(stops.map((g) => g.getAttribute('data-vv-feature-id'))).size).toBe(
+      domains.length,
+    );
+    expect(stops.every((g) => g.getAttribute('role') === 'img')).toBe(true);
   });
 });

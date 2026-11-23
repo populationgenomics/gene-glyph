@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createSvgPainter } from './svg-painter.js';
 
 function renderInSvg(node: React.ReactNode) {
@@ -73,5 +73,48 @@ describe('createSvgPainter', () => {
     expect(container.querySelector('text')?.textContent).toBe('hello');
     expect(container.querySelector('path')?.getAttribute('d')).toBe('M0 0 L10 10');
     expect(container.querySelector('circle')?.getAttribute('r')).toBe('3');
+  });
+});
+
+describe('createSvgPainter — feature groups', () => {
+  it('group writes the feature id, attributes, name and handlers onto its <g>', () => {
+    const p = createSvgPainter();
+    const entered: string[] = [];
+    const { container } = render(
+      <svg>
+        {p.group({
+          featureId: 'f1',
+          attributes: { 'data-vv-intron-side': 'donor' },
+          ariaLabel: 'Feature one',
+          tabIndex: 0,
+          onMouseEnter: () => entered.push('mouse'),
+          onFocus: () => entered.push('focus'),
+          children: p.drawPath({ d: 'M0 0h5', vectorEffect: 'non-scaling-stroke' }),
+        })}
+      </svg>,
+    );
+    const g = container.querySelector('g')!;
+    expect(g.getAttribute('data-vv-feature-id')).toBe('f1');
+    expect(g.getAttribute('data-vv-intron-side')).toBe('donor');
+    expect(g.getAttribute('aria-label')).toBe('Feature one');
+    expect(g.getAttribute('tabindex')).toBe('0');
+    expect(container.querySelector('path')!.getAttribute('vector-effect')).toBe(
+      'non-scaling-stroke',
+    );
+    fireEvent.mouseEnter(g);
+    fireEvent.focus(g);
+    expect(entered).toEqual(['mouse', 'focus']);
+  });
+
+  it('drawRect writes fill and stroke opacity', () => {
+    const p = createSvgPainter();
+    const { container } = render(
+      <svg>
+        {p.drawRect({ x: 0, y: 0, width: 1, height: 1, fillOpacity: 0.35, strokeOpacity: 0.6 })}
+      </svg>,
+    );
+    const rect = container.querySelector('rect')!;
+    expect(rect.getAttribute('fill-opacity')).toBe('0.35');
+    expect(rect.getAttribute('stroke-opacity')).toBe('0.6');
   });
 });

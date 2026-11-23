@@ -231,3 +231,82 @@ describe('exonTrack', () => {
     expect(groups[2]?.getAttribute('style')).toMatch(/var\(--vv-exon-x-2\)/);
   });
 });
+
+describe('exonTrack — UTRs', () => {
+  // Exon 1 carries 10 bp of 5' UTR, and two exons wholly in the 5' UTR
+  // (40 and 20 bp) precede it: 70 UTR bp at quarter scale, so 317.5
+  // display bp over 720 px and a UTR bp of 0.567 px.
+  const withUtrExons: Transcript = {
+    ...transcript,
+    exons: transcript.exons.map((e, i) => (i === 0 ? { ...e, utr5Bp: 10 } : e)),
+    utr5Exons: [
+      { number: 0, chr: 'chr1', genomicStart: 500, genomicEnd: 539 },
+      { number: 0, chr: 'chr1', genomicStart: 700, genomicEnd: 719 },
+    ],
+  };
+
+  function renderUtrRects() {
+    const mapper = createCoordinateMapper(withUtrExons);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const { container } = render(
+      <svg>
+        {exonTrack().render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 24 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+        })}
+      </svg>,
+    );
+    return [...container.querySelectorAll('.vv-exon-utr')].map((el) => ({
+      onlyUtr: el.classList.contains('vv-exon-utr-only'),
+      x: Number(el.getAttribute('x')),
+      width: Number(el.getAttribute('width')),
+    }));
+  }
+
+  it("draws each exon wholly in the 5' UTR beside the first exon's own UTR part", () => {
+    const rects = renderUtrRects().sort((a, b) => a.x - b.x);
+    expect(rects.map((r) => r.onlyUtr)).toEqual([true, true, false]);
+    // Left to right: the 40 bp exon, the 20 bp exon, exon 1's 10 bp.
+    expect(rects.map((r) => r.width)).toEqual([
+      expect.closeTo(22.677, 3),
+      expect.closeTo(11.339, 3),
+      expect.closeTo(5.669, 3),
+    ]);
+    expect(rects[0]!.x).toBeCloseTo(-39.685, 3);
+    expect(rects[1]!.x).toBeCloseTo(-17.008, 3);
+    expect(rects[2]!.x).toBeCloseTo(-5.669, 3);
+  });
+});
+
+describe('exonTrack — exon numbers', () => {
+  it('names the exons beside a hidden-feature badge by their own numbers', () => {
+    // Exon 1 is left out (wholly UTR) and exon 3 omitted by the host: the
+    // drawn exons keep their numbers 2, 4 and 5.
+    const renumbered: Transcript = {
+      ...transcript,
+      exons: transcript.exons.map((e, i) => ({ ...e, number: [2, 4, 5][i]! })),
+    };
+    const mapper = createCoordinateMapper(renumbered);
+    const viewport = new ViewportController({ mapper, width: 720, mode: 'transcript' });
+    const { container } = render(
+      <svg>
+        {exonTrack().render({
+          data: { ready: true },
+          rect: { yTop: 0, yBottom: 24 },
+          viewport,
+          mapper,
+          interaction: { hoveredFeatureId: null, selectedFeatureIds: new Set(), brushRange: null },
+          painter: createSvgPainter({ mode: 'screen' }),
+          hiddenByIntron: new Map([['0:1', { exonIdxA: 0, exonIdxB: 1, count: 2 }]]),
+        })}
+      </svg>,
+    );
+    expect(container.querySelector('.vv-hidden-feature-mark')!.getAttribute('aria-label')).toBe(
+      '2 features hidden in intron between exon 2 and exon 4',
+    );
+  });
+});

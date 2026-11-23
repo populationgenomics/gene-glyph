@@ -89,6 +89,8 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
         stroke={rest.stroke}
         strokeWidth={rest.strokeWidth}
         vectorEffect={rest.vectorEffect}
+        fillOpacity={rest.fillOpacity}
+        strokeOpacity={rest.strokeOpacity}
         className={rest.className}
         onClick={onClick}
       />
@@ -135,6 +137,7 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
         fill={args.fill}
         stroke={args.stroke}
         strokeWidth={args.strokeWidth}
+        vectorEffect={args.vectorEffect}
         className={args.className}
       />
     );
@@ -157,7 +160,22 @@ export function createSvgPainter(options: SvgPainterOptions = {}): Painter {
 
   function group(args: GroupArgs): ReactNode {
     return (
-      <g key={args.key} className={args.className} style={args.style as CSSProperties | undefined}>
+      <g
+        key={args.key}
+        className={args.className}
+        style={args.style as CSSProperties | undefined}
+        data-vv-feature-id={args.featureId}
+        {...args.attributes}
+        aria-label={args.ariaLabel}
+        role={args.role}
+        tabIndex={args.tabIndex}
+        onMouseEnter={args.onMouseEnter}
+        onMouseLeave={args.onMouseLeave}
+        onFocus={args.onFocus}
+        onBlur={args.onBlur}
+        onClick={args.onClick}
+        onKeyDown={args.onKeyDown}
+      >
         {args.children}
       </g>
     );

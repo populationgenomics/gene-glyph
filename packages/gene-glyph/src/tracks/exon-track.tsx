@@ -1,4 +1,5 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import { clickAttrs, featureClickProps } from './feature-click.js';
 import type {
   MinimapRenderArgs,
   Track,
@@ -60,8 +61,11 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
     },
 
     render(args: TrackRenderArgs<ExonTrackData>): ReactNode {
-      const { rect, viewport, painter, hiddenByIntron, onFeatureClick } = args;
+      const { rect, viewport, mapper, painter, hiddenByIntron } = args;
       const geom = viewport.baselineGeometry();
+      const exons = mapper.transcript.exons;
+      // Exons wholly in a UTR are drawn in the first / last exon's cap.
+      const utrOnlyExons = mapper.mappedExons.filter((m) => m.kind !== 'coding');
       const midY = (rect.yTop + rect.yBottom) / 2;
       const exonY = midY - exonHalf;
       const exonH = exonHalf * 2;
@@ -103,9 +107,29 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
       // per-exon rects so the dashed-intron polyline can sit between
       // visually distinct ribbons.
       if (viewport.mode !== 'protein') {
+        const utrY = exonY + exonH / 4;
+        const utrRect = (key: string, x: number, width: number, className: string) =>
+          painter.drawRect({
+            key,
+            x,
+            y: utrY,
+            width,
+            height: exonH / 2,
+            fill: painter.color('vv-color-exon-fill', '#94a3b8'),
+            stroke: painter.color('vv-color-exon-stroke', '#475569'),
+            strokeWidth: 1,
+            strokeOpacity: 0.6,
+            fillOpacity: 0.35,
+            vectorEffect: 'non-scaling-stroke',
+            className,
+          });
         for (const eb of geom.exons) {
           const donorWidth = flankByExonAndSide.get(`${eb.exonIdx}:donor`) ?? 0;
           const acceptorWidth = flankByExonAndSide.get(`${eb.exonIdx}:acceptor`) ?? 0;
+          const exon = exons[eb.exonIdx]!;
+          // The exon's own UTR part; the rest of a cap holds UTR-only exons.
+          const utr5Px = (exon.utr5Bp ?? 0) * geom.pxPerBpOutsideCds;
+          const utr3Px = (exon.utr3Bp ?? 0) * geom.pxPerBpOutsideCds;
           exonRects.push(
             painter.placeInExonGroup(
               eb.exonIdx,
@@ -156,38 +180,22 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
                   vectorEffect="non-scaling-stroke"
                   className="vv-exon-rect"
                 />
-                {(eb.utr5Px ?? 0) > 0 && (
-                  <rect
-                    key={`utr5-${eb.exonIdx}`}
-                    x={-eb.utr5Px!}
-                    y={exonY + (exonH - exonH / 2) / 2}
-                    width={eb.utr5Px!}
-                    height={exonH / 2}
-                    fill={painter.color('vv-color-exon-fill', '#94a3b8')}
-                    stroke={painter.color('vv-color-exon-stroke', '#475569')}
-                    strokeWidth={1}
-                    strokeOpacity={0.6}
-                    fillOpacity={0.35}
-                    vectorEffect="non-scaling-stroke"
-                    className="vv-exon-utr vv-exon-utr-5"
-                  />
-                )}
-                {(eb.utr3Px ?? 0) > 0 && (
-                  <rect
-                    key={`utr3-${eb.exonIdx}`}
-                    x={eb.width}
-                    y={exonY + (exonH - exonH / 2) / 2}
-                    width={eb.utr3Px!}
-                    height={exonH / 2}
-                    fill={painter.color('vv-color-exon-fill', '#94a3b8')}
-                    stroke={painter.color('vv-color-exon-stroke', '#475569')}
-                    strokeWidth={1}
-                    strokeOpacity={0.6}
-                    fillOpacity={0.35}
-                    vectorEffect="non-scaling-stroke"
-                    className="vv-exon-utr vv-exon-utr-3"
-                  />
-                )}
+                {utr5Px > 0 &&
+                  utrRect(`utr5-${eb.exonIdx}`, -utr5Px, utr5Px, 'vv-exon-utr vv-exon-utr-5')}
+                {utr3Px > 0 &&
+                  utrRect(`utr3-${eb.exonIdx}`, eb.width, utr3Px, 'vv-exon-utr vv-exon-utr-3')}
+                {utrOnlyExons
+                  .filter((m) => m.exonIdx === eb.exonIdx)
+                  .map((m) => {
+                    const x0 = viewport.cdsToBaselineX(m.cdsStart - 0.5) - eb.xStart;
+                    const x1 = viewport.cdsToBaselineX(m.cdsEnd + 0.5) - eb.xStart;
+                    return utrRect(
+                      `utr-exon-${m.number}`,
+                      x0,
+                      x1 - x0,
+                      `vv-exon-utr vv-exon-utr-only vv-exon-utr-${m.kind === 'utr5' ? 5 : 3}`,
+                    );
+                  })}
               </Fragment>,
             ),
           );
@@ -259,7 +267,7 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         const featureId = `__hidden_intron_${gap.exonIdxA}_${gap.exonIdxB}`;
         const w = hiddenHalfW * 2;
         const y0 = intronY - hiddenHalfW;
-        const handler = onFeatureClick ? () => onFeatureClick(featureId) : undefined;
+        const click = featureClickProps(featureId, args);
         const wrapperStyle: CSSProperties = {
           transform:
             `translateX(calc(var(--vv-intron-x-${gap.exonIdxA}, 0px)` +
@@ -272,16 +280,16 @@ export function exonTrack(config: ExonTrackConfig = {}): Track<ExonTrackConfig, 
         hiddenMarks.push(
           <g
             key={`hidden-${gap.exonIdxA}-${gap.exonIdxB}`}
-            className="vv-hidden-feature-mark"
+            className={
+              click.clickable ? 'vv-hidden-feature-mark is-clickable' : 'vv-hidden-feature-mark'
+            }
             data-vv-feature-id={featureId}
             data-vv-hidden-count={bucket.count}
             data-vv-intron-from={gap.exonIdxA}
             data-vv-intron-to={gap.exonIdxB}
             style={wrapperStyle}
-            onClick={handler}
-            role={handler ? 'button' : undefined}
-            tabIndex={handler ? 0 : undefined}
-            aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${gap.exonIdxA + 1} and exon ${gap.exonIdxB + 1}`}
+            {...clickAttrs(click)}
+            aria-label={`${bucket.count} feature${bucket.count === 1 ? '' : 's'} hidden in intron between exon ${mapper.transcript.exons[gap.exonIdxA]!.number} and exon ${mapper.transcript.exons[gap.exonIdxB]!.number}`}
           >
             <rect
               className="vv-hidden-feature-bg"

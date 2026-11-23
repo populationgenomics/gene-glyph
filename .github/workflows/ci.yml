@@ -3,8 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every base branch, so each PR in a stack gets CI, not only the one on main.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
