@@ -286,3 +286,40 @@ describe('GeneGlyph — hover surfaces without native titles', () => {
     expect(screen.queryByTestId('gene-glyph-tooltip')).toBeNull();
   });
 });
+
+describe('GeneGlyph — tooltips on keyboard focus', () => {
+  it('opens the MANE badge tooltip on focus and names the badge', async () => {
+    const { container } = render(
+      <GeneGlyph transcript={{ ...transcript, isManeSelect: true }} tracks={[exonTrack({})]} />,
+    );
+    await flushTrackLoads();
+    const badge = container.querySelector<HTMLElement>('.vv-mane-badge')!;
+    expect(badge.getAttribute('tabindex')).toBe('0');
+    expect(badge.getAttribute('aria-label')).toBe('MANE Select transcript');
+    fireEvent.focus(badge);
+    await waitFor(() => {
+      expect(screen.getByTestId('gene-glyph-tooltip').textContent).toBe('MANE Select transcript');
+    });
+    fireEvent.blur(badge);
+    await waitFor(() => expect(screen.queryByTestId('gene-glyph-tooltip')).toBeNull());
+  });
+
+  it('opens a variant tooltip on focus', async () => {
+    const onHover = vi.fn();
+    const { container } = render(
+      <GeneGlyph
+        transcript={transcript}
+        tracks={[exonTrack({}), variantTrack({ id: 'variants', source: variants })]}
+        onHover={onHover}
+      />,
+    );
+    await flushTrackLoads();
+    stubScreenCtm(container);
+    fireEvent.focus(container.querySelector('[data-vv-feature-id="v1"]')!);
+    await tickRaf();
+    await waitFor(() => {
+      expect(container.querySelector('.vv-tooltip')?.textContent).toBe('V1 label');
+    });
+    expect(onHover).toHaveBeenCalledWith('v1', 'variants');
+  });
+});

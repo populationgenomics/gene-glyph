@@ -1820,8 +1820,13 @@ function GeneGlyphHeader({ transcript, protein, onHover }: DefaultHeaderProps) {
             <span className="vv-sep"> · </span>
             <span
               className="vv-mane-badge"
+              tabIndex={0}
+              role="img"
+              aria-label="MANE Select transcript"
               onMouseEnter={(e) => onHover('mane-select', e.currentTarget)}
               onMouseLeave={() => onHover(null)}
+              onFocus={(e) => onHover('mane-select', e.currentTarget)}
+              onBlur={() => onHover(null)}
             >
               MANE Select
             </span>

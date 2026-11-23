@@ -280,6 +280,8 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               attributes: { 'data-vv-intron-side': dock.intronSide },
               onMouseEnter: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
               onMouseLeave: onFeatureHover ? () => onFeatureHover(null) : undefined,
+              onFocus: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
+              onBlur: onFeatureHover ? () => onFeatureHover(null) : undefined,
               onClick: click,
               role: click ? 'button' : undefined,
               tabIndex: click ? 0 : undefined,
@@ -319,6 +321,8 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               data-vv-feature-id={featureId}
               onMouseEnter={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
               onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+              onFocus={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
+              onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
               onClick={click}
               role={click ? 'button' : undefined}
               tabIndex={click ? 0 : undefined}
@@ -440,6 +444,8 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
                   style={style}
                   onMouseEnter={(e) => onFeatureHover?.(featureId, e.currentTarget)}
                   onMouseLeave={() => onFeatureHover?.(null)}
+                  onFocus={(e) => onFeatureHover?.(featureId, e.currentTarget)}
+                  onBlur={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(featureId)}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />

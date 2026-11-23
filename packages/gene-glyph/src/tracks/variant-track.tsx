@@ -490,6 +490,8 @@ export function variantTrack(
                   style={style}
                   onMouseEnter={(e) => onFeatureHover?.(v.id, e.currentTarget)}
                   onMouseLeave={() => onFeatureHover?.(null)}
+                  onFocus={(e) => onFeatureHover?.(v.id, e.currentTarget)}
+                  onBlur={() => onFeatureHover?.(null)}
                   onClick={() => onFeatureClick?.(v.id)}
                 >
                   <span className="vv-unplaced-dot" aria-hidden />
@@ -620,6 +622,8 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           transform={`translate(${p.localX} 0)`}
           onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+          onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
+          onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
           onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
           tabIndex={0}
           role="button"
@@ -744,6 +748,8 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       transform={`translate(${placement.localX} 0)`}
       onMouseEnter={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
+      onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
+      onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
       onClick={onFeatureClick ? () => onFeatureClick(v.id) : undefined}
       tabIndex={0}
       role="button"
