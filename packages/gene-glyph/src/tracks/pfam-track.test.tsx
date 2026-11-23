@@ -181,3 +181,27 @@ describe('pfamTrack', () => {
     expect(out).toBeNull();
   });
 });
+
+describe('pfamTrack — keyboard', () => {
+  it('gives each domain one tab stop, even when it spans exons', () => {
+    const { mapper, viewport, painter, interaction } = setup();
+    const { container } = render(
+      <svg>
+        {pfamTrack({}).render({
+          data: { domains },
+          rect: { yTop: 0, yBottom: 28 },
+          viewport,
+          mapper,
+          interaction,
+          painter,
+        })}
+      </svg>,
+    );
+    const stops = [...container.querySelectorAll('.vv-pfam-feature[tabindex="0"]')];
+    expect(stops.map((g) => g.getAttribute('data-vv-feature-id'))).toHaveLength(domains.length);
+    expect(new Set(stops.map((g) => g.getAttribute('data-vv-feature-id'))).size).toBe(
+      domains.length,
+    );
+    expect(stops.every((g) => g.getAttribute('role') === 'img')).toBe(true);
+  });
+});

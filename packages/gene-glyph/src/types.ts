@@ -898,7 +898,7 @@ export interface GroupArgs {
   /** Further attributes, by full name (`data-vv-intron-side`, ...). */
   attributes?: Record<string, string | number | undefined>;
   ariaLabel?: string;
-  role?: 'button';
+  role?: 'button' | 'img';
   tabIndex?: number;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;

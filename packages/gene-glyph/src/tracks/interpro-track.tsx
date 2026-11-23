@@ -456,6 +456,8 @@ function emitDomain(args: EmitArgs): void {
             featureId,
             ariaLabel: tooltip,
             ...hoverProps,
+            tabIndex: 0,
+            role: 'img',
             children: (
               <>
                 <line
@@ -517,6 +519,8 @@ function emitDomain(args: EmitArgs): void {
           featureId,
           ariaLabel: tooltip,
           ...hoverProps,
+          // One tab stop per domain, on its first piece.
+          ...(seg === placed.segments[0] ? { tabIndex: 0, role: 'img' as const } : {}),
           children: (
             <>
               {painter.drawRect({

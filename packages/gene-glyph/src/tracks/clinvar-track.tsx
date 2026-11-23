@@ -831,16 +831,19 @@ function ClinVarStackedBody({
     onFeatureClickRef.current = onFeatureClick;
   });
   const lastHoverIdRef = useRef<string | null>(null);
-  const handleMouseOver = useCallback((e: React.MouseEvent<SVGGElement>) => {
-    const cb = onFeatureHoverRef.current;
-    if (!cb) return;
-    const target = (e.target as Element).closest('[data-vv-feature-id]');
-    const id = target?.getAttribute('data-vv-feature-id') ?? null;
-    if (id !== lastHoverIdRef.current) {
-      lastHoverIdRef.current = id;
-      cb(id);
-    }
-  }, []);
+  const handleMouseOver = useCallback(
+    (e: React.MouseEvent<SVGGElement> | React.FocusEvent<SVGGElement>) => {
+      const cb = onFeatureHoverRef.current;
+      if (!cb) return;
+      const target = (e.target as Element).closest('[data-vv-feature-id]');
+      const id = target?.getAttribute('data-vv-feature-id') ?? null;
+      if (id !== lastHoverIdRef.current) {
+        lastHoverIdRef.current = id;
+        cb(id);
+      }
+    },
+    [],
+  );
   const handleMouseLeave = useCallback(() => {
     const cb = onFeatureHoverRef.current;
     if (!cb) return;
@@ -1151,6 +1154,8 @@ function ClinVarStackedBody({
       key={trackId}
       onMouseOver={onFeatureHover ? handleMouseOver : undefined}
       onMouseLeave={onFeatureHover ? handleMouseLeave : undefined}
+      onFocus={onFeatureHover ? handleMouseOver : undefined}
+      onBlur={onFeatureHover ? handleMouseLeave : undefined}
       onClick={onFeatureClick ? handleClick : undefined}
     >
       {laneDividers}
@@ -1250,6 +1255,8 @@ function ClinVarBody({
           transform={`translate(${localX} 0)`}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
+          onFocus={handleEnter}
+          onBlur={handleLeave}
           onClick={handleClick}
           tabIndex={0}
           role="button"
