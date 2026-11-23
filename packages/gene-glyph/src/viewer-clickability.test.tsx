@@ -91,10 +91,10 @@ describe('GeneGlyph — per-feature clickability', () => {
     },
   );
 
-  it('keeps a variant tick the host does not let be clicked a tab stop, not a button', async () => {
+  it('keeps a variant tick the host does not let be clicked a tab stop, named as a graphic', async () => {
     const { feature } = await renderMap({ onFeatureClick: vi.fn(), isFeatureClickable: citedOnly });
     expect(feature('plain').getAttribute('tabindex')).toBe('0');
-    expect(feature('plain').hasAttribute('role')).toBe(false);
+    expect(feature('plain').getAttribute('role')).toBe('img');
   });
 
   it('puts a button in an unplaced chip the host lets be clicked', async () => {
@@ -114,11 +114,12 @@ describe('GeneGlyph — per-feature clickability', () => {
   });
 
   it.each(['plain', 'band-plain'])(
-    'leaves %s, which the host does not let be clicked, without button semantics',
+    'keeps %s, which the host does not let be clicked, a focusable graphic, not a button',
     async (id) => {
       const onFeatureClick = vi.fn();
       const { feature } = await renderMap({ onFeatureClick, isFeatureClickable: citedOnly });
-      expect(feature(id).hasAttribute('role')).toBe(false);
+      expect(feature(id).getAttribute('role')).toBe('img');
+      expect(feature(id).getAttribute('tabindex')).toBe('0');
       expect(feature(id).classList.contains('is-clickable')).toBe(false);
       fireEvent.click(feature(id));
       fireEvent.keyDown(feature(id), { key: 'Enter' });

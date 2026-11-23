@@ -3,7 +3,11 @@ import { glyphPath, type SymbolEncoding } from '../symbol-encoding.js';
 import { formatCdsPosition } from '../coordinate-mapper.js';
 import { resolveSourceData } from '../data-source.js';
 import { intronMarkPath } from './exon-edge.js';
-import { clickAttrs, featureClickProps, type FeatureClickProps } from './feature-click.js';
+import {
+  featureClickProps,
+  focusableFeatureAttrs,
+  type FeatureClickProps,
+} from './feature-click.js';
 import { unplacedChipControl } from './unplaced-chip.js';
 import { packLanes } from '../pack-lanes.js';
 import {
@@ -633,8 +637,7 @@ function renderStackedVariants(args: RenderStackedArgs): ReactNode {
           onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
           onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
           onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-          {...clickAttrs(click)}
-          tabIndex={0}
+          {...focusableFeatureAttrs(click)}
           aria-label={labelOf(v)}
         >
           <g className="vv-variant-inner">
@@ -758,8 +761,7 @@ function renderVariant(args: RenderVariantArgs): ReactNode {
       onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
       onFocus={onFeatureHover ? () => onFeatureHover(v.id) : undefined}
       onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-      {...clickAttrs(click)}
-      tabIndex={0}
+      {...focusableFeatureAttrs(click)}
       aria-label={label}
     >
       <g className="vv-variant-inner">

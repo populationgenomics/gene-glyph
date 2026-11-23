@@ -48,3 +48,12 @@ export function clickAttrs(p: FeatureClickProps): Omit<FeatureClickProps, 'click
   const { clickable: _clickable, ...attrs } = p;
   return attrs;
 }
+
+/** Attributes for a feature that is always a tab stop, so a keyboard user
+ *  reaches its tooltip: a button when clickable, else a named graphic
+ *  (`role="img"`, labelled by the element's `aria-label`). */
+export function focusableFeatureAttrs(
+  p: FeatureClickProps,
+): Omit<FeatureClickProps, 'clickable' | 'role'> & { role: 'button' | 'img' } {
+  return p.clickable ? { ...clickAttrs(p), role: 'button' } : { role: 'img', tabIndex: 0 };
+}

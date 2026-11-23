@@ -1,6 +1,6 @@
 import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { intronMarkPath } from './exon-edge.js';
-import { clickAttrs, featureClickProps } from './feature-click.js';
+import { featureClickProps, focusableFeatureAttrs } from './feature-click.js';
 import { unplacedChipControl } from './unplaced-chip.js';
 import { fitText } from './pfam-track.js';
 import type {
@@ -285,7 +285,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               onMouseLeave: onFeatureHover ? () => onFeatureHover(null) : undefined,
               onFocus: onFeatureHover ? () => onFeatureHover(featureId) : undefined,
               onBlur: onFeatureHover ? () => onFeatureHover(null) : undefined,
-              ...clickAttrs(click),
+              ...focusableFeatureAttrs(click),
               ariaLabel: labelOf(seg),
               style: {
                 transform:
@@ -324,7 +324,7 @@ function buildSegmentBandTrack<C extends string, D extends SegmentBandDatum<C>>(
               onMouseLeave={onFeatureHover ? () => onFeatureHover(null) : undefined}
               onFocus={onFeatureHover ? () => onFeatureHover(featureId) : undefined}
               onBlur={onFeatureHover ? () => onFeatureHover(null) : undefined}
-              {...clickAttrs(click)}
+              {...focusableFeatureAttrs(click)}
               aria-label={labelOf(seg)}
             >
               {painter.drawRect({
